@@ -69,6 +69,8 @@ plugins/
 
 ## 开发检查与构建
 
+独立的 [Conversation Readers 扩展](plugins/conversation-readers/README.md) 提供 Codex、Claude Code、ZCode、Qoder CN、WorkBuddy 各一个 `Skill + scripts`，用于对话列表、检索、按 ID 读取和分页展开。它需要 Python 3.11+，独立检查与打包，不自动写入记忆，也未加入现有 XMemory 市场。下述命令仍针对原记忆插件；扩展命令见其说明。
+
 Python 3.11+ 仅供维护仓库使用，不是插件运行依赖。
 
 ```bash

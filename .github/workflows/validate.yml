@@ -25,7 +25,11 @@ jobs:
           python-version: "3.11"
       - name: Check XMemory package
         run: python -B tools/check_package.py
+      - name: Check Conversation Readers package
+        run: python -B tools/build_conversation_readers.py --check
       - name: Run unit tests
         run: python -B -m unittest discover -s tests -v
       - name: Build XMemory archives
         run: python -B tools/build_release.py --output "$RUNNER_TEMP/xmemory-release"
+      - name: Build Conversation Readers archives
+        run: python -B tools/build_conversation_readers.py --output "$RUNNER_TEMP/conversation-readers-release"
