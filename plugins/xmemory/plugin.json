@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "xmemory",
+  "version": "1.1.0",
+  "description": "XMemory：用设置、记录、采集、整理、调取五个技能维护可追溯的文件式记忆。纯技能，无后台服务。"
+}

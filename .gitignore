@@ -1,0 +1,45 @@
+# 系统文件与 Python 运行缓存
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# 本机私有材料与构建产物
+/local/
+/dist/
+*.log
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# 凭据与本地环境；仅允许不含真实凭据的示例模板
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 客户端本机状态；正式插件和市场清单保留
+/.codex/
+/.claude/
+/.zcode/
+/.qoder/
+/.qoder-cn/
+/.workbuddy/
+!/.agents/
+/.agents/*
+!/.agents/plugins/
+/.agents/plugins/*
+!/.agents/plugins/marketplace.json
+# 覆盖全局忽略规则中的 .zcode*/，ZCode 插件清单必须随仓库提交
+!/plugins/xmemory/.zcode-plugin/
+!/plugins/conversation-readers/.zcode-plugin/

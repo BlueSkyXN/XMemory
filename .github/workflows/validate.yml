@@ -1,0 +1,35 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Package checks, tests and builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Check XMemory package
+        run: python -B tools/check_package.py
+      - name: Check Conversation Readers package
+        run: python -B tools/build_conversation_readers.py --check
+      - name: Run unit tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Build XMemory archives
+        run: python -B tools/build_release.py --output "$RUNNER_TEMP/xmemory-release"
+      - name: Build Conversation Readers archives
+        run: python -B tools/build_conversation_readers.py --output "$RUNNER_TEMP/conversation-readers-release"
