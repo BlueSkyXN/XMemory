@@ -1,0 +1,12 @@
+{
+  "name": "xmemory-codex",
+  "interface": { "displayName": "XMemory" },
+  "plugins": [
+    {
+      "name": "xmemory",
+      "source": { "source": "local", "path": "./plugins/xmemory" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

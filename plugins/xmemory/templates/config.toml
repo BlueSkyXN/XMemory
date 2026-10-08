@@ -1,0 +1,35 @@
+# XMemory 用户级集中库配置，默认位于 ~/.agents/memory/config.toml。
+# 这不是客户端原生配置；不把示例身份和路径当成真实设置。
+# 记忆内容不登记设备：路径只在部分机器上存在是正常的，本机没有就跳过。
+format = "xmemory/v1"
+# explicit：只在用户要求时记录；milestone：另在被纠正、说明偏好、做出决定、阶段交接时记录。
+capture = "explicit"
+
+# 登记实际项目时再取消相应注释并填入真实值。
+# 项目身份优先看项目根 AGENTS.md / CLAUDE.md 中的“XMemory 项目 ID”，
+# 其次 repo（Git 远程地址），最后 paths（候选位置，不区分机器）。
+# [projects.example]
+# name = "示例项目"
+# repo = "github.com/owner/example"
+# paths = ["~/work/example"]
+# owner = "xmemory"
+
+# 外部维护项目只登记入口，不在本库建立项目正文。
+# [projects.existing]
+# name = "已有项目记忆"
+# owner = "external"
+# entry = "/absolute/path/to/existing-memory/MEMORY.md"
+
+# 来源只读；kind 为 memory / session / files / results。
+# [sources.example-files]
+# scope = "project:example"
+# kind = "files"
+# path = "/absolute/path/to/project/docs"
+# enabled = false
+
+# [sources.example-history]
+# scope = "project:example"
+# kind = "session"
+# path = "/absolute/path/to/approved-export"
+# reader = "用户提供的可见对话 Markdown 导出"
+# enabled = false

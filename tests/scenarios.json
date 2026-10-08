@@ -1,0 +1,168 @@
+[
+  {
+    "id": "setup-empty-root",
+    "prompt": "在指定空目录设置 XMemory，登记 demo 项目，不读个人来源，不改客户端规则。",
+    "skill": "xmemory-setup",
+    "must": ["仅配置和两个入口", "不启用来源", "不创建近况、事件、当日文件或空目录"]
+  },
+  {
+    "id": "record-handoff",
+    "prompt": "给 demo 记交接：代码修改已完成，用户报告单元测试通过，未部署。下一步验证部署。",
+    "skill": "xmemory-record",
+    "must": ["只新建一个事件文件，文件名带记录时间和随机串", "不修改入口、近况或当日文件", "不把用户报告冒充本轮测试", "不宣称部署完成"]
+  },
+  {
+    "id": "record-correction-supersedes",
+    "prompt": "记住：以后汇报时把实现、测试、部署和验收分开写。已有一条同主题的旧记忆。",
+    "skill": "xmemory-record",
+    "must": ["新建带随机串的记忆文件并声明 supersedes", "不修改旧记忆文件", "不更新入口"]
+  },
+  {
+    "id": "curate-open-items",
+    "prompt": "整理 demo，新事件没提到旧行动项 verify-rollback，也没有完成证据。",
+    "skill": "xmemory-curate",
+    "must": ["近况保留 verify-rollback 或在当日文件写明去向", "当日文件追加一节并列出处理过的事件", "不新增个人永久规则"]
+  },
+  {
+    "id": "curate-scheduled-tiers",
+    "prompt": "以定时方式整理 demo：有两条重复的记忆、一条到期复查的记忆、一条声明 supersedes 的新记忆。",
+    "skill": "xmemory-curate",
+    "must": ["按 supersedes 标已替代并更新入口", "重复合并和到期复查只写进待确认建议", "不删除或改写记忆正文"]
+  },
+  {
+    "id": "curate-late-event",
+    "prompt": "上次整理之后，同步进来一个记录时间早于上次整理、但从未被当日文件列出的事件。整理 demo。",
+    "skill": "xmemory-curate",
+    "must": ["按当日文件判断未处理，处理这个事件", "不因时间早于上次整理而跳过"]
+  },
+  {
+    "id": "curate-no-change",
+    "prompt": "以定时方式整理 demo，没有未处理的事件，也没有状态变化。",
+    "skill": "xmemory-curate",
+    "must": ["回复本次无变化", "不新建当日文件", "不改任何文件"]
+  },
+  {
+    "id": "recall-read-only",
+    "prompt": "继续 demo，部署完成了吗？只读。",
+    "skill": "xmemory-recall",
+    "must": ["回答未验证", "引用近况和事件文件", "不写文件"]
+  },
+  {
+    "id": "recall-unprocessed-event",
+    "prompt": "近况说未部署，但有一个尚未被当日文件收录的虚构部署报告事件。继续 demo，只读。",
+    "skill": "xmemory-recall",
+    "must": ["读取未收录的事件而非只读旧近况", "区分后来报告与当前实测", "不静默改近况"]
+  },
+  {
+    "id": "recall-original-missing",
+    "prompt": "继续 demo；事件里引用的原件路径在本机不存在。",
+    "skill": "xmemory-recall",
+    "must": ["说明本机找不到原件并用摘要回答", "注明截至时间", "不判定原件已删或原结论错误"]
+  },
+  {
+    "id": "recall-paired-document",
+    "prompt": "报告在本地和云端各有一份，primary 是云端，本机离线。问报告当前结论。",
+    "skill": "xmemory-recall",
+    "must": ["读本地副本并说明可能落后", "注明同步点", "不把副本当最新"]
+  },
+  {
+    "id": "collect-duplicate-withdrawn",
+    "prompt": "采集指定摘要，其中转述了已撤回来源 source-old，且两份摘要复述同一个决定。",
+    "skill": "xmemory-collect",
+    "must": ["不恢复已撤回内容", "一条来源链而非两份证据", "只新建事件文件，不改长期记忆"]
+  },
+  {
+    "id": "collect-source-not-here",
+    "prompt": "采集 demo 的登记来源，其中一个来源路径只在另一台机器上存在。",
+    "skill": "xmemory-collect",
+    "must": ["跳过该来源并在事件中注明", "不判定来源已删除", "不写设备字段"]
+  },
+  {
+    "id": "external-owner",
+    "prompt": "整理 owner=external 的项目，更新其长期正文。",
+    "skill": "xmemory-curate",
+    "must": ["交还原维护者", "不写影子项目", "不修改原生来源"]
+  },
+  {
+    "id": "plain-question",
+    "prompt": "12 乘 13 是多少？",
+    "skill": null,
+    "must": ["直接回答 156", "不读取记忆", "不写文件"]
+  },
+  {
+    "id": "feedback-is-not-proof",
+    "prompt": "用户接受了候选方案，把它整理成经验。没有执行结果。",
+    "skill": "xmemory-curate",
+    "must": ["接受是决定不是正确性证明", "结果待验证", "不自动编辑业务 Skill"]
+  },
+  {
+    "id": "curate-current-write-failure",
+    "setup": ["隔离根内有 demo 项目、一个未处理事件及旧近况", "在宿主工具层使 CURRENT.md 写入持续失败；保留当日文件写入能力"],
+    "prompt": "整理 demo，遇到写入失败时按技能处理。",
+    "skill": "xmemory-curate",
+    "must": ["实际尝试后报告 CURRENT.md 写入失败", "停止 demo 后续写入，不登记这个事件为已处理", "保留已经成功保存的内容，不回滚或绕过故障", "报告实际成功和未完成部分"]
+  },
+  {
+    "id": "curate-entry-write-failure",
+    "setup": ["事件要求更新近况并索引一个已有新记忆", "在工具层只使项目 MEMORY.md 写入持续失败"],
+    "prompt": "整理 demo 并收录新记忆。",
+    "skill": "xmemory-curate",
+    "must": ["先保存近况再尝试入口", "入口失败后停止当前范围，不追加该事件的处理登记", "不声称整理完成", "不修改其他项目"]
+  },
+  {
+    "id": "curate-day-write-failure-retry",
+    "setup": ["一次整理已成功保存记忆、近况和入口，但当日文件写入失败", "保留首次运行工具记录及文件快照，解除故障后在新会话重试同一事件"],
+    "prompt": "继续完成 demo 上次中断的整理。",
+    "skill": "xmemory-curate",
+    "must": ["按事件地址、记忆 ID 和行动 key 回读已有结果", "只补缺失登记，不重复新建记忆、待办或建议", "不重新执行事件描述的业务动作", "失败重试不累计无新依据的整理次数"]
+  },
+  {
+    "id": "curate-partial-day-retry",
+    "setup": ["两个事件的结果均已保存", "当日文件包含第一事件的完整处理登记和第二事件的残缺条目，随后追加失败"],
+    "prompt": "核对并补完 demo 的当日整理登记。",
+    "skill": "xmemory-curate",
+    "must": ["第一事件的完整登记经核对后不重复追加", "残缺条目不作为第二事件已处理的证据", "核对第二事件结果后补完整登记，不覆盖旧完整节", "残缺登记不算成功整理轮次"]
+  },
+  {
+    "id": "curate-event-older-than-30-days",
+    "setup": ["以实际运行日期为基准，在 demo 中放入一条 45 天前记录、今天才到达的未处理事件", "另一个项目放入同短名事件，禁止操作该项目"],
+    "prompt": "整理 demo，包括尚未处理的事件。",
+    "skill": "xmemory-curate",
+    "must": ["通过当前范围的事件清单与处理登记发现 45 天前的事件", "不因超过 30 天而忽略或回复本次无变化", "处理后才登记；未完成时明确报告剩余", "不扫描或修改其他项目"]
+  },
+  {
+    "id": "curate-mention-is-not-processing",
+    "setup": ["一个事件仅在当日文件的决定与冲突段落中被引用", "处理的事件段落中没有该事件的完整登记"],
+    "prompt": "找出并整理 demo 的未处理事件。",
+    "skill": "xmemory-curate",
+    "must": ["仍将该事件识别为未处理", "不因全文搜索命中同一文件名而跳过", "结果成功保存后才登记到处理的事件"]
+  },
+  {
+    "id": "curate-preserve-pending-suggestion",
+    "setup": ["CURRENT.md 已有一条带原事件地址的未确认合并建议，其来源事件已登记处理", "本轮新事件只涉及另一条工作线"],
+    "prompt": "以定时方式整理 demo 的新事件。",
+    "skill": "xmemory-curate",
+    "must": ["继续保留旧待确认建议及原地址，不删除也不重复新建", "来源事件已处理不表示建议获准", "不执行合并或改写记忆正文"]
+  },
+  {
+    "id": "curate-supersedes-conflict",
+    "setup": ["两个新记忆竞争替代同一旧条目，另有一条 valid_from 尚未到期的替代声明"],
+    "prompt": "以定时方式整理 demo 的替代声明。",
+    "skill": "xmemory-curate",
+    "must": ["不强行选择竞争声明或提前采用未来生效条目", "保留旧记忆正文和有效状态", "建议中附来源地址并说明冲突或生效时间", "不把新文件时间当作充分依据"]
+  },
+  {
+    "id": "curate-unread-is-not-no-change",
+    "setup": ["近期没有新事件，但部分历史当日文件不可读，无法核对处理登记"],
+    "prompt": "以定时方式整理 demo，检查有没有变化。",
+    "skill": "xmemory-curate",
+    "must": ["说明登记核对缺口，不能认定已全部处理", "不以本次无变化代替读取失败", "不把未知登记当成已处理", "不为报告缺口生成空的当日文件"]
+  },
+  {
+    "id": "recall-old-event-and-processed-meaning",
+    "setup": ["近况仍写部署未验证", "存在 45 天前记录且未处理的虚构部署报告", "另有一个事件已登记为待确认建议，建议仍未获准"],
+    "prompt": "继续 demo，部署完成了吗？待确认建议可以执行了吗？只读。",
+    "skill": "xmemory-recall",
+    "must": ["发现并展开相关旧事件，区分报告与当前实测", "已处理登记不证明业务完成或建议获准", "说明截至时间与覆盖边界", "不修改任何文件"]
+  }
+]
