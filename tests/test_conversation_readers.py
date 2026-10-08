@@ -290,6 +290,253 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(out["items"][0]["session_id"], "session-demo")
         self.assertEqual(out["items"][0]["variant"], "desktop")
 
+    def test_xr001_complete_sensitive_text_values(self):
+        values = [
+            'password="SYNTHETIC_PREFIX SYNTHETIC_SUFFIX"',
+            "password='SYNTHETIC_PREFIX SYNTHETIC_SUFFIX'",
+            'password="SYNTHETIC_PREFIX\\" quoted SYNTHETIC_SUFFIX"',
+            "password='SYNTHETIC_PREFIX\\' quoted SYNTHETIC_SUFFIX'",
+            'password="SYNTHETIC_PREFIX\nSYNTHETIC_SUFFIX"',
+            'password="SYNTHETIC_PREFIX\\nSYNTHETIC_SUFFIX"',
+            'password=SYNTHETIC_PREFIX SYNTHETIC_SUFFIX',
+        ]
+        for value in values:
+            with self.subTest(value=value):
+                text = "正常前文\n" + value + "\n正常后文"
+                result = reader.redact(text)
+                self.assertNotIn("SYNTHETIC_", result)
+                self.assertIn("正常前文", result)
+                self.assertIn("正常后文", result)
+                self.assertEqual(reader.redact(result), result)
+        self.assertEqual(reader.redact('password="SYNTHETIC_PREFIX" 然后继续检查'),
+                         'password="[REDACTED]" 然后继续检查')
+
+    def test_xr001_nested_tool_values_and_json_arguments(self):
+        value = {"normal": "保留", "nested": [
+            {"password": "SYNTHETIC_PREFIX SYNTHETIC_SUFFIX"},
+            {"API_KEY": {"nested": "SYNTHETIC_OBJECT"}},
+            {"authorization": ["SYNTHETIC_LIST", "SYNTHETIC_TAIL"]},
+            {"refresh-token": "SYNTHETIC_MULTILINE\nSYNTHETIC_END"},
+        ]}
+        for raw in (value, json.dumps(value)):
+            with self.subTest(encoded=isinstance(raw, str)):
+                result = reader.tool_text(raw)
+                self.assertNotIn("SYNTHETIC_", result)
+                decoded = json.loads(result)
+                self.assertEqual(decoded["normal"], "保留")
+                self.assertEqual(decoded["nested"][1]["API_KEY"], "[REDACTED]")
+        self.assertEqual(reader.scrub(value)["nested"][2]["authorization"], "[REDACTED]")
+
+    def test_xr001_redacted_pagination_uses_stable_offsets(self):
+        text = '正常前文 password="SYNTHETIC_PREFIX SYNTHETIC_SUFFIX" 正常后文' * 3
+        p = self.write("redacted.jsonl", [self.claude(text=text)])
+        script = ROOT / "plugins/conversation-readers/skills" / SKILLS["claude"] / "scripts/read_conversations.py"
+        first = self.read("claude", p, "read", "--session", "session-demo")
+        expected = first["items"][0]["text"]
+        record = first["items"][0]["record_ref"]
+        snapshot = next(iter(first["snapshot"].values()))
+        offset, chunks = 0, []
+        while offset is not None:
+            run = subprocess.run([sys.executable, "-B", str(script), "read", "--root", str(p),
+                                  "--session", "session-demo", "--record", record, "--snapshot", snapshot,
+                                  "--text-offset", str(offset), "--max-chars", "17"], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            item = json.loads(run.stdout)["items"][0]
+            self.assertEqual(item["text_offset"], offset)
+            self.assertEqual(item["text_chars"], len(expected))
+            self.assertEqual(item["text"], expected[offset:offset + 17])
+            chunks.append(item["text"])
+            offset = item["next_text_offset"]
+        self.assertEqual("".join(chunks), expected)
+        self.assertNotIn("SYNTHETIC_", expected)
+
+    def test_xr001_tool_json_is_not_redacted_after_serialization(self):
+        payload = {"password": "SYNTHETIC_PREFIX SYNTHETIC_SUFFIX",
+                   "note": '正常前文 password="SYNTHETIC_NESTED SYNTHETIC_END" 正常后文'}
+        p = self.write("tool.jsonl", [self.claude(), {"type": "assistant", "sessionId": "session-demo",
+                         "message": {"content": [{"type": "tool_use", "id": "c", "input": payload}]}}])
+        out = self.read("claude", p, "read", "--session", "session-demo", "--include-tools")
+        text = out["items"][-1]["text"]
+        self.assertNotIn("SYNTHETIC_", text)
+        self.assertEqual(json.loads(text), {"password": "[REDACTED]",
+                         "note": '正常前文 password="[REDACTED]" 正常后文'})
+
+    def test_xr002_mixed_native_sessions_are_rejected(self):
+        for client in ("claude", "qodercn", "workbuddy", "codex"):
+            with self.subTest(client=client):
+                if client == "workbuddy":
+                    rows = [dict(type="message", role="user", sessionId=s, content=f"正文-{s}") for s in ("A", "B")]
+                elif client == "codex":
+                    rows = []
+                    for sid in ("A", "B"):
+                        rows += [{"type": "session_meta", "payload": {"id": sid}},
+                                 {"type": "response_item", "payload": {"type": "message", "role": "user", "content": "正文-" + sid}}]
+                else:
+                    rows = [self.claude(sid=s, text="正文-" + s) for s in ("A", "B")]
+                p = self.write(client + ".jsonl", rows)
+                out = self.read(client, p, "search", "--query", "正文-A")
+                self.assertEqual(out["items"], [])
+                self.assertFalse(out["coverage"]["scan_complete"])
+                self.assertIn("mixed_session_ids", " ".join(out["warnings"]))
+                script = ROOT / "plugins/conversation-readers/skills" / SKILLS[client] / "scripts/read_conversations.py"
+                run = subprocess.run([sys.executable, "-B", str(script), "read", "--root", str(p), "--session", "B"],
+                                     capture_output=True, text=True)
+                self.assertEqual(run.returncode, 2)
+                self.assertIn("mixed_session_ids", " ".join(json.loads(run.stdout)["warnings"]))
+
+    def test_xr002_subagent_and_message_identity_are_preserved(self):
+        p = self.write("subagents/agent-demo.jsonl", [self.claude(sid="parent-demo", parentUuid="parent-message")])
+        out = self.read("claude", p, "list", "--include-subagents")
+        self.assertEqual(out["items"][0]["parent_session_id"], "parent-demo")
+        ref = out["items"][0]["session_ref"]
+        item = self.read("claude", p, "read", "--session", ref, "--include-subagents")["items"][0]
+        self.assertEqual(item["native_session_id"], "parent-demo")
+        self.assertEqual(item["message_id"], "u1")
+        self.assertEqual(item["parent_id"], "parent-message")
+        self.assertIn("#byte:0", item["source_ref"])
+
+    def test_xr003_wrong_client_body_is_not_empty_success(self):
+        p = self.write("workbuddy.jsonl", [{"type": "message", "sessionId": "s", "role": "user", "content": "目标正文"}])
+        self.assertEqual(len(self.read("workbuddy", p, "search", "--query", "目标")["items"]), 1)
+        for client in ("claude", "qodercn"):
+            with self.subTest(client=client):
+                out = self.read(client, p, "search", "--query", "目标", "--role", "assistant")
+                self.assertEqual(out["items"], [])
+                self.assertFalse(out["coverage"]["scan_complete"])
+                self.assertIn("unsupported_body", " ".join(out["warnings"]))
+                self.assertEqual(out["coverage"]["content_status"], "unsupported")
+
+    def test_xr003_valid_no_match_filtered_and_metadata_only(self):
+        p = self.write("valid.jsonl", [self.claude()])
+        no_match = self.read("claude", p, "search", "--query", "不存在")
+        filtered = self.read("claude", p, "read", "--session", "session-demo", "--role", "assistant")
+        meta = self.write("meta.jsonl", [self.claude(isMeta=True),
+                                          {"type": "ai-title", "sessionId": "session-demo", "aiTitle": "只有元事件"}])
+        metadata_only = self.read("claude", meta, "read", "--session", "session-demo")
+        for out in (no_match, filtered, metadata_only):
+            self.assertEqual(out["items"], [])
+            self.assertEqual(out["warnings"], [])
+            self.assertTrue(out["coverage"]["scan_complete"])
+        self.assertEqual(no_match["coverage"]["content_status"], "no_match")
+        self.assertEqual(filtered["coverage"]["content_status"], "filtered_out")
+        self.assertEqual(metadata_only["coverage"]["content_status"], "metadata_only")
+
+    def test_xr003_partial_body_preserves_supported_records(self):
+        p = self.write("partial.jsonl", [self.claude(text="正常正文"),
+                                          {"type": "message", "sessionId": "session-demo", "role": "user", "content": "未知正文"}])
+        out = self.read("claude", p, "read", "--session", "session-demo")
+        self.assertEqual([i["text"] for i in out["items"]], ["正常正文"])
+        self.assertEqual(out["coverage"]["content_status"], "partial")
+        self.assertFalse(out["coverage"]["scan_complete"])
+
+    def test_xr003_malformed_body_types_are_reported_before_filters(self):
+        p = self.write("malformed.jsonl", [self.claude(text="正常正文"),
+            {"sessionId": "session-demo", "type": []},
+            {"sessionId": "session-demo", "type": "assistant", "message": {"content": [{"type": [], "text": "未知"}]}}])
+        out = self.read("claude", p, "read", "--session", "session-demo", "--role", "tool")
+        self.assertEqual(out["items"], [])
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertTrue(out["coverage"]["metadata_complete"])
+        self.assertEqual(out["coverage"]["content_status"], "partial")
+        self.assertEqual(sum("unsupported_body" in w for w in out["warnings"]), 2)
+
+    def test_xr004_middle_title_in_large_jsonl(self):
+        rows = [dict(self.claude(text="前" * 20000), uuid=f"before-{i}") for i in range(4)]
+        rows += [{"type": "ai-title", "sessionId": "session-demo", "aiTitle": "中段原生标题"}]
+        rows += [dict(self.claude(text="后" * 20000), uuid=f"after-{i}") for i in range(4)]
+        p = self.write("large.jsonl", rows)
+        self.assertGreater(p.stat().st_size, 192 * 1024)
+        out = self.read("claude", p, "list", "--query", "中段原生标题")
+        self.assertEqual(out["items"][0]["title"], "中段原生标题")
+        self.assertTrue(out["items"][0]["metadata_complete"])
+        self.assertNotIn("后" * 100, json.dumps(out, ensure_ascii=False))
+
+    def test_xr004_long_final_record_keeps_time_filtered_hit(self):
+        rows = [dict(self.claude(text="旧" * 20000), uuid=f"old-{i}") for i in range(4)]
+        rows += [dict(self.claude(text="长" * 90000 + "最新目标"), uuid="latest", timestamp="2026-10-08T12:00:00Z")]
+        p = self.write("large-time.jsonl", rows)
+        plain = self.read("claude", p, "search", "--query", "最新目标", "--max-chars", "20")
+        dated = self.read("claude", p, "search", "--query", "最新目标", "--since", "2026-10-08", "--max-chars", "20")
+        self.assertEqual(dated["items"], plain["items"])
+        self.assertEqual(len(dated["items"]), 1)
+        listed = self.read("claude", p, "list", "--since", "2026-10-08")
+        self.assertEqual(listed["items"][0]["updated_at"], "2026-10-08T12:00:00Z")
+
+    def test_xr005_qodercn_invalid_shapes_preserve_good_records(self):
+        p = self.qoder_db()
+        invalid = [[], None, "not an object", {"role": "assistant", "parts": "bad"},
+                   {"role": "assistant", "parts": [None, {"type": "tool", "tool": []}]},
+                   {"role": "assistant", "tools": "bad"}, {"role": []},
+                   {"role": "assistant", "parts": [{"type": []}, {"type": "tool", "tool": None},
+                                                      {"type": "text", "text": []}]}]
+        rows = [{"role": "user", "text": "正常前文"}, *invalid, {"role": "assistant", "text": "正常后文"}]
+        with sqlite3.connect(p) as c:
+            for i, payload in enumerate(rows):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", f"m{i}", i, json.dumps(payload), i))
+        script = ROOT / "plugins/conversation-readers/skills" / SKILLS["qodercn"] / "scripts/read_conversations.py"
+        run = subprocess.run([sys.executable, "-B", str(script), "read", "--root", str(p),
+                              "--session", "session-demo", "--include-tools"], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        out = json.loads(run.stdout)
+        self.assertEqual([i["text"] for i in out["items"]], ["正常前文", "正常后文"])
+        self.assertFalse(out["coverage"]["scan_complete"])
+        for i in range(1, len(rows) - 1):
+            self.assertIn(f"message:m{i}", " ".join(out["warnings"]))
+
+    def test_xr005_zcode_invalid_nested_shapes_preserve_good_parts(self):
+        p = self.root / "zcode.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES('s','测试','/work/demo',1,2)")
+            for i, value in enumerate([[], None, "bad", {"role": "assistant", "semantics": []}, {"role": "assistant"}, {"role": []}]):
+                c.execute("INSERT INTO message VALUES(?,?,?,?)", (f"m{i}", "s", i, json.dumps(value)))
+            for i, value in enumerate([[], None, "bad", {"type": "tool", "state": "bad"}, {"type": "text", "text": "正常内容"},
+                                       {"type": []}, {"type": "tool", "state": None}, {"type": "text", "text": []}]):
+                c.execute("INSERT INTO part VALUES(?,?,?,?,?)", (f"p{i}", "m4", "s", i, json.dumps(value)))
+        out = self.read("zcode", p, "read", "--session", "s", "--include-tools")
+        self.assertEqual([i["text"] for i in out["items"]], ["正常内容"])
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertIn("message:m3", " ".join(out["warnings"]))
+        self.assertIn("part:p3", " ".join(out["warnings"]))
+
+    def test_xr006_qodercn_interleaved_parts_and_pagination(self):
+        p = self.qoder_db()
+        parts = [{"id": "t1", "type": "text", "text": "第一段"},
+                 {"id": "p1", "type": "tool", "tool": {"id": "c1", "input": {}, "response": "结果一"}},
+                 {"id": "t2", "type": "text", "text": "第二段"},
+                 {"id": "p2", "type": "tool", "tool": {"id": "c2", "input": {}, "response": "结果二"}},
+                 {"id": "t3", "type": "text", "text": "第三段"}]
+        payload = {"role": "assistant", "parts": parts, "text": "重复文字投影",
+                   "tools": [part["tool"] for part in parts if part["type"] == "tool"]}
+        with sqlite3.connect(p) as c:
+            c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", "m1", 1, json.dumps(payload), 1))
+        args = ("read", "--session", "session-demo", "--include-tools")
+        full = self.read("qodercn", p, *args)
+        expected = ["第一段", "{}", "结果一", "第二段", "{}", "结果二", "第三段"]
+        self.assertEqual([i["text"] for i in full["items"]], expected)
+        paged, offset = [], 0
+        while offset is not None:
+            page = self.read("qodercn", p, *args, "--limit", "2", "--offset", str(offset))
+            paged += [i["text"] for i in page["items"]]
+            offset = page["next_offset"]
+        self.assertEqual(paged, expected)
+        text_only = self.read("qodercn", p, "read", "--session", "session-demo")
+        self.assertEqual([i["text"] for i in text_only["items"]], ["第一段", "第二段", "第三段"])
+
+    def test_xr006_qodercn_missing_projection_fallback(self):
+        p = self.qoder_db()
+        rows = [{"role": "assistant", "text": "回退文字", "parts": [
+                    {"type": "tool", "tool": {"id": "c1", "input": {}, "response": "结果一"}}]},
+                {"role": "assistant", "parts": [{"type": "text", "text": "正文"}],
+                 "tools": [{"id": "c2", "input": {}, "response": "回退结果"}]}]
+        with sqlite3.connect(p) as c:
+            for i, payload in enumerate(rows):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", f"m{i}", i, json.dumps(payload), i))
+        out = self.read("qodercn", p, "read", "--session", "session-demo", "--include-tools")
+        self.assertEqual([i["text"] for i in out["items"]], ["回退文字", "{}", "结果一", "正文", "{}", "回退结果"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,26 +15,67 @@ import sys
 MAX_LINE = 8 * 1024 * 1024
 TEXT_TYPES = {"text", "input_text", "output_text"}
 CLIENTS = {"codex", "claude", "zcode", "qodercn", "workbuddy"}
+SENSITIVE_KEYS = {"apikey", "accesstoken", "refreshtoken", "password", "authorization"}
+SENSITIVE_FIELD = re.compile(
+    r'''(?i)(?<![\w-])["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|authorization)["']?[ \t]*[:=][ \t]*''')
 
 
 class ReaderError(Exception):
-    pass
+    def __init__(self, message, warnings=None):
+        super().__init__(message)
+        self.warnings = warnings or []
 
 
 def redact(text):
+    # 先按字段边界读取整个值；引号内的空格、转义及换行不能截断敏感值。
+    pieces, cursor = [], 0
+    while match := SENSITIVE_FIELD.search(text, cursor):
+        begin = match.end()
+        pieces.append(text[cursor:begin])
+        if begin == len(text) or text[begin] in "\r\n":
+            cursor = begin
+            continue
+        quote = text[begin] if text[begin] in "\"'" else None
+        if quote:
+            end = begin + 1
+            while end < len(text):
+                if text[end] == "\\":
+                    end += 2
+                elif text[end] == quote:
+                    break
+                else:
+                    end += 1
+            if end < len(text):
+                pieces.append(quote + "[REDACTED]" + quote)
+                cursor = end + 1
+                continue
+            # 未闭合引号只遮蔽当前行，不吞掉其后的正常段落。
+            stop = re.search(r"[\r\n]", text[begin:])
+            end = begin + stop.start() if stop else len(text)
+            pieces.append(quote + "[REDACTED]")
+        else:
+            # 无引号的字段以行、分隔符或下一个赋值字段为界，允许值内含空格。
+            stop = re.search(r'''[\r\n,;}\]]|[ \t]+(?=[A-Za-z_][\w-]*[ \t]*[:=])''', text[begin:])
+            end = begin + stop.start() if stop else len(text)
+            if text.startswith("[REDACTED]", begin):
+                end = begin + len("[REDACTED]")
+            pieces.append("[REDACTED]")
+        cursor = end
+    pieces.append(text[cursor:])
+    text = "".join(pieces)
     text = re.sub(r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})\b", "[REDACTED]", text)
-    text = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", text)
-    return re.sub(r'''(?i)((?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|authorization)(?:["']?)\s*[:=]\s*["']?)([^\s,;"'}]+)''', r"\1[REDACTED]", text)
+    return re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", text)
 
 
 def scrub(value):
-    """在序列化前逐个遮蔽字符串值；对 JSON 文本整体替换会破坏转义。"""
+    """结构化敏感字段替换整个值，其余字符串按文本规则遮蔽。"""
     if isinstance(value, str):
         return redact(value)
     if isinstance(value, list):
         return [scrub(x) for x in value]
     if isinstance(value, dict):
-        return {k: scrub(x) for k, x in value.items()}
+        return {k: "[REDACTED]" if isinstance(k, str) and re.sub(r"[_-]", "", k).lower() in SENSITIVE_KEYS
+                else scrub(x) for k, x in value.items()}
     return value
 
 
@@ -51,7 +92,13 @@ def visible_text(value):
 
 def tool_text(value):
     if isinstance(value, str):
-        return value
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return redact(value)
+        if not isinstance(decoded, (dict, list)):
+            return redact(value)
+        value = decoded
     # 工具的结构化返回可包含业务 JSON；移除明确的隐藏推理键。
     def clean(v):
         if isinstance(v, dict):
@@ -59,9 +106,9 @@ def tool_text(value):
                     if k.lower() not in {"reasoning", "thinking", "encrypted_content", "signature"}}
         if isinstance(v, list):
             return [clean(x) for x in v if not isinstance(x, dict)
-                    or x.get("type") not in {"reasoning", "thinking", "redacted_thinking"}]
+                    or x.get("type") not in ("reasoning", "thinking", "redacted_thinking")]
         return v
-    return json.dumps(clean(value), ensure_ascii=False)
+    return json.dumps(scrub(clean(value)), ensure_ascii=False)
 
 
 def iso(value):
@@ -112,37 +159,28 @@ def columns(con, table, required):
     return names
 
 
-def json_rows(path, warnings, metadata_only=False):
-    """按打开时长度读快照；元数据只取文件头和尾，不载入整段历史。"""
+def json_rows(path, warnings):
+    """按打开时长度逐行读取；完整检查元数据，不缓存整段历史正文。"""
     start = path.stat()
     with path.open("rb") as stream:
-        if metadata_only and start.st_size > 192 * 1024:
-            regions = [(0, 128 * 1024), (max(0, start.st_size - 64 * 1024), start.st_size)]
-        else:
-            regions = [(0, start.st_size)]
-        for begin, end in regions:
-            stream.seek(begin)
-            if begin:
-                stream.readline(MAX_LINE + 1)  # 舍弃从中间开始的第一条。
-            while stream.tell() < end:
-                offset = stream.tell()
-                raw = stream.readline(min(MAX_LINE + 1, start.st_size - offset))
-                if not raw:
-                    break
-                if len(raw) > MAX_LINE:
-                    warnings.append(f"oversized_record: byte {offset}")
-                    while raw and not raw.endswith(b"\n") and stream.tell() < start.st_size:
-                        raw = stream.readline(min(MAX_LINE + 1, start.st_size - stream.tell()))
-                    continue
-                try:
-                    item = json.loads(raw)
-                    if not isinstance(item, dict):
-                        raise ValueError("not an object")
-                except (ValueError, UnicodeDecodeError):
-                    if not metadata_only:
-                        warnings.append(f"invalid_or_partial_record: byte {offset}")
-                    continue
-                yield offset, item
+        while stream.tell() < start.st_size:
+            offset = stream.tell()
+            raw = stream.readline(min(MAX_LINE + 1, start.st_size - offset))
+            if not raw:
+                break
+            if len(raw) > MAX_LINE:
+                warnings.append(f"oversized_record: {path}#byte:{offset}")
+                while raw and not raw.endswith(b"\n") and stream.tell() < start.st_size:
+                    raw = stream.readline(min(MAX_LINE + 1, start.st_size - stream.tell()))
+                continue
+            try:
+                item = json.loads(raw)
+                if not isinstance(item, dict):
+                    raise ValueError("not an object")
+            except (ValueError, UnicodeDecodeError):
+                warnings.append(f"invalid_or_partial_record: {path}#byte:{offset}")
+                continue
+            yield offset, item
     finish = path.stat()
     if (start.st_size, start.st_mtime_ns) != (finish.st_size, finish.st_mtime_ns):
         warnings.append("source_changed_during_read")
@@ -165,6 +203,82 @@ def summary(client, variant, sid, path, **kw):
                 session_ref=f"{client}:{variant}:{sid}", source=str(path), **kw)
 
 
+def content_supported(content):
+    if isinstance(content, str):
+        return True
+    if not isinstance(content, list):
+        return False
+    for block in content:
+        if not isinstance(block, dict):
+            return False
+        typ = block.get("type")
+        if not isinstance(typ, str):
+            return False
+        if typ in TEXT_TYPES:
+            if not isinstance(block.get("text"), str):
+                return False
+        elif typ not in {"tool_use", "tool_result", "image", "input_image", "file", "document",
+                         "thinking", "reasoning", "redacted_thinking"}:
+            return False
+    return True
+
+
+def json_record_kind(client, row):
+    """先判断正文形状，再应用查询条件；未知正文不能伪装为元数据。"""
+    typ = row.get("type")
+    if not isinstance(typ, str):
+        return "unsupported"
+    if client == "codex":
+        if typ in {"session_meta", "turn_context", "event_msg"}:
+            return "metadata"
+        if typ in {"response_item", "compacted"}:
+            p = row.get("payload")
+            if not isinstance(p, dict):
+                return "unsupported"
+            if typ == "compacted":
+                return "body" if isinstance(p.get("message"), str) else "unsupported"
+            kind = p.get("type")
+            if not isinstance(kind, str):
+                return "unsupported"
+            if kind == "reasoning" or (kind == "message" and
+                    (p.get("channel") == "analysis" or p.get("role") in ("system", "developer"))):
+                return "metadata"
+            if kind == "message":
+                return "body" if p.get("role") in ("user", "assistant") and content_supported(p.get("content")) else "unsupported"
+            if kind in {"function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"}:
+                return "body"
+            return "unsupported"
+    elif client in {"claude", "qodercn"}:
+        if row.get("isMeta") or typ in {"system", "progress", "thinking", "reasoning", "redacted_thinking"}:
+            return "metadata"
+        if typ in {"user", "assistant"}:
+            message = row.get("message")
+            return "body" if isinstance(message, dict) and content_supported(message.get("content")) else "unsupported"
+    elif client == "workbuddy":
+        if typ in {"reasoning", "thinking", "redacted_thinking"}:
+            return "metadata"
+        if typ == "message":
+            if row.get("role") in ("system", "developer"):
+                return "metadata"
+            return "body" if row.get("role") in ("user", "assistant") and content_supported(row.get("content")) else "unsupported"
+        if typ in {"function_call", "function_call_result"}:
+            return "body"
+    if typ in {"ai-title", "custom-title", "queue-operation", "file-history-snapshot"}:
+        return "metadata"
+    if typ in {"response_item", "compacted", "user", "assistant", "message", "function_call",
+               "custom_tool_call", "function_call_result", "function_call_output"} or any(
+            key in row for key in ("message", "content", "text", "output", "arguments", "payload")):
+        return "unsupported"
+    return "metadata"
+
+
+def native_session_id(client, row):
+    if client == "codex" and row.get("type") == "session_meta":
+        payload = row.get("payload")
+        return (payload.get("id") or payload.get("session_id")) if isinstance(payload, dict) else None
+    return row.get("sessionId")
+
+
 def json_summary(client, path, warnings):
     if client == "zcode":
         raise ReaderError("unsupported_source: ZCode 使用已核实的 SQLite 对话表")
@@ -173,35 +287,55 @@ def json_summary(client, path, warnings):
     result = summary(client, "jsonl", sid, path, title=None, title_origin=None,
                      project=None, parent_session_id=None, created_at=None, updated_at=None,
                      archived="archived_sessions" in path.parts, id_origin="filename")
-    recognized = False
-    for _, row in json_rows(path, warnings, metadata_only=True):
+    recognized, identities = False, set()
+    parse_warnings = []
+    counts = {"body": 0, "metadata": 0, "unsupported": 0}
+    for offset, row in json_rows(path, parse_warnings):
         typ = row.get("type")
         payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        native = native_session_id(client, row)
+        if native:
+            identities.add(str(native))
+        kind = json_record_kind(client, row)
+        counts[kind] += 1
+        if kind == "unsupported":
+            warnings.append(f"unsupported_body: {path}#byte:{offset}; 不符合 {client} 正文格式")
         if client == "codex" and typ == "session_meta":
             recognized = True
             result["session_id"] = str(payload.get("id") or payload.get("session_id") or sid)
             result["project"] = payload.get("cwd")
             result["created_at"] = iso(payload.get("timestamp") or row.get("timestamp"))
             result["id_origin"] = "session_meta"
-        elif row.get("sessionId"):
-            recognized = client != "codex"
+        elif client != "codex" and row.get("sessionId"):
+            recognized = True
             result["session_id"] = str(row["sessionId"])
             result["id_origin"] = "sessionId"
         if row.get("cwd"):
             result["project"] = row["cwd"]
         if row.get("agentId"):
             result["agent_id"] = row["agentId"]
-        if typ in {"ai-title", "custom-title"}:
+        if typ in ("ai-title", "custom-title"):
             title = row.get("aiTitle") or row.get("customTitle") or row.get("title")
             if title:
                 result.update(title=title, title_origin=typ)
         stamp = row.get("timestamp")
         if stamp:
-            result["created_at"] = result["created_at"] or iso(stamp)
+            if result["created_at"] is None or epoch(stamp) < epoch(result["created_at"]):
+                result["created_at"] = iso(stamp)
             if epoch(stamp) >= epoch(result["updated_at"]):
                 result["updated_at"] = iso(stamp)
+    warnings.extend(parse_warnings)
+    if len(identities) > 1:
+        raise ReaderError("mixed_session_ids: 文件包含多个原生会话身份；未适配的继承或恢复组合不统一署名")
     if not recognized:
         raise ReaderError("unsupported_or_incomplete_jsonl_metadata")
+    if identities:
+        result["session_id"] = next(iter(identities))
+    result["metadata_complete"] = not parse_warnings
+    result["metadata_scan"] = "full_stream"
+    result["body_records"] = counts["body"]
+    result["body_format"] = ("partial" if counts["body"] else "unsupported") if counts["unsupported"] else (
+        "supported" if counts["body"] else "metadata_only")
     result["updated_at"] = result["updated_at"] or iso(path.stat().st_mtime)
     result["session_ref"] = f'{client}:jsonl:{result["session_id"]}'
     if "subagents" in path.parts:
@@ -293,7 +427,7 @@ def catalogue(client, args, warnings):
         try:
             result.append(json_summary(client, p, warnings))
         except (OSError, ValueError, ReaderError) as exc:
-            warnings.append(f"source_error: {p}: {type(exc).__name__}")
+            warnings.append(f"source_error: {p}: {exc}")
     for p in sorted(dbs):
         try:
             if args.session:
@@ -316,8 +450,9 @@ def catalogue(client, args, warnings):
             except (sqlite3.Error, ReaderError):
                 warnings.append("title_index_unavailable")
     result = [s for s in result if project_matches(s.get("project"), args.project)
-              and (not args.since or epoch(s.get("updated_at")) >= args.since)
-              and (not args.until or epoch(s.get("created_at")) <= args.until)]
+              and (args.action != "list" or not s.get("metadata_complete", True) or (
+                  (not args.since or not s.get("updated_at") or epoch(s["updated_at"]) >= args.since)
+                  and (not args.until or not s.get("created_at") or epoch(s["created_at"]) <= args.until)))]
     return sorted(result, key=lambda s: (epoch(s.get("updated_at")), s["session_ref"], s["source"]), reverse=True)
 
 
@@ -341,12 +476,17 @@ def sqlite_one(client, path, requested):
 
 
 def event(s, locator, role, text, *, kind="message", native_id=None, parent_id=None,
-          record_id=None, call_id=None, name=None, stamp=None, turn_id=None):
-    return dict(session_ref=s["session_ref"], session_id=s["session_id"],
+          record_id=None, call_id=None, name=None, stamp=None, turn_id=None, native_session_id=None):
+    # 在截断和计算偏移之前遮蔽完整正文及元数据，切片后不再改变文本长度。
+    result = scrub(dict(session_ref=s["session_ref"], session_id=s["session_id"],
+                native_session_id=native_session_id,
                 message_id=native_id, record_id=record_id, parent_id=parent_id, turn_id=turn_id,
                 role=role, kind=kind, timestamp=iso(stamp), call_id=call_id, tool_name=name,
-                text=redact(text), source_ref=f'{s["source"]}#{locator}',
-                record_ref=f'{s["session_ref"]}@{locator}')
+                source_ref=f'{s["source"]}#{locator}',
+                record_ref=f'{s["session_ref"]}@{locator}'))
+    # 工具内容已按结构遮蔽并序列化，不能再用文本规则处理其 JSON 转义。
+    result["text"] = text if kind in {"tool_call", "tool_result"} else redact(text)
+    return result
 
 
 def blocks(s, content, locator, base, include_tools):
@@ -359,7 +499,11 @@ def blocks(s, content, locator, base, include_tools):
             continue
         typ = b.get("type")
         loc = f"{locator}/block:{i}"
+        if not isinstance(typ, str):
+            continue
         if typ in TEXT_TYPES:
+            if not isinstance(b.get("text"), str):
+                continue
             text = visible_text(b)
             if text:
                 kind = "summary" if text.startswith("This session is being continued") else "message"
@@ -380,25 +524,33 @@ def json_events(s, warnings, include_tools):
         typ = o.get("type")
         p = o.get("payload") if isinstance(o.get("payload"), dict) else {}
         loc = f"byte:{offset}"
+        if not isinstance(typ, str):
+            continue
+        native = native_session_id(s["client"], o)
+        if native and str(native) != s["session_id"]:
+            warnings.append(f"session_identity_changed: {s['source']}#{loc}; 停止读取该来源")
+            return
         if s["client"] == "codex":
             # event_msg 是重复投影；只读 response_item，避免一条回复显示两次。
             if typ == "compacted":
                 text = p.get("message")
                 if isinstance(text, str):
-                    yield event(s, loc, "context", text, kind="summary", stamp=o.get("timestamp"))
+                    yield event(s, loc, "context", text, kind="summary", stamp=o.get("timestamp"), native_session_id=native)
             if typ != "response_item":
                 continue
             kind, role = p.get("type"), p.get("role")
-            base = dict(role=role, native_id=p.get("id"), stamp=o.get("timestamp"))
-            if kind == "message" and role in {"user", "assistant"} and p.get("channel") != "analysis":
+            if not isinstance(kind, str):
+                continue
+            base = dict(role=role, native_id=p.get("id"), stamp=o.get("timestamp"), native_session_id=native)
+            if kind == "message" and role in ("user", "assistant") and p.get("channel") != "analysis":
                 yield from blocks(s, p.get("content"), loc, base, include_tools)
             elif include_tools and kind in {"function_call", "custom_tool_call"}:
                 yield event(s, loc, "assistant", tool_text(p.get("arguments", p.get("input", ""))),
                             kind="tool_call", native_id=p.get("id"), call_id=p.get("call_id"),
-                            name=p.get("name"), stamp=o.get("timestamp"))
+                            name=p.get("name"), stamp=o.get("timestamp"), native_session_id=native)
             elif include_tools and kind in {"function_call_output", "custom_tool_call_output"}:
                 yield event(s, loc, "tool", tool_text(p.get("output", "")), kind="tool_result",
-                            native_id=p.get("id"), call_id=p.get("call_id"), stamp=o.get("timestamp"))
+                            native_id=p.get("id"), call_id=p.get("call_id"), stamp=o.get("timestamp"), native_session_id=native)
         elif s["client"] in {"claude", "qodercn"}:
             if typ not in {"user", "assistant"} or o.get("isMeta"):
                 continue
@@ -409,10 +561,10 @@ def json_events(s, warnings, include_tools):
             yield from blocks(s, m.get("content"), loc,
                               dict(role=typ, native_id=m.get("id") or o.get("uuid"),
                                    record_id=o.get("uuid"), parent_id=o.get("parentUuid"),
-                                   stamp=o.get("timestamp")), include_tools)
+                                   stamp=o.get("timestamp"), native_session_id=native), include_tools)
         elif s["client"] == "workbuddy":
-            base = dict(native_id=o.get("id"), parent_id=o.get("parentId"), stamp=o.get("timestamp"))
-            if typ == "message" and o.get("role") in {"user", "assistant"}:
+            base = dict(native_id=o.get("id"), parent_id=o.get("parentId"), stamp=o.get("timestamp"), native_session_id=native)
+            if typ == "message" and o.get("role") in ("user", "assistant"):
                 yield from blocks(s, o.get("content"), loc, dict(base, role=o["role"]), include_tools)
             elif include_tools and typ in {"function_call", "function_call_result"}:
                 call = typ == "function_call"
@@ -420,6 +572,38 @@ def json_events(s, warnings, include_tools):
                             tool_text(o.get("arguments" if call else "output", "")),
                             kind="tool_call" if call else "tool_result", call_id=o.get("callId"),
                             name=o.get("name"), **base)
+
+
+def json_object(raw, locator, warnings):
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError):
+        warnings.append(f"invalid_json: {locator}")
+        return None
+    if not isinstance(value, dict):
+        warnings.append(f"invalid_object: {locator}; 预期 JSON 对象")
+        return None
+    return value
+
+
+def nested_value(value, key, expected, default, locator, warnings, required=False):
+    item = value.get(key)
+    if item is None:
+        if required:
+            warnings.append(f"invalid_shape: {locator}/{key}; 缺少 {expected.__name__}")
+        return default
+    if not isinstance(item, expected):
+        warnings.append(f"invalid_shape: {locator}/{key}; 预期 {expected.__name__}")
+        return default
+    return item
+
+
+def qoder_tool_events(s, tool, locator, base):
+    yield event(s, locator + "/call", "assistant", tool_text(tool.get("input", {})),
+                kind="tool_call", call_id=tool.get("id"), name=tool.get("name"), **base)
+    if "response" in tool:
+        yield event(s, locator + "/result", "tool", tool_text(tool["response"]),
+                    kind="tool_result", call_id=tool.get("id"), name=tool.get("name"), **base)
 
 
 def sqlite_events(s, warnings, include_tools):
@@ -431,63 +615,91 @@ def sqlite_events(s, warnings, include_tools):
             order = 'COALESCE(sequence, time_created), time_created, id' if "sequence" in mc else 'time_created, id'
             po = 'COALESCE(sequence, time_created), time_created, id' if "sequence" in pc else 'time_created, id'
             for row in con.execute(f'SELECT * FROM message WHERE session_id=? ORDER BY {order}', (sid,)):
-                try:
-                    m = json.loads(row["data"])
-                except (ValueError, TypeError):
-                    warnings.append(f'invalid_message: {row["id"]}'); continue
+                message_loc = f'message:{row["id"]}'
+                source_loc = f'{s["source"]}#{message_loc}'
+                m = json_object(row["data"], source_loc, warnings)
+                if m is None:
+                    continue
                 role = m.get("role")
-                semantics = m.get("semantics") or {}
-                if role not in {"user", "assistant"} or semantics.get("uiVisibility") == "hidden":
+                if not isinstance(role, str):
+                    warnings.append(f"invalid_shape: {source_loc}/role; 预期字符串")
+                    continue
+                semantics = nested_value(m, "semantics", dict, None, source_loc, warnings)
+                if m.get("semantics") is not None and semantics is None:
+                    continue
+                if role not in {"user", "assistant"} or (semantics or {}).get("uiVisibility") == "hidden":
                     continue
                 for part in con.execute(f'SELECT * FROM part WHERE session_id=? AND message_id=? ORDER BY {po}', (sid, row["id"])):
-                    try:
-                        b = json.loads(part["data"])
-                    except (ValueError, TypeError):
-                        warnings.append(f'invalid_part: {part["id"]}'); continue
-                    loc = f'message:{row["id"]}/part:{part["id"]}'
+                    loc = f'{message_loc}/part:{part["id"]}'
+                    source_part = f'{s["source"]}#{loc}'
+                    b = json_object(part["data"], source_part, warnings)
+                    if b is None:
+                        continue
                     base = dict(native_id=row["id"], record_id=part["id"], parent_id=m.get("parentID"),
-                                stamp=row["time_created"])
+                                stamp=row["time_created"], native_session_id=sid)
                     if b.get("type") == "text" and not b.get("synthetic") and not b.get("ignored"):
-                        yield event(s, loc, role, str(b.get("text", "")), **base)
+                        text = nested_value(b, "text", str, None, source_part, warnings, required=True)
+                        if text is not None:
+                            yield event(s, loc, role, text, **base)
                     elif include_tools and b.get("type") == "tool":
-                        state = b.get("state") or {}
+                        state = nested_value(b, "state", dict, None, source_part, warnings, required=True)
+                        if state is None:
+                            continue
                         yield event(s, loc + "/call", "assistant", tool_text(state.get("input", {})),
                                     kind="tool_call", call_id=b.get("callID"), name=b.get("tool"), **base)
                         if "output" in state:
                             yield event(s, loc + "/result", "tool", tool_text(state["output"]),
                                         kind="tool_result", call_id=b.get("callID"), name=b.get("tool"), **base)
+                    elif b.get("type") not in ("text", "tool", "reasoning", "thinking", "redacted_thinking",
+                                               "image", "file", "document"):
+                        warnings.append(f"unsupported_body: {source_part}; 未适配的内容块")
         elif s["client"] == "qodercn":
             columns(con, "chat_session_messages", ["session_id", "message_id", "sequence", "payload_json", "created_at"])
             for row in con.execute('SELECT * FROM chat_session_messages WHERE session_id=? ORDER BY sequence, message_id', (sid,)):
-                try:
-                    m = json.loads(row["payload_json"])
-                except (ValueError, TypeError):
-                    warnings.append(f'invalid_message: {row["message_id"]}'); continue
+                loc = f'message:{row["message_id"]}'
+                source_loc = f'{s["source"]}#{loc}'
+                m = json_object(row["payload_json"], source_loc, warnings)
+                if m is None:
+                    continue
                 role = m.get("role")
+                if not isinstance(role, str):
+                    warnings.append(f"invalid_shape: {source_loc}/role; 预期字符串")
+                    continue
                 if role not in {"user", "assistant"}:
                     continue
-                loc = f'message:{row["message_id"]}'
                 base = dict(native_id=row["message_id"], turn_id=m.get("turnId"),
-                            stamp=m.get("timestamp") or row["created_at"])
+                            stamp=m.get("timestamp") or row["created_at"], native_session_id=sid)
                 # parts 与 text/tools 是双份投影，优先读取 parts，避免重复。
-                parts = m.get("parts") or []
-                texts = [(i, b) for i, b in enumerate(parts) if isinstance(b, dict) and b.get("type") == "text"]
-                if texts:
-                    for i, b in texts:
-                        yield event(s, loc + f"/part:{b.get('id') or i}", role, str(b.get("text", "")), **base)
-                elif m.get("text"):
-                    yield event(s, loc, role, str(m["text"]), **base)
-                if include_tools:
-                    tools = [b["tool"] for b in parts if isinstance(b, dict) and b.get("type") == "tool" and isinstance(b.get("tool"), dict)] or m.get("tools") or []
-                    for i, t in enumerate(tools):
-                        if not isinstance(t, dict):
-                            continue
-                        tl = loc + f"/tool:{t.get('id') or i}"
-                        yield event(s, tl + "/call", "assistant", tool_text(t.get("input", {})),
-                                    kind="tool_call", call_id=t.get("id"), name=t.get("name"), **base)
-                        if "response" in t:
-                            yield event(s, tl + "/result", "tool", tool_text(t["response"]),
-                                        kind="tool_result", call_id=t.get("id"), name=t.get("name"), **base)
+                parts = nested_value(m, "parts", list, [], source_loc, warnings)
+                has_text = any(isinstance(b, dict) and b.get("type") == "text" for b in parts)
+                has_tools = any(isinstance(b, dict) and b.get("type") == "tool" for b in parts)
+                if not has_text:
+                    text = nested_value(m, "text", str, None, source_loc, warnings)
+                    if text:
+                        yield event(s, loc, role, text, **base)
+                for i, b in enumerate(parts):
+                    if not isinstance(b, dict):
+                        warnings.append(f"invalid_shape: {source_loc}/part:{i}; 预期对象")
+                        continue
+                    part_loc = loc + f"/part:{b.get('id') or i}"
+                    source_part = f'{s["source"]}#{part_loc}'
+                    if b.get("type") == "text":
+                        text = nested_value(b, "text", str, None, source_part, warnings, required=True)
+                        if text is not None:
+                            yield event(s, part_loc, role, text, **base)
+                    elif b.get("type") == "tool":
+                        tool = nested_value(b, "tool", dict, None, source_part, warnings, required=True)
+                        if tool is not None and include_tools:
+                            yield from qoder_tool_events(s, tool, part_loc + f"/tool:{tool.get('id') or i}", base)
+                    elif b.get("type") not in ("reasoning", "thinking", "redacted_thinking", "image", "file", "document"):
+                        warnings.append(f"unsupported_body: {source_part}; 未适配的内容块")
+                if not has_tools:
+                    tools = nested_value(m, "tools", list, [], source_loc, warnings)
+                    for i, tool in enumerate(tools):
+                        if not isinstance(tool, dict):
+                            warnings.append(f"invalid_shape: {source_loc}/tool:{i}; 预期对象")
+                        elif include_tools:
+                            yield from qoder_tool_events(s, tool, loc + f"/tool:{tool.get('id') or i}", base)
 
 
 def read_events(s, warnings, include_tools):
@@ -506,10 +718,12 @@ def read_events(s, warnings, include_tools):
 def run(client, args):
     warnings = []
     sessions = catalogue(client, args, warnings)
+    metadata_complete = all(s.get("metadata_complete", True) for s in sessions) and not any(
+        not warning.startswith("unsupported_body:") for warning in warnings)
     if args.session:
         sessions = [s for s in sessions if args.session in {s["session_id"], s["session_ref"]}]
         if not sessions:
-            raise ReaderError("session_not_found_in_checked_sources: 未找到；用 --root 指定项目、JSONL 文件或数据库")
+            raise ReaderError("session_not_found_in_checked_sources: 未找到可读取的单会话来源；用 --root 指定原件并检查 warnings", warnings)
         if len(sessions) != 1:
             raise ReaderError("ambiguous_session: 同一 ID 有多个来源；用 --root 与完整 session_ref 选择，不能自动合并迁移副本")
     if args.action == "read" and not args.session:
@@ -521,6 +735,7 @@ def run(client, args):
     has_more = False
     matched = 0
     snapshots = {}
+    examined = eligible = completed_sessions = 0
     if args.action == "list":
         candidates = [s for s in sessions if not query or query in str(s.get("title") or "").casefold() or query in s["session_id"].casefold()]
         data = candidates[args.offset:args.offset + args.limit]
@@ -532,13 +747,18 @@ def run(client, args):
             snapshots[s["session_ref"]] = fp
             if args.snapshot and (s["variant"] in {"sqlite", "desktop"} or args.snapshot != fp):
                 raise ReaderError("snapshot_changed_or_unsupported: JSONL 已变化，或 SQLite 不支持跨请求冻结；重新定位后读取")
-            for e in read_events(s, warnings, args.include_tools):
+            # 先解析形状，再按工具、角色、时间、查询条件筛选，不能隐藏解析缺口。
+            for e in read_events(s, warnings, True):
+                examined += 1
+                if not args.include_tools and e["kind"] in {"tool_call", "tool_result"}:
+                    continue
                 if args.role and e["role"] != args.role:
                     continue
                 if args.since and e["timestamp"] and epoch(e["timestamp"]) < args.since:
                     continue
                 if args.until and e["timestamp"] and epoch(e["timestamp"]) > args.until:
                     continue
+                eligible += 1
                 if query and query not in e["text"].casefold():
                     continue
                 if args.record and args.record not in {e["record_ref"], e["source_ref"]}:
@@ -563,14 +783,43 @@ def run(client, args):
                 warnings.append("source_changed_during_read")
             if has_more:
                 break
-    return dict(schema="conversation-readers/v1", client=client, action=args.action,
-                items=data, next_offset=args.offset + len(data) if has_more else None,
+            completed_sessions += 1
+    body_formats = {s.get("body_format") for s in sessions}
+    if args.action == "list":
+        content_status = "not_requested"
+    elif not examined and "unsupported" in body_formats and "supported" not in body_formats:
+        content_status = "unsupported"
+    elif not sessions and any("unsupported" in w or "mixed_session_ids" in w for w in warnings):
+        content_status = "unsupported"
+    elif warnings or not metadata_complete:
+        content_status = "partial"
+    elif data:
+        content_status = "matches"
+    elif not sessions:
+        content_status = "no_match" if args.query else "filtered_out"
+    elif not examined and not any(s.get("body_records", 0) for s in sessions):
+        content_status = "metadata_only"
+    elif eligible and args.query and not matched:
+        content_status = "no_match"
+    else:
+        content_status = "filtered_out"
+    result = scrub(dict(schema="conversation-readers/v1", client=client, action=args.action,
+                next_offset=args.offset + len(data) if has_more else None,
                 has_more=has_more, snapshot=snapshots,
-                coverage=dict(checked_sessions=len(sessions), scan_complete=not warnings,
+                coverage=dict(checked_sessions=len(sessions),
+                              scan_complete=not warnings and metadata_complete and not has_more
+                              and (args.action == "list" or completed_sessions == len(sessions)),
+                              metadata_complete=metadata_complete,
+                              jsonl_metadata_scan="full_stream",
+                              content_status=content_status, examined_events=examined,
+                              completed_body_sessions=completed_sessions,
                               tools_included=args.include_tools,
                               view="visible_messages_and_selected_tools; hidden_reasoning_excluded",
                               sqlite_consistency="per_query_read_transaction; pagination_is_live"),
-                warnings=list(dict.fromkeys(warnings)))
+                warnings=list(dict.fromkeys(warnings))))
+    # 正文已在 event() 中完整遮蔽；不再次处理切片，以免改变分页偏移。
+    result["items"] = scrub(data) if args.action == "list" else data
+    return result
 
 
 def parser(client):
@@ -631,9 +880,10 @@ def main(client, argv=None):
             raise ReaderError("record_expansion_requires_read")
         if args.text_offset and not args.record:
             raise ReaderError("text_offset_requires_record")
-        output = scrub(run(client, args))
+        output = run(client, args)
     except (ReaderError, OSError, sqlite3.Error, ValueError) as exc:
-        print(json.dumps({"error": redact(str(exc)), "client": client}, ensure_ascii=False))
+        print(json.dumps({"error": redact(str(exc)), "client": client,
+                          "warnings": scrub(getattr(exc, "warnings", []))}, ensure_ascii=False))
         return 2
     if args.format == "json":
         print(json.dumps(output, ensure_ascii=False, indent=2))

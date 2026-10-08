@@ -20,10 +20,20 @@ description: "查找、检索和读取 Codex 的历史对话时使用：列出�
 ```bash
 python3 -B "$SKILL_DIR/scripts/read_conversations.py" list --limit 20
 python3 -B "$SKILL_DIR/scripts/read_conversations.py" search --root /absolute/path/to/selected/source --query "部署" --limit 10
-python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --session '<session_ref>' --limit 40
-python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --session '<session_ref>' --include-tools --offset 40
-python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --session '<session_ref>' --record '<record_ref>' --text-offset 6000
+
+# 正文：第一页与相同条件的下一页；偏移取上一页返回的 next_offset。
+python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path/to/selected/source --session '<session_ref>' --limit 40
+python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path/to/selected/source --session '<session_ref>' --limit 40 --offset '<next_offset>'
+
+# 含工具：从第一页开始，再沿用相同条件分页。
+python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path/to/selected/source --session '<session_ref>' --include-tools --limit 40
+python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path/to/selected/source --session '<session_ref>' --include-tools --limit 40 --offset '<next_offset>'
+
+# 精确展开工具记录仍须带 --include-tools，字符偏移取 next_text_offset。
+python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path/to/selected/source --session '<session_ref>' --include-tools --record '<record_ref>' --text-offset '<next_text_offset>'
 ```
+
+改变工具、角色、关键词、时间或来源条件时，从新结果集合的第一页开始，不沿用旧偏移。固定 JSONL 来源时，后续页和精确展开同时传首次返回的 `--snapshot '<snapshot>'`；SQLite 不支持此参数。文本长度及字符偏移基于遮蔽后的完整正文，不能拿原件偏移代替。
 
 精确来源、格式与限制见 [格式说明](./references/formats.md)。分页、JSON 字段、Markdown 导出和活文件行为见 [输出约定](./references/output.md)。
 

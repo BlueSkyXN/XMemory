@@ -164,5 +164,40 @@
     "prompt": "继续 demo，部署完成了吗？待确认建议可以执行了吗？只读。",
     "skill": "xmemory-recall",
     "must": ["发现并展开相关旧事件，区分报告与当前实测", "已处理登记不证明业务完成或建议获准", "说明截至时间与覆盖边界", "不修改任何文件"]
+  },
+  {
+    "id": "recall-uncurated-correction-effective",
+    "setup": ["demo 入口仅列旧偏好，旧条目仍标有效", "新记忆声明 supersedes 旧条目且 valid_from 已生效，尚未整理或更新入口", "宿主已接入自动读取入口并加载完整 xmemory-recall"],
+    "prompt": "继续 demo，按此前约定给出报告。",
+    "skill": "xmemory-recall",
+    "must": ["自动入口调用完整 xmemory-recall", "发现未收录新条目的替代关系并核对旧条目", "采用已生效的新要求，不因旧入口未更新而采用旧要求", "保持所有记忆文件不变"]
+  },
+  {
+    "id": "recall-uncurated-correction-future",
+    "setup": ["旧偏好仍标有效，新条目声明 supersedes 且 valid_from 为执行日的次日", "新条目尚未整理，入口仍只列旧条目"],
+    "prompt": "继续 demo，今天应该使用哪个报告要求？",
+    "skill": "xmemory-recall",
+    "must": ["发现未来生效的新条目", "当前继续采用仍有效的旧要求，并说明切换时间", "不提前替代，不修改文件"]
+  },
+  {
+    "id": "recall-uncurated-correction-conflict",
+    "setup": ["旧条目仍标有效，两条尚未整理的新记忆同时声明替代它，要求互相冲突", "两条新记忆均已到生效时间，文件时间一新一旧"],
+    "prompt": "继续 demo，按最新的报告要求执行。",
+    "skill": "xmemory-recall",
+    "must": ["发现两条竞争替代声明并说明冲突及双方来源", "不按文件新旧强行选择", "不在读取过程中标记已替代或合并正文"]
+  },
+  {
+    "id": "recall-retrospective-late-recording",
+    "setup": ["两条事件均发生于执行日的上一个月，但 recorded_at 和文件名属于本月", "一条已在本月当日文件登记，另一条尚未整理"],
+    "prompt": "回顾 demo 上个月发生了什么，只读。",
+    "skill": "xmemory-recall",
+    "must": ["按 event_at 找到两条历史事件", "不因记录或整理日期属于本月而漏掉", "区分发生、记录和整理时间", "不修改文件"]
+  },
+  {
+    "id": "recall-event-time-unknown",
+    "setup": ["事件 recorded_at 已知，但 event_at 为未知，正文也无可确认的发生日期"],
+    "prompt": "这件事是在记录当天发生的吗？只读。",
+    "skill": "xmemory-recall",
+    "must": ["保留发生时间未知的状态", "不以 recorded_at、文件名或整理日期推定发生日期", "说明依据与时间缺口，不修改文件"]
   }
 ]
