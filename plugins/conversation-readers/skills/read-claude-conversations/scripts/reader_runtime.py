@@ -489,7 +489,7 @@ def event(s, locator, role, text, *, kind="message", native_id=None, parent_id=N
     return result
 
 
-def blocks(s, content, locator, base, include_tools):
+def blocks(s, content, locator, base, include_tools, warnings):
     if isinstance(content, str):
         content = [{"type": "text", "text": content}]
     if not isinstance(content, list):
@@ -509,9 +509,13 @@ def blocks(s, content, locator, base, include_tools):
                 kind = "summary" if text.startswith("This session is being continued") else "message"
                 yield event(s, loc, text=text, kind=kind, **base)
         elif include_tools and typ == "tool_use":
+            if not valid_id(b, "id", f'{s["source"]}#{loc}', warnings):
+                continue
             yield event(s, loc, text=tool_text(b.get("input", {})), kind="tool_call",
                         call_id=b.get("id"), name=b.get("name"), **base)
         elif include_tools and typ == "tool_result":
+            if not valid_id(b, "tool_use_id", f'{s["source"]}#{loc}', warnings):
+                continue
             values = dict(base, role="tool")
             yield event(s, loc, text=tool_text(b.get("content", "")), kind="tool_result",
                         call_id=b.get("tool_use_id"), **values)
@@ -543,12 +547,16 @@ def json_events(s, warnings, include_tools):
                 continue
             base = dict(role=role, native_id=p.get("id"), stamp=o.get("timestamp"), native_session_id=native)
             if kind == "message" and role in ("user", "assistant") and p.get("channel") != "analysis":
-                yield from blocks(s, p.get("content"), loc, base, include_tools)
+                yield from blocks(s, p.get("content"), loc, base, include_tools, warnings)
             elif include_tools and kind in {"function_call", "custom_tool_call"}:
+                if not valid_id(p, "call_id", f'{s["source"]}#{loc}', warnings):
+                    continue
                 yield event(s, loc, "assistant", tool_text(p.get("arguments", p.get("input", ""))),
                             kind="tool_call", native_id=p.get("id"), call_id=p.get("call_id"),
                             name=p.get("name"), stamp=o.get("timestamp"), native_session_id=native)
             elif include_tools and kind in {"function_call_output", "custom_tool_call_output"}:
+                if not valid_id(p, "call_id", f'{s["source"]}#{loc}', warnings):
+                    continue
                 yield event(s, loc, "tool", tool_text(p.get("output", "")), kind="tool_result",
                             native_id=p.get("id"), call_id=p.get("call_id"), stamp=o.get("timestamp"), native_session_id=native)
         elif s["client"] in {"claude", "qodercn"}:
@@ -561,12 +569,14 @@ def json_events(s, warnings, include_tools):
             yield from blocks(s, m.get("content"), loc,
                               dict(role=typ, native_id=m.get("id") or o.get("uuid"),
                                    record_id=o.get("uuid"), parent_id=o.get("parentUuid"),
-                                   stamp=o.get("timestamp"), native_session_id=native), include_tools)
+                                   stamp=o.get("timestamp"), native_session_id=native), include_tools, warnings)
         elif s["client"] == "workbuddy":
             base = dict(native_id=o.get("id"), parent_id=o.get("parentId"), stamp=o.get("timestamp"), native_session_id=native)
             if typ == "message" and o.get("role") in ("user", "assistant"):
-                yield from blocks(s, o.get("content"), loc, dict(base, role=o["role"]), include_tools)
+                yield from blocks(s, o.get("content"), loc, dict(base, role=o["role"]), include_tools, warnings)
             elif include_tools and typ in {"function_call", "function_call_result"}:
+                if not valid_id(o, "callId", f'{s["source"]}#{loc}', warnings):
+                    continue
                 call = typ == "function_call"
                 yield event(s, loc, "assistant" if call else "tool",
                             tool_text(o.get("arguments" if call else "output", "")),
