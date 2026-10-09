@@ -598,7 +598,19 @@ def nested_value(value, key, expected, default, locator, warnings, required=Fals
     return item
 
 
-def qoder_tool_events(s, tool, locator, base):
+def valid_id(value, key, locator, warnings):
+    # 沿用缺失 ID 为 null 的契约；类型错误不能转成字符串冒充原生 ID。
+    item = value.get(key)
+    if item is None or isinstance(item, str):
+        return True
+    warnings.append(f"invalid_id: {locator}/{key}; 预期字符串或 null，跳过对应记录或内容块")
+    return False
+
+
+def qoder_tool_events(s, tool, locator, index, base, warnings):
+    if not valid_id(tool, "id", f"{s['source']}#{locator}/tool:{index}", warnings):
+        return
+    locator += f"/tool:{tool.get('id') or index}"
     yield event(s, locator + "/call", "assistant", tool_text(tool.get("input", {})),
                 kind="tool_call", call_id=tool.get("id"), name=tool.get("name"), **base)
     if "response" in tool:
@@ -629,6 +641,8 @@ def sqlite_events(s, warnings, include_tools):
                     continue
                 if role not in {"user", "assistant"} or (semantics or {}).get("uiVisibility") == "hidden":
                     continue
+                if not valid_id(m, "parentID", source_loc, warnings):
+                    continue
                 for part in con.execute(f'SELECT * FROM part WHERE session_id=? AND message_id=? ORDER BY {po}', (sid, row["id"])):
                     loc = f'{message_loc}/part:{part["id"]}'
                     source_part = f'{s["source"]}#{loc}'
@@ -642,6 +656,8 @@ def sqlite_events(s, warnings, include_tools):
                         if text is not None:
                             yield event(s, loc, role, text, **base)
                     elif include_tools and b.get("type") == "tool":
+                        if not valid_id(b, "callID", source_part, warnings):
+                            continue
                         state = nested_value(b, "state", dict, None, source_part, warnings, required=True)
                         if state is None:
                             continue
@@ -667,6 +683,8 @@ def sqlite_events(s, warnings, include_tools):
                     continue
                 if role not in {"user", "assistant"}:
                     continue
+                if not valid_id(m, "turnId", source_loc, warnings):
+                    continue
                 base = dict(native_id=row["message_id"], turn_id=m.get("turnId"),
                             stamp=m.get("timestamp") or row["created_at"], native_session_id=sid)
                 # parts 与 text/tools 是双份投影，优先读取 parts，避免重复。
@@ -681,6 +699,8 @@ def sqlite_events(s, warnings, include_tools):
                     if not isinstance(b, dict):
                         warnings.append(f"invalid_shape: {source_loc}/part:{i}; 预期对象")
                         continue
+                    if not valid_id(b, "id", f"{source_loc}/part:{i}", warnings):
+                        continue
                     part_loc = loc + f"/part:{b.get('id') or i}"
                     source_part = f'{s["source"]}#{part_loc}'
                     if b.get("type") == "text":
@@ -690,7 +710,7 @@ def sqlite_events(s, warnings, include_tools):
                     elif b.get("type") == "tool":
                         tool = nested_value(b, "tool", dict, None, source_part, warnings, required=True)
                         if tool is not None and include_tools:
-                            yield from qoder_tool_events(s, tool, part_loc + f"/tool:{tool.get('id') or i}", base)
+                            yield from qoder_tool_events(s, tool, part_loc, i, base, warnings)
                     elif b.get("type") not in ("reasoning", "thinking", "redacted_thinking", "image", "file", "document"):
                         warnings.append(f"unsupported_body: {source_part}; 未适配的内容块")
                 if not has_tools:
@@ -699,7 +719,7 @@ def sqlite_events(s, warnings, include_tools):
                         if not isinstance(tool, dict):
                             warnings.append(f"invalid_shape: {source_loc}/tool:{i}; 预期对象")
                         elif include_tools:
-                            yield from qoder_tool_events(s, tool, loc + f"/tool:{tool.get('id') or i}", base)
+                            yield from qoder_tool_events(s, tool, loc, i, base, warnings)
 
 
 def read_events(s, warnings, include_tools):

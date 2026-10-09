@@ -4,6 +4,27 @@
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
+## XR-005 关联 ID 补修（2026-10-09）
+
+复评基准为 `7e915493729b50a27d1598de6993b2501e1a4dca`。本次保留未发布的 XMemory 1.1.0、Conversation Readers 0.1.1 版本号。
+
+- Qoder `tool.id`／ZCode `callID` 在生成事件前进行类型检查，异常块不会进入公共去重；Qoder 的 `parts[].id`、`turnId` 和 ZCode 的 `parentID` 同时检查。错误类型不会被强制转成字符串，缺失／null ID 继续遵守现有输出契约。
+- 默认正文和含工具读取均保留异常块前后的正常内容，并给出带文件、消息、内容块和字段位置的 `invalid_id` warning，标记 `content_status=partial`、`scan_complete=false`。
+- `storage.md` 入口摘要补齐标题及 `links`、`valid_from`、`status` 等关系头部；setup description 统一为同一逻辑记忆库和用户配置的跨设备同步方式。
+
+新增 4 项读取器回归，通过真实分发脚本覆盖 Qoder parts／tools 回退、ZCode，两种读取模式，以及列表、对象、数字、布尔、正常字符串、缺失和 null ID。工具 ID 用例先在复评基准复现失败，补修后 **57/57** 测试通过（读取扩展 42 项、记忆包装 15 项）；原有 53 项测试与 CI 工作流保持原样。公共运行时及五份分发脚本、XMemory 静态资源均无漂移，两个包装检查通过。
+
+四包输出到新目录 `dist/xr005-followup-20261009/`，旧包未覆盖。ZIP 完整性、外部 `.zip.sha256`、包内逐文件 `SHA256SUMS` 及两个完整包解压后的包装检查均通过；两个读取器包解压后分别重跑新增 4 项回归通过。临时目录重复构建与四个交付包逐字节一致。
+
+| 归档 | SHA-256 |
+|---|---|
+| `XMemory-1.1.0.zip` | `b1ed9224709345e9465a0f74c7d5adbbe884f88a77efc86f8499d7f21bd2a59e` |
+| `XMemory-1.1.0-skills.zip` | `01da3e2de53c73d0ad79a21ea45a3e05894f98d6921c95ca42dd104f9bf45fa2` |
+| `ConversationReaders-0.1.1.zip` | `748b00c6f2675148b2a28514c9b14b45c9a6f3e0c1ce4cb6bf46a81a94b4f20f` |
+| `ConversationReaders-0.1.1-skills.zip` | `a95a6e311fa7365060693036b39e9d20c9c6e647e58b0ebbc43f5796a1e94218` |
+
+本轮使用虚构数据验证读取器与本地包，不改变真实客户端配置或记忆库。新提交的远端 CI、GitHub Release、真实客户端接续、31 个记忆行为场景与长历史成本均须分别验证，不能由本地测试结果替代。
+
 ## PR #1 补修（2026-10-09）
 
 评审基准为 `9d0d43900eea7f65dd39515078fe6ba31bb1560c`。保留 XMemory 1.1.0、Conversation Readers 0.1.1 的未发布版本号，沿用公共源码、资源同步、单元测试和打包流程；旧包不覆盖。
