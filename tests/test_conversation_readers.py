@@ -501,6 +501,141 @@ class ReaderTests(unittest.TestCase):
         self.assertIn("message:m3", " ".join(out["warnings"]))
         self.assertIn("part:p3", " ".join(out["warnings"]))
 
+    def read_script(self, client, path, include_tools=False):
+        script = ROOT / "plugins/conversation-readers/skills" / SKILLS[client] / "scripts/read_conversations.py"
+        args = [sys.executable, "-B", str(script), "read", "--root", str(path), "--session", "session-demo"]
+        if include_tools:
+            args.append("--include-tools")
+        run = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(run.stderr, "")
+        return json.loads(run.stdout)
+
+    def test_xr005_qodercn_tool_ids_in_both_read_modes(self):
+        p = self.qoder_db()
+        with sqlite3.connect(p) as c:
+            for i, payload in enumerate([{"role": "user", "text": "前文"}, {}, {"role": "assistant", "text": "后文"}]):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)",
+                          ("session-demo", f"m{i}", i, json.dumps(payload), i))
+        cases = [("missing", {}, True), ("null", {"id": None}, True), ("string", {"id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"id": value}, False) for value in ([], {}, 1, False)]
+        for projection in ("parts", "tools"):
+            for label, identity, valid in cases:
+                tool = dict(identity, input={}, response="RESULT")
+                payload = {"role": "assistant", "turnId": "turn-demo", "parts": [
+                    {"id": "before", "type": "text", "text": "块前"},
+                    {"id": "after", "type": "text", "text": "块后"}]}
+                if projection == "parts":
+                    payload["parts"].insert(1, {"id": "tool-part", "type": "tool", "tool": tool})
+                else:
+                    payload["tools"] = [tool]
+                with sqlite3.connect(p) as c:
+                    c.execute("UPDATE chat_session_messages SET payload_json=? WHERE message_id='m1'", (json.dumps(payload),))
+                for include_tools in (False, True):
+                    with self.subTest(projection=projection, identity=label, include_tools=include_tools):
+                        out = self.read_script("qodercn", p, include_tools)
+                        expected = ["前文", "块前", "块后", "后文"]
+                        if valid and include_tools:
+                            index = 2 if projection == "parts" else 3
+                            expected[index:index] = ["{}", "RESULT"]
+                        self.assertEqual([i["text"] for i in out["items"]], expected)
+                        self.assertEqual(out["coverage"]["scan_complete"], valid)
+                        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                        if valid:
+                            self.assertEqual(out["warnings"], [])
+                            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                            self.assertEqual([i["call_id"] for i in calls], [identity.get("id")] * (2 if include_tools else 0))
+                            self.assertTrue(all(i["turn_id"] == "turn-demo" for i in calls))
+                        else:
+                            locator = "part:tool-part/tool:1" if projection == "parts" else "tool:0"
+                            self.assertEqual(len(out["warnings"]), 1)
+                            self.assertIn(f"{p}#message:m1/{locator}/id", out["warnings"][0])
+                            self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_zcode_tool_ids_in_both_read_modes(self):
+        p = self.root / "zcode-ids.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES('session-demo','测试','/work/demo',1,2)")
+            for i in range(3):
+                c.execute("INSERT INTO message VALUES(?,?,?,?)", (f"m{i}", "session-demo", i,
+                          json.dumps({"role": "assistant", "parentID": "parent-demo"})))
+            for i, (message, payload) in enumerate([
+                ("m0", {"type": "text", "text": "前文"}), ("m1", {"type": "text", "text": "块前"}),
+                ("m1", {}), ("m1", {"type": "text", "text": "块后"}), ("m2", {"type": "text", "text": "后文"})]):
+                c.execute("INSERT INTO part VALUES(?,?,?,?,?)", (f"p{i}", message, "session-demo", i, json.dumps(payload)))
+        cases = [("missing", {}, True), ("null", {"callID": None}, True), ("string", {"callID": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"callID": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            payload = dict(identity, type="tool", tool="Read", state={"input": {}, "output": "RESULT"})
+            with sqlite3.connect(p) as c:
+                c.execute("UPDATE part SET data=? WHERE id='p2'", (json.dumps(payload),))
+            for include_tools in (False, True):
+                with self.subTest(identity=label, include_tools=include_tools):
+                    out = self.read_script("zcode", p, include_tools)
+                    expected = ["前文", "块前", "块后", "后文"]
+                    if valid and include_tools:
+                        expected[2:2] = ["{}", "RESULT"]
+                    self.assertEqual([i["text"] for i in out["items"]], expected)
+                    self.assertEqual(out["coverage"]["scan_complete"], valid)
+                    self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                    if valid:
+                        self.assertEqual(out["warnings"], [])
+                        calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                        self.assertEqual([i["call_id"] for i in calls], [identity.get("callID")] * (2 if include_tools else 0))
+                        self.assertTrue(all(i["parent_id"] == "parent-demo" for i in calls))
+                    else:
+                        self.assertEqual(len(out["warnings"]), 1)
+                        self.assertIn(f"{p}#message:m1/part:p2/callID", out["warnings"][0])
+                        self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_qodercn_locator_and_turn_ids(self):
+        p = self.qoder_db()
+        with sqlite3.connect(p) as c:
+            for i, text in enumerate(("前文", "异常记录", "后文")):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)",
+                          ("session-demo", f"m{i}", i, json.dumps({"role": "assistant", "text": text}), i))
+        for field in ("id", "turnId"):
+            for value in ([], {}):
+                payload = {"role": "assistant", "parts": [{"type": "text", "text": "正常块"},
+                                                          {"type": "text", "text": "异常块"}]}
+                (payload["parts"][1] if field == "id" else payload)[field] = value
+                with sqlite3.connect(p) as c:
+                    c.execute("UPDATE chat_session_messages SET payload_json=? WHERE message_id='m1'", (json.dumps(payload),))
+                for include_tools in (False, True):
+                    with self.subTest(field=field, value=value, include_tools=include_tools):
+                        out = self.read_script("qodercn", p, include_tools)
+                        self.assertEqual([i["text"] for i in out["items"]],
+                                         ["前文", "正常块", "后文"] if field == "id" else ["前文", "后文"])
+                        self.assertFalse(out["coverage"]["scan_complete"])
+                        self.assertEqual(out["coverage"]["content_status"], "partial")
+                        locator = "part:1/id" if field == "id" else "turnId"
+                        self.assertIn(f"{p}#message:m1/{locator}", " ".join(out["warnings"]))
+
+    def test_xr005_zcode_parent_id_is_checked_before_parts(self):
+        p = self.root / "zcode-parent.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES('session-demo','测试','/work/demo',1,2)")
+            for i, text in enumerate(("前文", "异常记录", "后文")):
+                c.execute("INSERT INTO message VALUES(?,?,?,?)", (f"m{i}", "session-demo", i, json.dumps({"role": "assistant"})))
+                c.execute("INSERT INTO part VALUES(?,?,?,?,?)", (f"p{i}", f"m{i}", "session-demo", i,
+                          json.dumps({"type": "text", "text": text})))
+        for value in ([], {}):
+            with sqlite3.connect(p) as c:
+                c.execute("UPDATE message SET data=? WHERE id='m1'", (json.dumps({"role": "assistant", "parentID": value}),))
+            for include_tools in (False, True):
+                with self.subTest(value=value, include_tools=include_tools):
+                    out = self.read_script("zcode", p, include_tools)
+                    self.assertEqual([i["text"] for i in out["items"]], ["前文", "后文"])
+                    self.assertFalse(out["coverage"]["scan_complete"])
+                    self.assertEqual(out["coverage"]["content_status"], "partial")
+                    self.assertIn(f"{p}#message:m1/parentID", " ".join(out["warnings"]))
+
     def test_xr006_qodercn_interleaved_parts_and_pagination(self):
         p = self.qoder_db()
         parts = [{"id": "t1", "type": "text", "text": "第一段"},
