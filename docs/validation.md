@@ -4,6 +4,27 @@
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
+## XR-005 JSONL 消息 uuid 补修（2026-10-10）
+
+复评基准为 `a4586b3`（PR #3 合并后）。本次保留未发布的 XMemory 1.1.0、Conversation Readers 0.1.1 版本号。Claude／Qoder CN JSONL 把消息 `uuid` 放入 `record_id`，公共去重键包含该字段；`uuid` 为列表或对象时读取中断，该缺陷在基线已存在，不是 PR #3 引入的回归。
+
+- 在进入正文解析前检查消息 `uuid`：异常时跳过整条记录（含其正常文本块），继续后续消息，处理粒度与 SQLite 消息级 ID（`parentID`／`turnId`）一致；不进入去重键的字段（如 `parentUuid`）类型异常不中断读取。
+- 保留字符串；缺失／null 沿用现有输出契约；错误类型不转成字符串。报告带文件、字节偏移和字段名的 `invalid_id` warning，两种读取模式均返回 `content_status=partial`、`scan_complete=false`。
+- 评审复现的两条虚构记录先在复评基准包（`xr005-jsonl-r2` 解压脚本）上复现：列表与对象两种错误类型 × 两端 × 两种模式共 8 种组合全部退出码 1、无正文；补修后异常记录跳过、前后消息保留并报告解析缺口。
+
+新增 2 项回归（Claude、Qoder CN 各一，7 种 uuid 形态 × 两种读取模式，消息级粒度为显式断言），补修后 **63/63** 测试通过（读取扩展 48 项、记忆包装 15 项）；两个包装检查通过，公共运行时及五份分发脚本逐字节同步。
+
+四包按"先完成全部入包文件修改、再打包"的顺序输出到新目录 `dist/xr005-uuid-20261010/`，旧包未覆盖。临时目录重复构建与四个交付包逐字节一致；读取器包解压后以分发技能目录替换仓库技能目录完整重跑 63 项测试通过。XMemory 两包未触碰，SHA-256 不变。
+
+| 归档 | SHA-256 |
+|---|---|
+| `XMemory-1.1.0.zip` | `b1ed9224709345e9465a0f74c7d5adbbe884f88a77efc86f8499d7f21bd2a59e` |
+| `XMemory-1.1.0-skills.zip` | `01da3e2de53c73d0ad79a21ea45a3e05894f98d6921c95ca42dd104f9bf45fa2` |
+| `ConversationReaders-0.1.1.zip` | `c578bb5d779bf729ed322440dbd1eb0a9618a9972a235adc59e61cf5a134b09b` |
+| `ConversationReaders-0.1.1-skills.zip` | `279b045e9e44dcc2ea383ff040b30608e2114be2afa52fde00400306e513f0a0` |
+
+本轮使用虚构数据验证读取器与本地包，不改变真实客户端配置或记忆库。新提交的远端 CI、GitHub Release、真实客户端接续、31 个记忆行为场景与长历史成本均须分别验证，不能由本地测试结果替代。
+
 ## XR-005 JSONL 关联 ID 补修（2026-10-09）
 
 复评基准为 `3e96411ba8f73323c35226b6c294bc417d136c4f`（PR #2 合并后）。本次保留未发布的 XMemory 1.1.0、Conversation Readers 0.1.1 版本号。PR #2 覆盖了 Qoder 桌面 SQLite 与 ZCode SQLite；本次补齐评审复现的 JSONL 同类缺陷，它在本基准已存在，不是 PR #2 引入的回归。

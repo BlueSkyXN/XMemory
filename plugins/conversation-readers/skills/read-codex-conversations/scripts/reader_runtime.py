@@ -566,6 +566,9 @@ def json_events(s, warnings, include_tools):
             if not isinstance(m, dict):
                 warnings.append(f"unsupported_message_shape: {loc}")
                 continue
+            # uuid 进入公共去重键的 record_id；异常时跳过整条记录，与 SQLite 消息级 ID 的处理一致。
+            if not valid_id(o, "uuid", f'{s["source"]}#{loc}', warnings):
+                continue
             yield from blocks(s, m.get("content"), loc,
                               dict(role=typ, native_id=m.get("id") or o.get("uuid"),
                                    record_id=o.get("uuid"), parent_id=o.get("parentUuid"),
