@@ -4,6 +4,17 @@
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
+## 隔离安装验证：Claude Code 与 Codex（2026-10-10）
+
+PR #4 合并（`af74c4a`）后，按实际接入计划的第一步执行隔离安装与配置检查。全部操作在一次性临时 `CLAUDE_CONFIG_DIR`／`CODEX_HOME` 中完成，结束后删除；未读取、未修改任何真实客户端配置或凭据，也未发起模型调用。
+
+- Claude Code 2.1.292：`claude plugin validate --strict` 对 xmemory、conversation-readers 两份插件清单与根市场清单全部通过；隔离目录中 `marketplace add` 识别 `xmemory-claude`，`plugin install xmemory@xmemory-claude` 安装 1.1.0 并显示 enabled。
+- Codex CLI 0.160.1：隔离 `CODEX_HOME` 中 `marketplace add` 识别 `xmemory-codex`（install.md 记录的是 0.160.0，0.160.1 行为一致），`plugin add xmemory@xmemory-codex` 后 `plugin list` 显示 installed、enabled、版本 1.1.0。
+- 两端安装副本中五个技能目录全部落地（含 docs／integrations／references／templates），五份 SKILL.md 的全部 `./` 引用（每端 27 处）在安装副本中逐一存在，无一缺失。
+- conversation-readers 不在三份市场清单中，与"独立分发、不并入 XMemory 市场"的既定设计一致；其包内容验证见前述各节。
+
+本次只证明隔离环境下的市场识别、插件安装、启用状态与技能载荷完整性。新会话中发现技能、自然语言触发、跨客户端接续与 31 个行为场景仍需在目标客户端真实会话中执行，不能由本节替代。
+
 ## XR-005 JSONL 消息 uuid 补修（2026-10-10）
 
 复评基准为 `a4586b3`（PR #3 合并后）。本次保留未发布的 XMemory 1.1.0、Conversation Readers 0.1.1 版本号。Claude／Qoder CN JSONL 把消息 `uuid` 放入 `record_id`，公共去重键包含该字段；`uuid` 为列表或对象时读取中断，该缺陷在基线已存在，不是 PR #3 引入的回归。
