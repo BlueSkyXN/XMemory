@@ -569,9 +569,13 @@ class ReaderTests(unittest.TestCase):
     def test_xr005_codex_jsonl_call_ids_in_both_read_modes(self):
         cases = [("missing", {}, True), ("null", {"call_id": None}, True), ("string", {"call_id": "call-demo"}, True)]
         cases += [(type(value).__name__, {"call_id": value}, False) for value in ([], {}, 1, False)]
+        # custom_tool_call 用 input 字段携带输入，与普通 function_call 的 arguments 相区分。
+        variants = (("function_call", {"name": "test", "arguments": "{}"}, "{}"),
+                    ("function_call_output", {"output": "通过"}, "通过"),
+                    ("custom_tool_call", {"name": "test", "input": "自定义输入"}, "自定义输入"),
+                    ("custom_tool_call_output", {"output": "自定义输出"}, "自定义输出"))
         for label, identity, valid in cases:
-            for record_type in ("function_call", "function_call_output"):
-                extra = {"name": "test", "arguments": "{}"} if record_type == "function_call" else {"output": "通过"}
+            for record_type, extra, payload_text in variants:
                 records = [
                     {"type": "session_meta", "payload": {"id": "codex-demo", "cwd": "/work/demo"}},
                     {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user",
@@ -586,7 +590,7 @@ class ReaderTests(unittest.TestCase):
                         out = self.read_script("codex", p, include_tools, session="codex-demo")
                         expected = ["前文", "后文"]
                         if valid and include_tools:
-                            expected[1:1] = ["{}"] if record_type == "function_call" else ["通过"]
+                            expected[1:1] = [payload_text]
                         self.assertEqual([i["text"] for i in out["items"]], expected)
                         self.assertEqual(out["coverage"]["scan_complete"], valid)
                         self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
