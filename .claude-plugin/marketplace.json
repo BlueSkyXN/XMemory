@@ -1,13 +1,15 @@
 {
   "name": "xmemory-claude",
-  "owner": { "name": "BlueSkyXN" },
+  "owner": {
+    "name": "BlueSkyXN"
+  },
   "description": "XMemory 文件记忆技能插件的本地市场。",
   "plugins": [
     {
       "name": "xmemory",
       "source": "./plugins/xmemory",
-      "version": "1.1.0",
-      "description": "XMemory：用设置、记录、采集、整理、调取五个技能维护可追溯的文件式记忆。纯技能，无后台服务。",
+      "version": "1.2.0",
+      "description": "XMemory：跨客户端的记忆中心。用设置、记录、采集、整理、调取五个技能，把各客户端记忆和对话加工成按项目、按时间组织的集中记忆库。纯技能，无后台服务。",
       "category": "productivity"
     }
   ]

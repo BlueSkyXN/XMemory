@@ -1,8 +1,79 @@
 # XMemory 验证报告
 
-当前版本：**1.1.0**。最新核对日期：2026-10-09。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
+当前版本：**1.2.0**。最新核对日期：2026-10-11。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.2.0 跨客户端记忆中心重设计（2026-10-11）
+
+起因：2026-10-10 按 1.1.0 规范做首次全量回填，暴露了以下问题：
+- 项目归属与各客户端的项目名对不上；
+- 足迹全部按回填当天落位；
+- 没有意识层；
+- 采集报告无法逐项核对。
+
+本版仍用格式名 `xmemory/v1`，重新定义库内布局，纯技能实现，不依赖脚本。Conversation Readers 未改动，保持 0.1.1。
+
+**改动范围**
+- 结构：改为 `USER.md`、`AWARENESS.md`、`MEMORY.md`、`topics/`、`daily/<日期>.md`（每日记忆）+ `daily/<日期>/`（足迹，按事件日期）、`projects/<项目名>/`（同构）、`state/`（清单、来源进度、整理记录、意识副本、撤回标识）。项目名取平台项目根目录名。
+- 规范：
+  - `references/` 重写 contract、storage；
+  - 新增 curation（整理细则）、clients（客户端读取映射）、collection（采集细则）；
+  - 删除 sources。
+- 技能：五个 SKILL.md 全部重写。
+- 模板：按新结构重建，删除 CURRENT、day、note、BACKLOG 及大写 WITHDRAWN。
+- `integrations/`：新增 hooks、backfill；`scheduled-curate.md` 改名为 `scheduled.md` 并重写。
+- 文档：插件文档与根 README 同步更新；`docs/release-install.md` 改为 1.2.0。
+- 清单：三端清单与市场版本号改为 1.2.0。
+
+**仓库检查**
+- `tools/check_package.py` 通过，插件文件 119 个。
+- `tools/sync_skill_resources.py --apply` 后五个技能的资源副本与源文件一致。两个工具都跳过模板中含 `{{…}}` 的占位链接。
+- **64/64** 测试通过（含 254 个 subtest），其中两项为新增：
+  - `test_memory_hub_contract`：结构、晋升门槛、逐条判断、范围从窄、Codex 摘要时间为 UTC 等契约短语；
+  - `test_terminology_keeps_office_memory_and_ompi_apart`：载荷中禁止裸写缩写，以免把自有实践 Office Memory 与外部草案 OMPI 混为一谈。
+- `tests/scenarios.json` 改写为 31 条场景。这一步只是定义，没有执行。
+
+**GLM-5.3 隔离试跑**
+
+测试环境：Codex CLI 0.160.1，`-m glm-5.3`（provider `cpa-hfs`），`--ephemeral`。写入只限 `/tmp` 下的一次性目录。
+
+数据：夹具为 3 份虚构的 Codex 风格 rollout summary，分别是 2026-10-08 配置解析修复、2026-10-09 staging 部署回归、一份纯问候。
+
+范围：未读写 `~/.agents/memory`，没有对真实客户端数据做采集或整理。
+
+| 轮次 | 步骤 | 结果 | 处理 |
+|---|---|---|---|
+| 1 | 设置 + 采集 | 2 份足迹落在各自事件日期，问候标“无可记内容”；清单 3 行、空状态 0；来源进度正确 | — |
+| 1 | 整理 | 结构齐全；暴露 4 个漏洞：①原生转述被标成用户原话；②AI 汇报被当作执行结果；③项目偏好被扩大到 personal；④单一来源的坑直接晋升为有效 | contract 增加“出处按亲自读到的东西判定”；curation 晋升门槛限定为亲自读到的原话或执行结果，不满足的主题写“待确认”，范围从窄 |
+| 2 | 整理 | 4 个漏洞未复现，偏好留在项目、无 USER.md；新暴露：把两个会话的不同教训拼成一个主题，按“两条独立证据”晋升为有效 | curation 要求两条证据支持同一条主张，多主张主题逐条判断 |
+| 2 | 调取（`-s read-only`） | 读取顺序为意识 → 主记忆 → 每日记忆 → 主题 → 足迹 → 原件；回答写明截至日期、待确认项与“staging 当前状态未核实”；记忆根无文件变化 | — |
+| 3 | 采集 | 夹具 cwd 未改成本轮目录，足迹按规则判为“待定”放在库根（行为正确）；暴露：Codex 摘要文件名中的 UTC 时间被当作本地时间 | clients 写明 Codex 文件名与 `updated_at` 是 UTC、`rollout_path` 是本地时间；collection 要求先判断再换算。本轮中止 |
+| 4 | 设置 + 采集 + 整理 | 足迹进 `projects/demo-api/daily/`，时刻为 1000 / 1500（已换算）；拆成 6 个单一主张主题，全部“待确认”，仅项目范围；三项核对通过 | 规范定稿 |
+
+**分发包**
+
+四个包输出到新目录 `dist/memory-hub-20261011/`。XMemory 两包重复构建逐字节一致；包内 `SHA256SUMS` 逐项校验通过，载荷中没有 `.py` 和 `local/`。解压后的完整包重跑 `check_package` 无错误。Conversation Readers 两包的哈希与上一轮一致。
+
+| 归档 | SHA-256 |
+|---|---|
+| `XMemory-1.2.0.zip` | `99067669fa5949900488c3029f0fc86113538d75bf95e53541495e00786b080b` |
+| `XMemory-1.2.0-skills.zip` | `88a274f631c2552e5611afccec9830bb29905df2c4b6d75155c87080f27510f7` |
+| `ConversationReaders-0.1.1.zip` | `c578bb5d779bf729ed322440dbd1eb0a9618a9972a235adc59e61cf5a134b09b` |
+| `ConversationReaders-0.1.1-skills.zip` | `279b045e9e44dcc2ea383ff040b30608e2114be2afa52fde00400306e513f0a0` |
+
+**未验证**
+
+试跑只覆盖 Codex 原生摘要一种来源、单项目、虚构数据和一个模型。以下各项都需要分别验收，不能由本节替代：
+- ZCode、Claude、Qoder、QoderWork 等其他来源的读取映射；
+- 会话级采集与长会话按天拆分；
+- 跨客户端合并；
+- 定时运行与 Hook 接入；
+- 真实宿主中的技能发现；
+- 31 个行为场景；
+- 真实历史的首次回填。
+
+10-10 试运行库的归档、Office Memory 迁移和真实回填都需要另行授权。
 
 ## ZCode 市场改名 xmemory（2026-10-10）
 
