@@ -86,6 +86,9 @@ def check(root: Path = ROOT) -> list[str]:
         for raw in LINK.findall(text):
             if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I):
                 continue
+            # 模板中的占位链接（含 {{…}}）不是真实链接，由使用者替换。
+            if "{{" in raw and "templates" in rel.parts:
+                continue
             target = (path.parent / unquote(raw.split("#", 1)[0])).resolve()
             boundary = plugin / "skills" / rel.parts[1] if rel.parts[0] == "skills" else plugin
             if not target.is_relative_to(boundary.resolve()) or not target.exists():
@@ -151,7 +154,7 @@ def check(root: Path = ROOT) -> list[str]:
         if source != "./plugins/xmemory" or (root / source).resolve() != plugin.resolve():
             errors.append(f"{host} marketplace source mismatch")
     cfg = tomllib.loads((plugin / "templates" / "config.toml").read_text(encoding="utf-8"))
-    if cfg != {"format": "xmemory/v1", "capture": "explicit"}:
+    if cfg != {"format": "xmemory/v1", "capture": "milestone", "quiet_minutes": 60}:
         errors.append("Template must not enable example sources/projects")
     return errors
 

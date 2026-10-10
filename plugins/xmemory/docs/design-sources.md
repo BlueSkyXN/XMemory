@@ -1,99 +1,201 @@
 # 设计来源与采用边界
 
-核对日期：Qoder、Codex、ZCode、Claude Code 部分为 2026-10-06；Cognition（AMR 与 Devin）、OMPI、Anthropic 部分为 2026-10-08。下面区分官方公开说明、本机静态观察和 XMemory 自己的选择。不复制产品内部数据或原始提示词；产品更新后应重新核对。
+核对日期：Qoder、Codex、ZCode、Claude Code 的官方说明为 2026-10-06；Cognition、OMPI、Anthropic 为 2026-10-08；1.2.0 的增补（各产品机制对照、OpenClaw、Hermes、腾讯与阿里候选、WorkBuddy、Trae）为 2026-10-10，依据是对公开源码、安装包和官方文档的静态研究，以及对本机各端记忆目录的只读观察。
 
-## Qoder 与 QoderWork 分开看
-
-### Qoder CLI
-
-官方 [Memory](https://docs.qoder.com/cli/memory.md) 说明 Markdown 索引、主题记忆及记住/忘记等管理操作。
-
-采用：可编辑文件、短索引、主题详情，以及删除后同步清理入口。不能据此推断 QoderWork 使用同样的记忆根或加载机制，也不把 CLI 特性笼统说成 Qoder IDE 已全部实现。
-
-Qoder 的 [IDE Skills](https://docs.qoder.com/extensions/skills.md) 与 [CLI Skills](https://docs.qoder.com/cli/Skills.md) 分别描述技能发现方式；两者重复名称优先级不能混用。本包建议避免同名多份安装。
-
-### QoderWork
-
-专门的 [Awareness 文档](https://docs.qoder.com/qoderwork/memory) 直接列出了：
-
-- `SOUL.md`：协作/沟通偏好；
-- `AGENTS.md`：工作与行为指导；
-- `USER.md`：用户背景与偏好；
-- `MEMORY.md`：长期知识与结论；
-- `memory/`：每日摘要与临时记录。
-
-该文档另有本地搜索索引、自动维护和定期反思说明。因此不能把 QoderWork 的 `MEMORY.md` 说成 Claude/ZCode 式的纯导航索引，也不能把文件布局说成其完整实现。
-
-采用：指令、用户背景、长期结论和时间记录分开；当前理解需要维护而不是只追加。XMemory 不新建人格文件，不自动画像，不继承自动反思或本地索引服务。索引技术、排序、上下文预算、反思频率与精确项目隔离机制，本次没有据此确认。
-
-技能安装另见 [QoderWork Skills](https://docs.qoder.com/qoderwork/skills)。Awareness 数据位置与技能目录是不同对象，不混为一谈。
+下面区分官方公开说明、静态观察和 XMemory 自己的选择。不复制产品内部数据或原始提示词；产品更新后应重新核对。静态观察说明“代码里有这条链”，不等于用户本机已启用或已经运行。
 
 ## Codex
 
-官方 [Memories](https://learn.chatgpt.com/docs/customization/memories?surface=app) 描述宿主支持的记忆能力；公开源码中的 [固定提交版整理提示](https://github.com/openai/codex/blob/594283af5c0a4c99cdede91b0d7951524b2535fb/codex-rs/memories/write/templates/memories/consolidation_v2.md) 展示来源驱动的整理、纠错/删除传播及无需更新时不写。
+官方 [Memories](https://learn.chatgpt.com/docs/customization/memories?surface=app) 描述宿主支持的记忆能力；公开源码的 [固定提交版整理提示](https://github.com/openai/codex/blob/594283af5c0a4c99cdede91b0d7951524b2535fb/codex-rs/memories/write/templates/memories/consolidation_v2.md) 展示来源驱动的整理、纠错与删除传播，以及无需更新时不写。
 
-采用：先有工作证据，再整理；保留来源和未确认部分；删除影响派生内容；把记忆当资料而不是指令。固定提交只说明那一版代码，不代表所有 Codex 客户端都启用了相同记忆流水线。
+静态观察：
+- **总开关**默认关闭，开启后在新回合开始时触发后台流程。
+- **第一阶段**：处理过去已闲置的交互会话，逐会话用模型提取摘要并存入数据库；同时生成逐会话摘要文件，文件头部有会话 ID、更新时间、cwd、分支。
+- **第二阶段**：全局只有一个整理任务，持有租约，成功后有冷却期；以 Git 基线和 diff 判断变化，生成 handbook 式 `MEMORY.md` 和紧凑摘要。
+- **常驻**：紧凑摘要约 2500 tokens，注入 developer 通道。
+- **范围**：数据库查询不按 cwd 过滤，项目范围只在 handbook 中用 `applies_to: cwd=` 语义表达。
 
-不采用：异步后台整理、原生数据库、自动注入或私有数据格式。技能发现依据 [Build skills](https://learn.chatgpt.com/docs/build-skills)，不据此声称插件能访问全部历史会话。
+采用：
+- 两阶段结构：逐会话提取对应采集，单写者合并对应整理；
+- 允许“没有可记内容”；
+- 保留来源和未确认部分；
+- 删除要影响派生内容；
+- 记忆是资料而不是指令；
+- 把 Codex 的逐会话摘要和 Task Group 当作采集的首选输入。
+
+不采用：内置后台进程（改由宿主定时任务触发）、原生数据库、developer 通道自动注入、按引用次数排序（纯技能的调取只读，无法记录使用次数）。固定提交只代表那一版代码。
 
 ## ZCode
 
-官方 [项目记忆](https://zcode.z.ai/cn/docs/memory) 说明入口和主题文件、后续会话使用记忆等原生行为。[Skill](https://zcode.z.ai/cn/docs/skill) 与 [Plugin](https://zcode.z.ai/cn/docs/plugin) 分别说明方法和插件包装。
+官方 [项目记忆](https://zcode.z.ai/cn/docs/memory) 说明入口、主题文件和后续会话使用记忆；[Skill](https://zcode.z.ai/cn/docs/skill) 与 [Plugin](https://zcode.z.ai/cn/docs/plugin) 分别说明方法和插件包装。
 
-本次还对本机安装包 `glm/zcode.cjs` 做了只读静态核对：存在索引加事实文件的行为约定、按 workspace 身份计算记忆分区，以及默认索引加载逻辑。未读取任何个人记忆；这是安装包快照观察，不是运行验收。公开文档中的后台提取也不能外推为 XMemory 自带功能。
+静态观察（安装包 `glm/zcode.cjs`，只读）：
+- 成功的普通回合结束后，启动受限的后台提取，最多 5 轮；出错时不推进游标；没有值得保存的内容就输出“Nothing to save.”。
+- 默认加载索引，主题按需读。
+- 主题文件头部为 `name`、`description`、`metadata.type`（user/feedback/project/reference），可附 `originSessionId`。
+- 项目分区目录是 `<目录名小写>-<hash>`。
 
-采用：入口简短、主题拆分、范围隔离和去重更新。XMemory 的“一条记忆”是一个稳定主题和主张，不规定每句话建文件。原生自动加载预算和目录算法不复制到插件，也不承诺插件文件自动进入每次会话。
+采用：入口简短，主题拆分；主题头部沿用 `name`、`description`、`type`；把分区目录名登记为项目别名；出错不推进进度。原生自动加载预算和目录算法不复制到插件，也不承诺插件文件自动进入每次会话。
 
 ## Claude Code
 
-官方 [Memory](https://code.claude.com/docs/en/memory) 区分项目指令和自动记忆，并描述启动时读取原生 `MEMORY.md` 的有限内容、主题文件按需展开。[Skills](https://code.claude.com/docs/en/skills) 描述技能与配套资源。
+官方 [Memory](https://code.claude.com/docs/en/memory) 区分项目指令和自动记忆，启动时读原生 `MEMORY.md` 的有限内容，主题文件按需展开；[Skills](https://code.claude.com/docs/en/skills) 描述技能与配套资源。
 
-采用：短入口、按需读取主题、指令和经验分开。XMemory 数据不会因文件同名就获得 Claude 原生记忆的启动加载待遇；`CLAUDE.md` 接入必须明确配置，不能把记忆当上级指令。
+静态观察：
+- 保存是“先写主题文件，再更新索引一行”的模型约定，不是事务。
+- 写入时打上的 `modified` 时间不等于事件发生时间。
+- 有门控的 Dream 整理提示要求：合并近似重复、把相对日期改为绝对日期、删除被推翻的旧事实、压缩索引。
+
+采用：短入口加主题按需读；指令和经验分开；整理时把相对日期换算为绝对日期；区分写入时间和事件时间。XMemory 数据不会因文件同名就获得 Claude 原生记忆的启动加载待遇；`CLAUDE.md` 接入必须明确配置，不能把记忆当上级指令。
+
+## Qoder CN、Qoder CLI 与 QoderWork
+
+### Qoder CN / CLI
+
+官方 [Memory](https://docs.qoder.com/cli/memory.md) 说明 Markdown 索引、主题记忆以及记住、忘记等操作。静态观察：
+- 索引和主题按用户、项目两种范围分区，主题有四种类型；
+- CLI 的项目记忆还按类别分目录（常见坑、决策、架构、技术栈、任务摘要、规范、环境等）；
+- 技能建议要经过接受、新的人工回合和内容 hash 一致才会写入。
+
+采用：项目分区；按类别映射到 XMemory 的六种主题类型；“建议”和“写入”是不同状态，XMemory 只给技能建议，不自动写技能。
+
+### QoderWork
+
+专门的 [Awareness 文档](https://docs.qoder.com/qoderwork/memory) 列出：`SOUL.md`（协作和沟通偏好）、`AGENTS.md`（工作指导）、`USER.md`（用户背景与偏好）、`MEMORY.md`（长期知识与结论）、`memory/`（每日摘要与临时记录）。
+
+静态观察：
+- `MEMORY.md` 是以 `§` 分条的长期正文，工具写入上限 10 KiB；`USER.md` 上限 4 KiB。
+- 日记按本地日期分文件，每个会话一块。
+- 回合结束按累计得分决定是否写入。
+- 反思定期检查变化后执行，有备份和回滚，并做关键信息（路径、版本、数字等）保全检查。
+- 用量超过 80% 时按重要度和新旧淘汰，淘汰内容写进日志。
+
+采用：
+- 画像（`USER.md`，只收工作相关内容，由整理维护）；
+- 意识（`AWARENESS.md`）；
+- 按日期的每日记忆，足迹按会话落在当天；
+- 重写前备份；
+- 关键信息保全核对；
+- 按重要度淘汰并记录去向。
+
+不采用：人格文件 `SOUL.md`、宿主内置的定时反思进程、本地全文索引服务。“意识”这个名称沿用 QoderWork 的 Awareness。
+
+## OpenClaw 与 Hermes
+
+[OpenClaw](https://github.com/openclaw/openclaw) 稳定版的默认记忆插件静态观察：
+- `USER.md`、`MEMORY.md`、按日的 `memory/YYYY-MM-DD.md` 和给人审阅的 `DREAMS.md` 分工明确；
+- 压缩上下文前，把要点只追加地写进当天日记；
+- 重置会话时读取最近两天日记，并标注为不可信的工作区笔记；
+- 默认 cron 运行 Dreaming：light、REM 不写长期事实，deep 晋升需同时满足分数、总信号数、不同用户查询数门槛；
+- 晋升前重读原始来源并核对指纹，已有条目损失超过阈值就退回只追加；
+- 遗忘先写 tombstone，再清理按来源 lineage 追踪到的派生数据。
+
+[Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) 静态观察：
+- `MEMORY.md` 和 `USER.md` 以 `§` 分条，默认上限 2200 和 1375 字符；
+- 超容量时报错并要求合并，不静默丢弃；
+- 会话内提示词冻结，压缩时重载。
+
+采用：
+- 压缩前写足迹（Hook 模板）；
+- 延续任务时读最近两天每日记忆；
+- 晋升需要多个独立信号并回原件核对；
+- 整理记录给人审阅、不作为事实来源；
+- 已有条目损失核对；
+- 撤回留标识；
+- 超容量时不静默截断。
+
+不采用：内置 cron、派生数据库、向量检索。
+
+## 腾讯与阿里的记忆服务候选
+
+[TencentDB Agent Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory) 静态观察：
+- 粒度分四层：L0 原对话 → L1 原子记忆 → L2 场景 → L3 画像。
+- L1 有七类（画像、经历、指令、工作事实、任务、方法、产物），记录来源消息 ID，按日分片。
+- 当前代理只常驻注入 L3 正文和 L2 索引，L1 用只读工具按需查。
+- 模型抽取失败时游标仍会推进，在一定条件下会漏掉增量。
+
+阿里的上下文服务客户端插件在会话开始和用户提问时组装上下文，会话结束时请求抽取；但请求被接受不等于抽取完成。
+
+采用：
+- 四层粒度（原件、足迹、主题与每日、常驻），与内容类型分成两条轴；
+- 足迹条目参照 L1 七类；
+- 常驻层只放顶层概括；
+- 来源进度只在成功后推进；
+- “接受、保存、生成、可检索、生效”分开报告。
+
+不采用：服务端数据库、向量检索、团队权限模型。两个原名产品的身份尚未确认，这里只研究官方候选。
+
+## WorkBuddy 与 Trae
+
+WorkBuddy 5.5.3 静态观察：
+- 桌面端读取工作区 `MEMORY.md`、用户本地 `MEMORY.md` 和云端 profile，并按字符上限注入；
+- 每轮提示模型追加工作区日记；
+- “30 天后蒸馏”是提示词要求，不是已证实的后台任务。
+
+Trae 的 Chronicle 屏幕观察：
+- 摘要标注为不可信观察，带时间窗和来源 ID；
+- 普通记忆按项目和日期分目录。
+
+采用：工作区日记和按日期目录的时间轴；观察类内容一律作低信任线索，不自动升级为偏好或事实。不采用：云端 profile 和屏幕采集。
 
 ## Cognition：Agent Memory Repo 与 Devin Memory
 
-[AMR 仓库](https://github.com/AgentMemoryRepo/agentmemoryrepo)（固定提交 `8798cb2`，2026-10-06）公开了文件格式和一个参考技能：`MEMORY.md` 是入口，`## Index` 上方放每次会话都需要的条目；条目一行一条，末尾可带 `[key: value]` 元数据，推荐 `source` 和 `added`；文件之间用 `[[path]]` 链接。参考技能只在被调用时工作，自述不带 Hook、定时任务和启动脚本；它要求记忆放在独立 Git 仓库、写前工作区干净、每次编辑都提交。周期性 Dreaming 只出现在 README 的描述中，参考包里没有实现。
+[AMR 仓库](https://github.com/AgentMemoryRepo/agentmemoryrepo)（固定提交 `8798cb2`）公开了文件格式和参考技能：
+- `MEMORY.md` 是入口，条目一行一条，推荐 `source` 和 `added`，文件之间用 `[[path]]` 链接；
+- 参考技能只在被调用时工作；
+- 周期性 Dreaming 只出现在 README 的描述中。
 
-[Devin Memory](https://docs.devin.ai/zh/product-guides/memory) 是基于 AMR 的产品实现：记忆存放在持久 Git 仓库，每个会话载入 `MEMORY.md`，其他笔记按需检索；被纠正、说明偏好或总结出经验时编辑笔记；保存时提交并合并其他会话的修改；大约每天运行一次后台 Dreaming。它明确只存偏好、纠正、决定及理由、仓库和环境中的坑，不存会话摘要、任务状态、可轻易重新获取的信息和凭据；由自动化启动的会话不读写记忆。
+[Devin Memory](https://docs.devin.ai/zh/product-guides/memory) 基于 AMR：每个会话载入 `MEMORY.md`，其他笔记按需检索；被纠正、说明偏好或总结出经验时编辑笔记；大约每天一次后台 Dreaming；只存偏好、纠正、决定及理由、坑，不存会话摘要和凭据。
 
-采用：记忆层只放长期沿用的内容，任务状态放接续层；入口放常驻条目加索引；整理集中在定期运行的一处；自动化任务不写记忆。
-
-不采用：不以 Git 作为必需机制；不依赖宿主自动载入，改为读取协议；记忆文件头部用 YAML 而不是行尾元数据，以便与 OMPI 的记忆对象对应。不宣称与 AMR 格式兼容。Devin 的行为来自官方文档，本次没有运行验证。
+采用：主记忆只放长期结论；入口放常驻要点；整理集中在定期运行的一处。不采用：Git 作为必需机制；不宣称与 AMR 格式兼容。
 
 ## OMPI：开放记忆协议工作草案
 
-[OMPI](https://ai-disclosures.org/ompi) 由 AI Disclosures Project（Code for Science & Society 下属项目）主办，Mozilla、IBM 为合作方，Letta 担任技术作者，目前处于 1.0 之前的早期阶段。2026-10-02 的 [编辑工作草案 v0.1](https://github.com/The-AI-Disclosures-Project/Open-Memory-Protocol/blob/a6c40e64969e0089ff7cad7397aea27a335a8c81/working-group/exchange-and-runtime/2026-10-02-working-spec-v0.1.md) 明确不是已采纳的标准，其中的规范性语句都还处于提议状态。
+[OMPI 编辑工作草案 v0.1](https://github.com/The-AI-Disclosures-Project/Open-Memory-Protocol/blob/a6c40e64969e0089ff7cad7397aea27a335a8c81/working-group/exchange-and-runtime/2026-10-02-working-spec-v0.1.md) 明确不是已采纳的标准。
 
-草案要点：记忆是头部加正文，正文推荐 Markdown，运行时可用 YAML front matter 呈现；`type` 指正文媒体类型而非语义分类；生效时间与记录时间分开；`provenance` 列出所有写入者，整理、遗忘等维护程序也要列入；证据只记录来源，不证明内容为真；遗忘要留下墓碑（何时、谁、为何，不含原文），并防止从旧档案复活；Markdown 加载档以根 `MEMORY.md` 为入口、深层文件按需读取；召回方式不做标准化；凭据不属于记忆。
+采用其理念：生效时间与记录时间分开；出处列出写入者；证据只记录来源、不证明内容为真；遗忘留下不含原文的墓碑并防止复活；凭据不属于记忆。
 
-采用：含义相同的地方使用草案字段名；语义类型放 `tags`；撤回墓碑记录执行者和原因；整理者写进 `provenance`。
-
-不采用：导出清单、导入回执、迁移意图、MCP 运行时绑定、审计档（校验和、不可变修订链）。草案仍在变化，XMemory 不宣称符合。
+1.2.0 的主题头部改为与 Claude Code、ZCode 的主题文件对齐（`name`、`description`、`type`），不再沿用草案字段名。不宣称符合草案。
 
 ## Anthropic：Managed Agents 记忆库与 Dreams
 
-[记忆库](https://platform.claude.com/docs/en/managed-agents/memory)（beta `agent-memory-2026-07-22`）是工作区内的一组文本文件，挂载到会话沙箱的 `/mnt/memory/<名称>/`，Agent 用普通文件工具读写。每次修改都生成不可变版本，一般保留 30 天，在用记忆的近期版本始终保留；历史版本可以脱敏；更新可带内容哈希前置条件，防止覆盖他人的修改。文档提醒：可写的记忆库可能被提示注入写入恶意内容，参考资料应只读挂载。
+[记忆库](https://platform.claude.com/docs/en/managed-agents/memory) 是挂载到沙箱的一组文本文件，用普通文件工具读写，每次修改生成版本，并提醒可写记忆库可能被提示注入写入恶意内容。[Dreams](https://platform.claude.com/docs/en/managed-agents/dreams) 读取记忆库和历史会话，产出新的记忆库，由用户审阅后切换。
 
-[Dreams](https://platform.claude.com/docs/en/managed-agents/dreams)（研究预览，`dreaming-2026-04-21`）读取一个记忆库和 1 到 100 个历史会话，产出一个新的记忆库。输入库从不修改，由用户审阅后决定是否切换。
+采用：记忆就是普通文件；参考资料只读；整理的判断类改动在无人值守时只写成候选，由用户确认。不采用：云端接口和托管的版本历史。
 
-采用：记忆就是普通文件，用普通文件工具读写；定时整理按允许修改的内容划界，更新接续状态、处理登记及已声明关系的状态，不自行合并、改写或删除长期记忆正文。“记账类”和“判断类”都需要理解与核对，区别在于修改权限。记忆是资料不是指令，参考资料只读。
+## Office Memory（此前的自有实践）
 
-不采用：云端接口和托管的版本历史。
+Office Memory 是我们此前在单个项目中的自有实践，不是行业标准。它提供了整理引擎：
+- 6 级证据；
+- 候选归一（对象、主张、范围、观察时间、状态时间、证据、边界）；
+- 11 种处置；
+- 日期记录、当前认知、长期结论三层分工；
+- 当前认知五节结构与轮转副本；
+- 聚合文件用标题锚点；
+- 会话按工作目录归属并设静默期；
+- 整理后做调取检查。
 
-## Office Memory
+采用：上述整理引擎完整继承，并从单项目推广到全部项目和 personal。当前认知五节对应意识，日期记录对应每日记忆，长期条目对应主题，复查日期对应 `review`。
 
-本地原有方法提供了日期记录、当前交接、长期结论的分工，以及来源只读、冲突核实、未完成项检查和整理后试查。这里提炼方法，不把项目私有内容、硬体量限制、来源适配脚本或固定 schema 复制进公开插件。
+实际使用中暴露过三种压力：单一长期记忆文件接近体量上限；待确认清单只增不减；多条工作线挤在一份认知文件里。对应做法是：主记忆拆成要点加主题、意识中设“搁置”小节、意识按工作线分组。
 
-采用：日期记录（对应当日文件）；长期条目的复查日期（对应 `review`）；整理时写明实际检查过的来源（对应近况的"本次读过 / 未读"）；引用会被整体重写的聚合文件时用标题锚点而不用行号；重写当前认知前核对待办（对应当日文件的"状态变化"）；读取规则写进根 AGENTS.md（对应读取协议）。
-
-实际使用中暴露过三种压力：单一长期记忆文件接近体量上限后难以新增条目；待确认清单只增不减；同一项目的多条工作线挤在一份认知文件里。对应做法是：记忆按主题拆分，久无进展的待办移入积压，近况按工作线分节。
+不复制项目私有内容、固定体量或来源适配脚本。
 
 ## 本版自己的设计
 
-五技能名称、`personal` 与 `project:<id>` 范围、两层结构、事件文件与当日文件、"是否处理过以当日文件为准"、分级整理、四类地址、主本与同步点，以及文件格式 `xmemory/v1`，都是 XMemory 的约定，不是上述任何产品或草案的官方标准。研究 demo 是设计输入，不是正式旧版，也不构成升级兼容关系。
+以下都是 XMemory 自己的约定，不是上述任何产品或草案的官方标准：
+- 五技能名称；
+- `personal` 与 `project:<项目名>` 范围；
+- 四层结构与目录命名；
+- 足迹按事件日期落位；
+- “是否已整理以每日记忆的已吸收足迹为准”；
+- 采集清单与来源进度；
+- 晋升门槛、意识改写比例自检、三项写后核对；
+- 地址写法；
+- 文件格式 `xmemory/v1`。
 
-[Agent Skills 规范](https://agentskills.io/specification#file-references) 推荐相对技能根引用配套文件。正式插件和便携包的每个技能都包含自身所需的资源，不使用 `../../` 依赖相邻目录。仓库开发工具从共用文档同步这些静态副本并检查一致性，使用插件时不运行同步工具。
+研究 demo 是设计输入，不是正式旧版。
 
-2026-10-07 另核对了三端包装：[Claude 插件规范](https://code.claude.com/docs/en/plugins-reference)、[Claude 市场规范](https://code.claude.com/docs/en/plugin-marketplaces)、[Codex 插件与市场](https://developers.openai.com/plugins/build/plugins)。Claude 使用 `.claude-plugin/plugin.json` 与其独立市场清单；Codex 使用官方当前推荐的根 `plugin.json` 与 `.agents/plugins/marketplace.json`；ZCode 保持 `.zcode-plugin/plugin.json` 和原本地市场。三端市场字段不同，不以同一 JSON 冒充所有规范。真实发现、安装和加载效果仍需宿主验证。
+[Agent Skills 规范](https://agentskills.io/specification#file-references) 推荐相对技能根引用配套文件。正式插件和便携包的每个技能都包含自身所需的资源，不使用 `../../` 依赖相邻目录；仓库开发工具从共用文档同步这些静态副本并检查一致性。三端包装分别遵循 [Claude 插件规范](https://code.claude.com/docs/en/plugins-reference)、[Claude 市场规范](https://code.claude.com/docs/en/plugin-marketplaces)、[Codex 插件与市场](https://developers.openai.com/plugins/build/plugins) 和 ZCode 本地市场；真实发现、安装和加载效果仍需宿主验证。
 
-归纳起来，借鉴的是文件组织、信息分层、整理判断和生命周期约定，不是把各产品的名词、原生后台能力或目录全部拼在一起。
+归纳起来，借鉴的是流水线结构、信息分层、整理判断和生命周期约定，不是把各产品的名词、原生后台能力或目录全部拼在一起。
