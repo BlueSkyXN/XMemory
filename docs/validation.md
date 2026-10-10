@@ -4,6 +4,27 @@
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
+## XR-005 JSONL 关联 ID 补修（2026-10-09）
+
+复评基准为 `3e96411ba8f73323c35226b6c294bc417d136c4f`（PR #2 合并后）。本次保留未发布的 XMemory 1.1.0、Conversation Readers 0.1.1 版本号。PR #2 覆盖了 Qoder 桌面 SQLite 与 ZCode SQLite；本次补齐评审复现的 JSONL 同类缺陷，它在本基准已存在，不是 PR #2 引入的回归。
+
+- Claude／Qoder CN JSONL 的 `tool_use.id`、`tool_result.tool_use_id`，Codex JSONL 的 `function_call*`／`custom_tool_call*` 的 `call_id`，以及 WorkBuddy JSONL 的 `function_call`／`function_call_result` 的 `callId`，在生成事件前进行类型检查，异常块不会进入公共去重集合。错误类型不转成字符串；缺失／null ID 继续遵守现有输出契约。
+- 默认正文和含工具读取均保留异常块所在消息内的其他正常内容块与前后消息正文，并给出带文件、字节偏移、内容块及字段位置的 `invalid_id` warning，标记 `content_status=partial`、`scan_complete=false`。默认模式因先解析后过滤，同样报告异常工具造成的解析缺口。
+- 先在复评基准复现评审给出的两条虚构记录：Claude 与 Qoder CN JSONL 在默认正文和 `--include-tools` 共 4 种组合均抛 `TypeError: unhashable type`、退出码 1、无正文返回；补修后均返回正常前后文并报告解析缺口。
+
+新增 4 项读取器回归（Claude、Qoder CN、Codex、WorkBuddy），通过真实分发脚本覆盖工具调用与工具结果两种记录（Codex 覆盖 `function_call`／`function_call_output` 与 `custom_tool_call`／`custom_tool_call_output` 四种记录，自定义工具用 `input` 字段、普通工具用 `arguments` 字段）、两种读取模式，以及列表、对象、数字、布尔、正常字符串、缺失和 null ID，合计 140 次分发脚本调用。补修后 **61/61** 测试通过（读取扩展 46 项、记忆包装 15 项）；公共运行时及五份分发脚本逐字节同步，两个包装检查通过。
+
+**哈希勘误（评审复核发现）**：初版记录的读取器包哈希来自"代码已补、包内 validation 文档尚未更新"时的构建——读取器完整包收录整个插件目录、skills 包也显式收录该文档，文档更新后未重建归档。初版 `dist/xr005-jsonl-20261009/` 保留作废，不作为分发依据。本节记录从完成全部入包修改（含 Codex 自定义工具用例与包内文档）后的源码状态重建，输出到新目录 `dist/xr005-jsonl-r2-20261010/`；临时目录重复构建与四个交付包逐字节一致，读取器包解压后以其分发技能目录替换仓库技能目录完整重跑 61 项测试通过。两个 XMemory 包不含任何 docs/validation.md，SHA-256 与上一轮 `xr005-followup` 输出逐项一致，本轮未触碰其载荷。
+
+| 归档 | SHA-256 |
+|---|---|
+| `XMemory-1.1.0.zip` | `b1ed9224709345e9465a0f74c7d5adbbe884f88a77efc86f8499d7f21bd2a59e` |
+| `XMemory-1.1.0-skills.zip` | `01da3e2de53c73d0ad79a21ea45a3e05894f98d6921c95ca42dd104f9bf45fa2` |
+| `ConversationReaders-0.1.1.zip` | `56e533db93d6b0119bcc57d99cebffabf1ccd6914516352a58cd4b4672578da3` |
+| `ConversationReaders-0.1.1-skills.zip` | `0507ee1c6b777fe3bfc7fa01285ea6f2973fed9e5bac8e2c11189732d264e810` |
+
+本轮使用虚构数据验证读取器与本地包，不改变真实客户端配置或记忆库。本轮只处理工具关联 ID：Claude／Qoder CN JSONL 消息的 `uuid` 为列表或对象时仍会使读取中断（进入公共去重键的 `record_id`），该缺陷在本轮基线已存在，列为下一项单独补修，不能将"JSONL 关联 ID 已全部解决"作为当前结论。新提交的远端 CI、GitHub Release、真实客户端接续、31 个记忆行为场景与长历史成本均须分别验证，不能由本地测试结果替代。
+
 ## XR-005 关联 ID 补修（2026-10-09）
 
 复评基准为 `7e915493729b50a27d1598de6993b2501e1a4dca`。本次保留未发布的 XMemory 1.1.0、Conversation Readers 0.1.1 版本号。

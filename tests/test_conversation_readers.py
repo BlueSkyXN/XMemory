@@ -501,15 +501,142 @@ class ReaderTests(unittest.TestCase):
         self.assertIn("message:m3", " ".join(out["warnings"]))
         self.assertIn("part:p3", " ".join(out["warnings"]))
 
-    def read_script(self, client, path, include_tools=False):
+    def read_script(self, client, path, include_tools=False, session="session-demo"):
         script = ROOT / "plugins/conversation-readers/skills" / SKILLS[client] / "scripts/read_conversations.py"
-        args = [sys.executable, "-B", str(script), "read", "--root", str(path), "--session", "session-demo"]
+        args = [sys.executable, "-B", str(script), "read", "--root", str(path), "--session", session]
         if include_tools:
             args.append("--include-tools")
         run = subprocess.run(args, capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(run.stderr, "")
         return json.loads(run.stdout)
+
+    def jsonl_block_records(self, block, identity):
+        tool = dict({"type": block, "name": "read", "input": {}}, **identity) if block == "tool_use" \
+            else dict({"type": block, "content": "结果"}, **identity)
+        return [self.claude(text="前文"),
+                {"type": "assistant", "sessionId": "session-demo", "uuid": "a1",
+                 "message": {"role": "assistant", "content": [
+                     {"type": "text", "text": "块前"}, tool, {"type": "text", "text": "块后"}]}},
+                self.claude(text="后文")]
+
+    def assert_jsonl_id_case(self, out, p, valid, identity, id_key, block_index, tool_text, include_tools):
+        # 事件序：前文、块前、（工具块在消息内容中的下标 1）、块后、后文。
+        expected = ["前文", "块前", "块后", "后文"]
+        if valid and include_tools:
+            expected[2:2] = [tool_text]
+        self.assertEqual([i["text"] for i in out["items"]], expected)
+        self.assertEqual(out["coverage"]["scan_complete"], valid)
+        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+        if valid:
+            self.assertEqual(out["warnings"], [])
+            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+            self.assertEqual([i["call_id"] for i in calls], [identity.get(id_key)] * (1 if include_tools else 0))
+        else:
+            self.assertEqual(len(out["warnings"]), 1)
+            self.assertIn(f"{p}#byte:", out["warnings"][0])
+            self.assertIn(f"block:{block_index}/{id_key}", out["warnings"][0])
+            self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_claude_jsonl_tool_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"id": None}, True), ("string", {"id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"id": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            for block in ("tool_use", "tool_result"):
+                id_key = "id" if block == "tool_use" else "tool_use_id"
+                block_identity = {id_key: identity["id"]} if "id" in identity else {}
+                p = self.write("session-demo.jsonl", self.jsonl_block_records(block, block_identity))
+                for include_tools in (False, True):
+                    with self.subTest(block=block, identity=label, include_tools=include_tools):
+                        out = self.read_script("claude", p, include_tools)
+                        self.assert_jsonl_id_case(out, p, valid, block_identity, id_key, 1,
+                                                  "{}" if block == "tool_use" else "结果", include_tools)
+
+    def test_xr005_qodercn_jsonl_tool_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"id": None}, True), ("string", {"id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"id": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            for block in ("tool_use", "tool_result"):
+                id_key = "id" if block == "tool_use" else "tool_use_id"
+                block_identity = {id_key: identity["id"]} if "id" in identity else {}
+                p = self.write("session-demo.jsonl", self.jsonl_block_records(block, block_identity))
+                for include_tools in (False, True):
+                    with self.subTest(block=block, identity=label, include_tools=include_tools):
+                        out = self.read_script("qodercn", p, include_tools)
+                        self.assert_jsonl_id_case(out, p, valid, block_identity, id_key, 1,
+                                                  "{}" if block == "tool_use" else "结果", include_tools)
+
+    def test_xr005_codex_jsonl_call_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"call_id": None}, True), ("string", {"call_id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"call_id": value}, False) for value in ([], {}, 1, False)]
+        # custom_tool_call 用 input 字段携带输入，与普通 function_call 的 arguments 相区分。
+        variants = (("function_call", {"name": "test", "arguments": "{}"}, "{}"),
+                    ("function_call_output", {"output": "通过"}, "通过"),
+                    ("custom_tool_call", {"name": "test", "input": "自定义输入"}, "自定义输入"),
+                    ("custom_tool_call_output", {"output": "自定义输出"}, "自定义输出"))
+        for label, identity, valid in cases:
+            for record_type, extra, payload_text in variants:
+                records = [
+                    {"type": "session_meta", "payload": {"id": "codex-demo", "cwd": "/work/demo"}},
+                    {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user",
+                                                           "content": [{"type": "input_text", "text": "前文"}]}},
+                    {"type": "response_item", "payload": dict({"type": record_type}, **extra, **identity)},
+                    {"type": "response_item", "payload": {"type": "message", "id": "a1", "role": "assistant",
+                                                           "content": [{"type": "output_text", "text": "后文"}]}},
+                ]
+                p = self.write("rollout.jsonl", records)
+                for include_tools in (False, True):
+                    with self.subTest(record_type=record_type, identity=label, include_tools=include_tools):
+                        out = self.read_script("codex", p, include_tools, session="codex-demo")
+                        expected = ["前文", "后文"]
+                        if valid and include_tools:
+                            expected[1:1] = [payload_text]
+                        self.assertEqual([i["text"] for i in out["items"]], expected)
+                        self.assertEqual(out["coverage"]["scan_complete"], valid)
+                        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                        if valid:
+                            self.assertEqual(out["warnings"], [])
+                            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                            self.assertEqual([i["call_id"] for i in calls], [identity.get("call_id")] * (1 if include_tools else 0))
+                        else:
+                            self.assertEqual(len(out["warnings"]), 1)
+                            self.assertIn(f"{p}#byte:", out["warnings"][0])
+                            self.assertIn("/call_id", out["warnings"][0])
+                            self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_workbuddy_jsonl_call_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"callId": None}, True), ("string", {"callId": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"callId": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            for record_type in ("function_call", "function_call_result"):
+                extra = {"id": "c1", "name": "test", "arguments": "{}"} if record_type == "function_call" \
+                    else {"id": "r1", "output": "未部署"}
+                records = [
+                    {"type": "message", "id": "u1", "sessionId": "wb", "role": "user",
+                     "content": [{"type": "input_text", "text": "前文"}]},
+                    dict({"type": record_type, "sessionId": "wb"}, **extra, **identity),
+                    {"type": "message", "id": "a1", "sessionId": "wb", "role": "assistant",
+                     "content": [{"type": "output_text", "text": "后文"}]},
+                ]
+                p = self.write("wb.jsonl", records)
+                for include_tools in (False, True):
+                    with self.subTest(record_type=record_type, identity=label, include_tools=include_tools):
+                        out = self.read_script("workbuddy", p, include_tools, session="wb")
+                        expected = ["前文", "后文"]
+                        if valid and include_tools:
+                            expected[1:1] = ["{}"] if record_type == "function_call" else ["未部署"]
+                        self.assertEqual([i["text"] for i in out["items"]], expected)
+                        self.assertEqual(out["coverage"]["scan_complete"], valid)
+                        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                        if valid:
+                            self.assertEqual(out["warnings"], [])
+                            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                            self.assertEqual([i["call_id"] for i in calls], [identity.get("callId")] * (1 if include_tools else 0))
+                        else:
+                            self.assertEqual(len(out["warnings"]), 1)
+                            self.assertIn(f"{p}#byte:", out["warnings"][0])
+                            self.assertIn("/callId", out["warnings"][0])
+                            self.assertIn("invalid_id:", out["warnings"][0])
 
     def test_xr005_qodercn_tool_ids_in_both_read_modes(self):
         p = self.qoder_db()
