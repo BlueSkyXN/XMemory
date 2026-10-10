@@ -9,9 +9,9 @@
 
 ## ZCode
 
-在“插件市场 → 添加 → 添加插件市场”粘贴解压根下的 `plugins/` 实际绝对路径。在“个人 → dev-xmemory-8c7a38ae”安装 XMemory 1.1.0，插件 ID 为 `xmemory@dev-xmemory-8c7a38ae`，安装后在“设置 → 插件”管理。
+在“插件市场 → 添加 → 添加插件市场”粘贴解压根下的 `plugins/` 实际绝对路径。在“个人 → xmemory”安装 XMemory 1.1.0，插件 ID 为 `xmemory@xmemory`，安装后在“设置 → 插件”管理。
 
-如果已添加源码目录的同名市场，继续刷新原市场，不重复添加解压目录。
+如果已添加源码目录的同名市场，继续刷新原市场，不重复添加解压目录。从开发期市场名 `dev-xmemory-8c7a38ae` 升级时，先移除旧市场再添加本市场。
 
 ## Claude Code
 

@@ -49,7 +49,7 @@ plugins/
 
 | 客户端 | 添加的实际市场根 | 插件 ID |
 |---|---|---|
-| ZCode | 本仓库 `plugins/` | `xmemory@dev-xmemory-8c7a38ae` |
+| ZCode | 本仓库 `plugins/` | `xmemory@xmemory` |
 | Claude Code | 本仓库根 | `xmemory@xmemory-claude` |
 | Codex | 本仓库根 | `xmemory@xmemory-codex` |
 
