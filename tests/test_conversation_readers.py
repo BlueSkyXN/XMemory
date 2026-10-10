@@ -638,6 +638,45 @@ class ReaderTests(unittest.TestCase):
                             self.assertIn("/callId", out["warnings"][0])
                             self.assertIn("invalid_id:", out["warnings"][0])
 
+    def jsonl_uuid_records(self, uuid_value):
+        middle = {"type": "assistant", "sessionId": "session-demo",
+                  "message": {"role": "assistant", "content": [{"type": "text", "text": "中间消息"}]}}
+        if uuid_value is not ...:
+            middle["uuid"] = uuid_value
+        return [self.claude(text="前文"), middle, self.claude(text="后文")]
+
+    def assert_jsonl_uuid_case(self, client, uuid_value, valid, include_tools):
+        p = self.write("session-demo.jsonl", self.jsonl_uuid_records(uuid_value))
+        with self.subTest(identity=type(uuid_value).__name__ if uuid_value is not ... else "missing",
+                          include_tools=include_tools):
+            out = self.read_script(client, p, include_tools)
+            # 消息级粒度：异常 uuid 跳过整条记录（含其正常文本块），前后消息保留。
+            self.assertEqual([i["text"] for i in out["items"]],
+                             ["前文", "中间消息", "后文"] if valid else ["前文", "后文"])
+            self.assertEqual(out["coverage"]["scan_complete"], valid)
+            self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+            if valid:
+                self.assertEqual(out["warnings"], [])
+            else:
+                self.assertEqual(len(out["warnings"]), 1)
+                self.assertIn(f"{p}#byte:", out["warnings"][0])
+                self.assertIn("/uuid", out["warnings"][0])
+                self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_claude_jsonl_record_uuid_in_both_read_modes(self):
+        cases = [(..., True), (None, True), ("rec-2", True)]
+        cases += [(value, False) for value in ([], {}, 1, False)]
+        for value, valid in cases:
+            for include_tools in (False, True):
+                self.assert_jsonl_uuid_case("claude", value, valid, include_tools)
+
+    def test_xr005_qodercn_jsonl_record_uuid_in_both_read_modes(self):
+        cases = [(..., True), (None, True), ("rec-2", True)]
+        cases += [(value, False) for value in ([], {}, 1, False)]
+        for value, valid in cases:
+            for include_tools in (False, True):
+                self.assert_jsonl_uuid_case("qodercn", value, valid, include_tools)
+
     def test_xr005_qodercn_tool_ids_in_both_read_modes(self):
         p = self.qoder_db()
         with sqlite3.connect(p) as c:
