@@ -1,6 +1,6 @@
 # 三端插件安装与独立技能
 
-当前版本 **1.3.0**：用户级集中记忆中心，分常驻层（画像、意识、主记忆）、主题与每日层、足迹层；提供读取协议、Hook 模板、定时提示词和首次回填提示词，文件格式名仍是 `xmemory/v1`；研究 demo 不计入正式版本线。
+当前版本 **1.3.1**：用户级集中记忆中心，分常驻层（画像、意识、主记忆）、主题与每日层、足迹层；提供读取协议、Hook 模板、定时提示词和首次回填提示词，文件格式名仍是 `xmemory/v1`；研究 demo 不计入正式版本线。
 
 安装的是技能方法，不是记忆数据。安装不初始化数据根、不导入历史、不更改客户端规则、不创建 Hook 或定时任务。
 
@@ -10,18 +10,18 @@
 |---|---|---|
 | ZCode | 插件内 `.zcode-plugin/plugin.json` | `plugins/marketplace.json`；市场根为 `plugins/` |
 | Claude Code | 插件内 `.claude-plugin/plugin.json` | 仓库根 `.claude-plugin/marketplace.json`；市场根为仓库根 |
-| Codex | 插件内 `plugin.json`，Agent Plugins schema 1.0.0 | 仓库根 `.agents/plugins/marketplace.json`；市场根为仓库根 |
+| Codex | 插件内 `.codex-plugin/plugin.json` | 仓库根 `.agents/plugins/marketplace.json`；市场根为仓库根 |
 
-三个入口指向同一个 `plugins/xmemory/`，但市场 schema 不互相冒充。每个技能都自带必要的引用资源，引用相对于实际 SKILL.md 所在目录。找不到配套文件时停止相关动作，不跳过共同规则。
+插件根另有 Agent Plugins schema 1.0.0 的通用 `plugin.json`。三个市场都列出 `plugins/xmemory/` 与 `plugins/conversation-readers/` 两个插件，各自独立安装；市场 schema 不互相冒充。读取插件只在按会话采集时需要，需要 Python 3.11+，见其 README。每个技能都自带必要的引用资源，引用相对于实际 SKILL.md 所在目录。找不到配套文件时停止相关动作，不跳过共同规则。
 
 ## ZCode
 
 1. 打开“插件市场 → 添加 → 添加插件市场”。
 2. 选择源码仓库的 `plugins/` 绝对路径；使用分发包时，选择解压根下的 `plugins/`。
-3. 在“个人 → xmemory”找到 XMemory 1.3.0 并安装。
+3. 在“个人 → xmemory”找到 XMemory 1.3.1 并安装；需要按会话采集时，同一市场里再安装 Conversation Readers。
 4. 在“设置 → 插件”管理启用状态。新建任务，从插件/技能选择器选择技能。
 
-插件 ID：`xmemory@xmemory`（市场名 `xmemory`，2026-10-10 由开发期路径名 `dev-xmemory-8c7a38ae` 改名）。更新时刷新原市场，再执行插件更新，不重复添加同名不同目录市场；从旧市场名升级时，先移除旧市场再添加本市场，不保留两份。
+插件 ID：`xmemory@xmemory`、`conversation-readers@xmemory`（市场名 `xmemory`，2026-10-10 由开发期路径名 `dev-xmemory-8c7a38ae` 改名）。更新时刷新原市场，再执行插件更新，不重复添加同名不同目录市场；从旧市场名升级时，先移除旧市场再添加本市场，不保留两份。
 
 ## Claude Code
 
@@ -30,6 +30,7 @@
 ```bash
 claude plugin marketplace add /absolute/path/to/XMemory
 claude plugin install xmemory@xmemory-claude
+claude plugin install conversation-readers@xmemory-claude   # 需要按会话采集时
 ```
 
 市场名为 `xmemory-claude`。可先只做验证：
@@ -45,11 +46,12 @@ claude plugin validate /absolute/path/to/XMemory/.claude-plugin/marketplace.json
 
 市场名为 `xmemory-codex`。官方文档规定项目目录清单位于 `.agents/plugins/marketplace.json`，并支持显式添加市场根。本次 CLI 在未配置来源的隔离环境中没有自动列出该市场；临时配置明确指向市场根后成功识别插件。因此不依赖隐式发现，建议按下面步骤添加市场，实际安装由用户操作。
 
-本次核对的 Codex CLI 0.160.0 提供：
+本次核对的 Codex CLI 0.162.1 提供：
 
 ```bash
 codex plugin marketplace add /absolute/path/to/XMemory
 codex plugin add xmemory@xmemory-codex
+codex plugin add conversation-readers@xmemory-codex   # 需要按会话采集时
 ```
 
 其他版本先查看实际 `codex plugin --help`；桌面端按插件目录中的市场入口安装。市场发现、插件安装和启用是不同状态，不能只看文件存在。

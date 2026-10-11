@@ -1,6 +1,17 @@
 # Conversation Readers 验证记录
 
-版本 0.1.1，最新核对日期 2026-10-10。验证范围为技能入口、脚本读取行为和本地包装；未安装、启用或发布到客户端。
+版本 0.1.2，最新核对日期 2026-10-11。验证范围为技能入口、脚本读取行为、本地包装与隔离安装；未在真实客户端会话中触发。
+
+## 0.1.2 加入三端市场
+
+读取脚本与技能正文未改动。本版只调整分发：
+- 新增 Codex 清单 `.codex-plugin/plugin.json`；
+- 本插件与 XMemory 一起列入 ZCode、Claude Code、Codex 三份市场清单，各自独立安装；
+- 完整插件改由 XMemory 市场完整包分发，单独只发技能包 `ConversationReaders-0.1.2-skills.zip`。
+
+隔离安装用的是市场完整包解压目录，在一次性 `CODEX_HOME`／`CLAUDE_CONFIG_DIR` 中进行，结束后删除，没有发起模型调用：
+- Codex CLI 0.162.1：`conversation-readers@xmemory-codex` 安装为 0.1.2 并启用，`codex debug prompt-input` 中出现全部五个 `conversation-readers:read-*` 技能；
+- Claude Code 2.1.296：`plugin validate --strict` 通过，`conversation-readers@xmemory-claude` 安装为 0.1.2 并启用，`plugin details` 列出五个技能。
 
 ## XR-005 JSONL 消息 uuid 补修
 

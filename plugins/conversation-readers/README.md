@@ -1,6 +1,6 @@
 # Conversation Readers
 
-版本 **0.1.1**。每个客户端一个 Skill 和自带脚本，提供列出、按关键词检索、按原生 ID 读取、分页与长正文展开。读取结果可用于审阅、报告或工作接续；需要保存为记忆时，再由用户要求的记忆流程处理。
+版本 **0.1.2**。每个客户端一个 Skill 和自带脚本，提供列出、按关键词检索、按原生 ID 读取、分页与长正文展开。读取结果可用于审阅、报告或工作接续；需要保存为记忆时，再由用户要求的记忆流程处理。
 
 | 客户端 | Skill | 已适配来源 |
 |---|---|---|
@@ -14,9 +14,9 @@
 
 需要 **Python 3.11+**，只用标准库。脚本位于每个 Skill 的 `scripts/read_conversations.py`，无需安装统一 CLI、修改 PATH、配置 MCP 或启动服务。
 
-可以从源码选择对应 `SKILL.md`，按其说明调用脚本。需要安装时，按目标客户端的技能安装方式复制完整技能目录，保留 `scripts/` 和 `references/`；不要只复制 `SKILL.md`。同名技能已存在时先核对，不覆盖。安装和新会话自然触发属于另外的宿主验收，本仓库不会自动执行。
+本插件与 XMemory 列在同一套三端市场中，各自独立安装：ZCode 为 `conversation-readers@xmemory`，Claude Code 为 `conversation-readers@xmemory-claude`，Codex 为 `conversation-readers@xmemory-codex`。插件带 Agent Plugins、Codex、Claude Code 和 ZCode 四份清单。XMemory 采集按会话读取时使用本插件，但两者没有安装依赖；本插件也可单独用于审阅或工作接续。
 
-完整插件包包含 Agent Plugins、Claude Code 和 ZCode 清单；独立技能包可分发各技能。新扩展没有加入旧 XMemory 市场清单，旧记忆插件的五技能、纯文档载荷、规则和分发包保持独立。要通过某个宿主市场安装，需要用户指定后另行登记，不能把清单存在说成已经安装。
+不用插件时，按目标客户端的技能安装方式复制完整技能目录（技能包为 `ConversationReaders-<版本>-skills.zip`），保留 `scripts/` 和 `references/`；不要只复制 `SKILL.md`。同名技能已存在时先核对，不覆盖。安装和新会话自然触发属于另外的宿主验收，本仓库不会自动执行；清单存在不等于已经安装。
 
 ## 能做什么
 

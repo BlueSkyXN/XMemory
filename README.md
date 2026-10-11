@@ -2,7 +2,7 @@
 
 **跨客户端的记忆中心：五个技能把各客户端的记忆和对话，加工成一个按项目、按时间组织的集中记忆库。**
 
-当前版本 **1.3.0**：用户级 `~/.agents/memory/` 集中库，分常驻层（画像、意识、主记忆）、主题与每日层、足迹层；提供读取协议、Hook 模板、定时提示词和首次回填提示词；保留 Claude Code、ZCode、Codex 三端插件与市场包装，文件格式名为 `xmemory/v1`。`local/xmemory/` 只是研究 demo，不属于正式产品版本线。
+当前版本 **1.3.1**：用户级 `~/.agents/memory/` 集中库，分常驻层（画像、意识、主记忆）、主题与每日层、足迹层；提供读取协议、Hook 模板、定时提示词和首次回填提示词；Claude Code、ZCode、Codex 三端市场同时提供 XMemory 与 Conversation Readers 两个插件，文件格式名为 `xmemory/v1`。`local/xmemory/` 只是研究 demo，不属于正式产品版本线。
 
 XMemory 是纯技能、文件式记忆插件。现有 AI 客户端负责执行，Markdown 保存结果，TOML 登记项目和来源。不依赖 Git，不带运行期独立工具、MCP、数据库、Hook 程序、后台任务、锁或额外模型服务。
 
@@ -46,25 +46,29 @@ Office Memory（此前的自有单项目实践）后续迁入集中库并停用�
 .agents/plugins/marketplace.json      Codex 市场，根为本仓库
 plugins/
 ├── marketplace.json                 ZCode 市场，根为 plugins/
-└── xmemory/
-    ├── plugin.json                  Codex/Agent Plugins 清单
-    ├── .claude-plugin/plugin.json    Claude 清单
-    ├── .zcode-plugin/plugin.json     ZCode 清单
-    ├── skills/                      五个自包含技能
-    ├── references/                  共用文档源
-    ├── templates/                   共用模板源
-    ├── integrations/                读取协议、Hook、定时与首次回填提示词
-    ├── examples/                    虚构闭环示例
-    └── docs/                        设计、来源、安装、验收
+├── xmemory/                         记忆插件（纯文档，五个技能）
+│   ├── plugin.json                  Agent Plugins 通用清单
+│   ├── .codex-plugin/plugin.json     Codex 清单
+│   ├── .claude-plugin/plugin.json    Claude 清单
+│   ├── .zcode-plugin/plugin.json     ZCode 清单
+│   ├── skills/                      五个自包含技能
+│   ├── references/                  共用文档源
+│   ├── templates/                   共用模板源
+│   ├── integrations/                读取协议、Hook、定时与首次回填提示词
+│   ├── examples/                    虚构闭环示例
+│   └── docs/                        设计、来源、安装、验收
+└── conversation-readers/            会话读取插件（五个技能，各带只读 Python 脚本），清单同上
 ```
+
+三份市场清单都列出两个插件，各自独立安装：XMemory 不依赖读取插件也能工作；需要按会话采集时，读取插件提供各客户端的只读列出与读取。
 
 每个正式技能的配套文件均在其自身目录内，没有跨目录资源依赖。开发工具维护静态副本一致性，不进入插件载荷。
 
 | 客户端 | 添加的实际市场根 | 插件 ID |
 |---|---|---|
-| ZCode | 本仓库 `plugins/` | `xmemory@xmemory` |
-| Claude Code | 本仓库根 | `xmemory@xmemory-claude` |
-| Codex | 本仓库根 | `xmemory@xmemory-codex` |
+| ZCode | 本仓库 `plugins/` | `xmemory@xmemory`、`conversation-readers@xmemory` |
+| Claude Code | 本仓库根 | `xmemory@xmemory-claude`、`conversation-readers@xmemory-claude` |
+| Codex | 本仓库根 | `xmemory@xmemory-codex`、`conversation-readers@xmemory-codex` |
 
 [三端安装说明](plugins/xmemory/docs/install.md) 包含真实命令、版本边界和接入步骤。创建市场清单不等于注册或安装。独立技能包仍可用于上述客户端和 Qoder/QoderWork；同一客户端不要同时安装重复入口。
 
@@ -82,7 +86,7 @@ plugins/
 
 ## 开发检查与构建
 
-独立的 [Conversation Readers 扩展](plugins/conversation-readers/README.md) 提供 Codex、Claude Code、ZCode、Qoder CN、WorkBuddy 各一个 `Skill + scripts`，用于对话列表、检索、按 ID 读取和分页展开。它需要 Python 3.11+，独立检查与打包，不自动写入记忆，也未加入现有 XMemory 市场。下述命令仍针对原记忆插件；扩展命令见其说明。
+[Conversation Readers 插件](plugins/conversation-readers/README.md) 提供 Codex、Claude Code、ZCode、Qoder CN、WorkBuddy 各一个 `Skill + scripts`，用于对话列表、检索、按 ID 读取和分页展开。它需要 Python 3.11+，不自动写入记忆；与 XMemory 列在同一市场，载荷检查见其说明。
 
 Python 3.11+ 仅供维护仓库使用，不是插件运行依赖。
 
@@ -93,7 +97,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -v
 python3 -B tools/build_release.py
 ```
 
-修改共用文档后同步静态技能资源，检查器会拒绝漂移。构建输出三端完整包、五技能包和 SHA-256；已有同名归档拒绝覆盖，可指定新 `--output`。`tools/`、`tests/`、研究 demo 和个人资料不进入包。
+修改共用文档后同步静态技能资源，检查器会拒绝漂移。构建输出三端市场完整包（含两个插件）、XMemory 五技能包、Conversation Readers 五技能包和各自的 SHA-256；已有同名归档拒绝覆盖，可指定新 `--output`。`tools/`、`tests/`、研究 demo 和个人资料不进入包。
 
 GitHub Actions 在 PR、`main` 更新和手动触发时，使用 Ubuntu 与 Python 3.11 运行包装检查、全部单元测试和临时目录构建。自动检查不执行真实客户端安装、Agent 行为场景或跨设备同步验收。
 

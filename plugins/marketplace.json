@@ -4,7 +4,7 @@
     {
       "name": "xmemory",
       "source": "./xmemory",
-      "version": "1.3.0",
+      "version": "1.3.1",
       "description": "XMemory：跨客户端的记忆中心。用设置、记录、采集、整理、调取五个技能，把各客户端记忆和对话加工成按项目、按时间组织的集中记忆库。纯技能，无后台服务。",
       "displayName": "XMemory",
       "displayName_i18n": {
@@ -12,6 +12,19 @@
       },
       "description_i18n": {
         "zh-CN": "跨客户端记忆中心：五个技能把各客户端记忆和对话加工成集中记忆库。无后台服务。"
+      }
+    },
+    {
+      "name": "conversation-readers",
+      "source": "./conversation-readers",
+      "version": "0.1.2",
+      "description": "五个客户端各一个 Skill 和只读脚本：列出、检索、定位与读取对话，不自动写入记忆。",
+      "displayName": "Conversation Readers",
+      "displayName_i18n": {
+        "zh-CN": "对话读取"
+      },
+      "description_i18n": {
+        "zh-CN": "只读列出、检索和读取 Claude、Codex、ZCode、Qoder CN、WorkBuddy 的历史对话。"
       }
     }
   ]

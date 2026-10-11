@@ -8,13 +8,16 @@ import json
 from pathlib import Path
 import zipfile
 
-from check_package import ROOT, check
+from build_conversation_readers import build as build_readers, check as check_readers
+from check_package import PLUGINS, ROOT, check
 
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
 def build(root: Path, output: Path, portable: bool = False) -> tuple[Path, str]:
-    errors = check(root)
+    """Full archive: the three host marketplaces with every listed plugin; portable: the five XMemory skills."""
+    readers = root / "plugins" / "conversation-readers"
+    errors = check(root) + [f"conversation-readers: {item}" for item in check_readers(readers)]
     if errors:
         raise ValueError("Package checks failed: " + "; ".join(errors))
     plugin = root / "plugins" / "xmemory"
@@ -31,9 +34,11 @@ def build(root: Path, output: Path, portable: bool = False) -> tuple[Path, str]:
         for name in ("plugins/marketplace.json", ".claude-plugin/marketplace.json",
                      ".agents/plugins/marketplace.json"):
             files[name] = (root / name).read_bytes()
-        for path in sorted(plugin.rglob("*")):
-            if path.is_file():
-                files[f"plugins/xmemory/{path.relative_to(plugin).as_posix()}"] = path.read_bytes()
+        for name in PLUGINS:
+            base = root / "plugins" / name
+            for path in sorted(base.rglob("*")):
+                if path.is_file():
+                    files[f"plugins/{name}/{path.relative_to(base).as_posix()}"] = path.read_bytes()
     hashes = "".join(f"{hashlib.sha256(value).hexdigest()}  {name}\n" for name, value in sorted(files.items()))
     files["SHA256SUMS"] = hashes.encode("utf-8")
     output.mkdir(parents=True, exist_ok=True)
@@ -62,6 +67,9 @@ def main() -> None:
     for portable in (False, True):
         target, checksum = build(ROOT, args.output.resolve(), portable=portable)
         results.append({"archive": str(target), "sha256": checksum})
+    # 读取扩展已在完整包的市场中；单独只发它的技能包。
+    target, checksum = build_readers(args.output.resolve(), portable=True)
+    results.append({"archive": str(target), "sha256": checksum})
     print(json.dumps(results, indent=2))
 
 

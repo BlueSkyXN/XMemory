@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查及构建独立对话读取扩展；不注册市场、不安装、不发布。"""
+"""检查及构建对话读取扩展；不安装、不发布。三端市场登记由 check_package.check_markets 检查。"""
 from __future__ import annotations
 
 import argparse
@@ -22,7 +22,7 @@ def check(plugin=PLUGIN):
     manifest = json.loads((plugin / "plugin.json").read_text(encoding="utf-8"))
     if manifest.get("name") != "conversation-readers" or not re.fullmatch(r"\d+\.\d+\.\d+", manifest.get("version", "")):
         errors.append("Invalid identity/version")
-    for rel in [".claude-plugin/plugin.json", ".zcode-plugin/plugin.json"]:
+    for rel in [".claude-plugin/plugin.json", ".codex-plugin/plugin.json", ".zcode-plugin/plugin.json"]:
         data = json.loads((plugin / rel).read_text(encoding="utf-8"))
         if any(data.get(k) != manifest.get(k) for k in ["name", "version", "description"]) or data.get("skills") != "./skills":
             errors.append(f"Manifest mismatch: {rel}")

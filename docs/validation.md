@@ -1,8 +1,47 @@
 # XMemory 验证报告
 
-当前版本：**1.3.0**。最新核对日期：2026-10-11。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
+当前版本：**1.3.1**（Conversation Readers 0.1.2）。最新核对日期：2026-10-11。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.3.1 读取插件并入市场（2026-10-11）
+
+起因：1.3.0 的会话级采集依赖会话读取技能，但 Conversation Readers 没有列进任何市场，只能手动复制技能目录；两个插件也都缺少 Codex 标准清单 `.codex-plugin/plugin.json`。1.3.0 时 Codex 0.162.1 是按 `skills/` 目录发现技能，并非读取清单。
+
+**改动范围**
+- 三份市场清单（ZCode `plugins/marketplace.json`、Claude `.claude-plugin/marketplace.json`、Codex `.agents/plugins/marketplace.json`）都列出 `xmemory` 与 `conversation-readers`。两者各自独立安装，没有安装依赖。
+- 两个插件新增 `.codex-plugin/plugin.json`，含 `skills` 与 `interface`；版本升为 XMemory 1.3.1、Conversation Readers 0.1.2。技能正文、规范与读取脚本均未改动。
+- `check_package.check_markets` 要求每份市场清单把两个插件各列一次，版本、描述和来源路径与各自清单一致；读取插件检查加入 Codex 清单。
+- `build_release.py` 一次产出三个附件。市场完整包同时含两个插件，读取插件不再单独发完整包。
+- 根 README、`docs/release-install.md`（随包作为 `INSTALL.md`）、插件安装说明与读取插件 README 改为两插件同市场的安装方式。
+
+**检查**
+- `check_package`：插件文件 136 个，多出的是新增的 Codex 清单；资源同步无差异；读取插件检查通过。
+- **75/75** 测试通过。新增一项：任一市场漏列读取插件或版本不一致时，检查报错。完整包测试改为同时核对两个插件的载荷。
+- Claude Code 2.1.296：`claude plugin validate --strict` 对市场清单与两个插件均通过。仅有一条提示：README 尚未写 GitHub 市场安装命令。
+
+**隔离安装（市场完整包解压目录，一次性 `CODEX_HOME`／`CLAUDE_CONFIG_DIR`，结束后删除，没有发起模型调用）**
+- Codex CLI 0.162.1：
+  - `marketplace add` 识别 `xmemory-codex`；
+  - 两个插件 `plugin add` 后分别为 1.3.1、0.1.2，均为 installed、enabled；
+  - `codex debug prompt-input` 渲染出的模型可见提示中含全部 10 个技能：`xmemory:xmemory-*` 5 个、`conversation-readers:read-*` 5 个。
+- Claude Code 2.1.296：
+  - `marketplace add` 识别 `xmemory-claude`；
+  - 两个插件安装后均为 enabled，版本 1.3.1、0.1.2；
+  - `plugin details` 分别列出 5 个技能。
+- ZCode：本机没有 CLI，本轮未做安装验证，只做了清单一致性检查。
+
+**分发包**
+
+输出到新目录 `dist/xmemory-1.3.1-20261011/`。三个归档重复构建逐字节一致；外部 `.zip.sha256` 与包内 `SHA256SUMS` 均校验通过。完整包解压后 `check_package` 与读取插件检查均无错误，且不含 `__pycache__`、`tools/`、`tests/` 或 `local/`。
+
+| 归档 | 内容 | SHA-256 |
+|---|---|---|
+| `XMemory-1.3.1.zip` | 三端市场 + 两个插件 | `7eee58871739a7202b260a2185ae1848a4ae5b692055110ae441047ea0847aef` |
+| `XMemory-1.3.1-skills.zip` | XMemory 五技能 | `15ec1cb68ba39d97e292d2790e8312aa188f2254b93e3f6f1cd408db2a38faff` |
+| `ConversationReaders-0.1.2-skills.zip` | 读取五技能 | `68f99c683a81118b935496ff36e0f8f6b0b22f8b6a092ea7147889f3ad670959` |
+
+**未验证**：ZCode 安装；新会话中的自然语言触发；1.3.0 一节列出的行为与真实数据边界不变。
 
 ## 1.3.0 可续跑采集与整理（2026-10-11）
 
