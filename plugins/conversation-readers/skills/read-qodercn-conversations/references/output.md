@@ -7,6 +7,7 @@
 - `session_id` 表示文件或数据库会话条目的身份；JSONL 元数据缺失时，列表中的 `id_origin: filename` 表示只能从文件名定位，不能声称已验证原生身份。逐条记录的原生身份另由 `native_session_id` 保留，原记录没有该字段时为 null，不用文件身份补造。
 - 本版 JSONL 支持一个文件对应一个原生会话身份；发现多个原生 ID 时，以 `mixed_session_ids` 明确拒绝该文件，不把全部正文归给第一个或最后一个 ID。已支持的子代理文件仍保留 `parent_session_id`、完整 `session_ref`、原生消息和父消息 ID；未适配的混合继承／恢复组合不静默合并。
 - `session_ref` 带客户端及来源类型；同一个 ID 的桌面库、JSONL、子代理或迁移副本不会自动合并。出现歧义时用列表给出的完整引用和 `--root` 选择原件。
+- `--session` 接受三种输入：原生 ID、`session_ref`，以及客户端界面复制的虚拟引用 `<工作区>/<ID>.<客户端>-session`（显示层路径，磁盘上无此文件）。虚拟引用按文件名确定性剥壳且客户端必须匹配，跨客户端引用不做转换；ZCode 裸 UUID 确定性补全 `sess_` 前缀。不做模糊匹配。
 - `message_id`、`record_id`、`parent_id`、`turn_id`、`call_id` 保留可获取的原生标识，缺失为 null，不捏造关联。`record_ref` 是本工具定位符，不冒充原生消息 ID。
 - `kind` 区分正文、工具调用、工具结果、压缩摘要和附件占位。默认只返回可见正文及摘要标识；`--include-tools` 才展开工具记录。隐藏推理、内部权限／环境事件不进入结果。
 - 相同原生记录的完全相同块去重；不同消息即使文字相同也保留。客户端保存的更新或分支不会被当成同一条最终结论强行合并；这不是 UI 的逐像素或逐字节复刻。
@@ -29,6 +30,7 @@ JSONL 列表条目的 `metadata_scan: full_stream`、`metadata_complete` 和 `bo
 ## 活文件与格式边界
 
 - JSONL 按打开时文件长度逐行核对元数据、原生身份和正文形状，不再采用头尾采样；中段标题和跨越旧采样窗口的长消息时间均参与检查。逐条处理，不缓存整段历史正文，也不将全历史正文输出给模型。单条超过 8 MiB、末尾不完整或读取期间变化时报告缺口；不完整元数据不用于按时间排除整个会话，正文查询按逐条时间筛选。`snapshot` 是原件指纹，后续 JSONL 分页可传 `--snapshot`；文件变化则重新定位，不假装分页稳定。
+- Codex `local_thread_store_compression` 会把冷 rollout 从 `.jsonl` 改写为 `.jsonl.zst`。压缩原件与明文一并参与发现：系统有 `zstd` 命令时流式解压读取，`byte` 偏移基于解压后字节流，重放需按序解压；没有 `zstd` 时按 `zstd_missing` 报告未读数量，不在文件匹配阶段静默漏掉。`token_usage_record`、`world_state`、`inter_agent_communication_metadata` 为遥测/状态信封，按元数据处理。
 - SQLite 使用 `mode=ro`、`query_only` 和读取事务，包括已提交 WAL 数据，不使用会忽略 WAL 的 immutable 模式。一次读取内保持快照；跨次分页仍是活数据，不支持以 `--snapshot` 冻结。
 - SQLite 消息、内容块和需要使用的嵌套结构逐项检查；异常记录带来源位置警告，能继续时保留其余正常内容。无法继续时返回包含 `error` 和 `warnings` 的 JSON。Qoder `parts` 按原数组顺序输出文字与工具；缺少相应投影时才使用顶层 `text`／`tools`，回退文字位于 parts 前，回退工具位于 parts 后，不声称恢复了未保存的交错顺序。
 - `coverage`、`warnings`、`has_more` 必须一起解释。来源不存在、格式不支持、尾部未完成、扫描上限、截断和未读工具结果都不是“历史上没有”。

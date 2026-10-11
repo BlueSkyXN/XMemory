@@ -37,6 +37,11 @@ python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path
 
 精确来源、格式与限制见 [格式说明](./references/formats.md)。分页、JSON 字段、Markdown 导出和活文件行为见 [输出约定](./references/output.md)。
 
+## 标识与界面引用
+
+- 会话有三种标识：原生 ID（`sess_<uuid>`）、`session_ref`（`zcode:sqlite:<id>`，list 返回、read 使用）、界面虚拟引用（仅作输入）。
+- 用户从 ZCode 界面复制的引用形如 `<工作区>/<会话ID>.zcode-session`，是显示层虚拟路径，磁盘上不存在该文件。把整段路径传给 `--session` 即可：脚本按文件名确定性剥壳；裸 UUID（无 `sess_` 前缀）也会确定性补全。两者都不做模糊匹配，跨客户端后缀的引用不转换。
+
 ## 使用结果
 
 回答保留对话 ID、相关消息引用、时间和来源位置，区分用户要求、助手自述与工具执行结果。脚本不做 AI 摘要、不向记忆库写入；用户另行要求记忆采集时，再把选定片段和出处交给对应记忆工作流。
