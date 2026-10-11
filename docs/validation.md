@@ -1,8 +1,87 @@
 # XMemory 验证报告
 
-当前版本：**1.2.0**。最新核对日期：2026-10-11。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
+当前版本：**1.3.0**。最新核对日期：2026-10-11。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.3.0 可续跑采集与整理（2026-10-11）
+
+起因：评审 1.2.0（PR #7，`e46b09b`）时发现 5 处会影响持续运行的流程缺口：
+- 吸收登记早于回读核对；
+- 未完成范围被当成锁；
+- 采集与记录漏读撤回标识；
+- “本次无变化”判断过早；
+- 临时跳过的会话可能被游标越过。
+
+本版保留 `xmemory/v1` 和 1.2 的正文布局，1.2 已有正文无需迁移。Conversation Readers 未改动，仍为 0.1.1。
+
+**改动范围**
+- 采集：
+  - 清单增加“需回补”列与源版本；
+  - `state/sources.md` 只记录连续完成前缀，并保留全部未结清单，下次先回补；
+  - 写前读取 `state/withdrawn.md` 与已有足迹；
+  - 新增 `read_level`、`time_basis`、`origin`、`extends`（补充足迹）；
+  - 事件日期未知时落到 `daily/undated/`；
+  - Codex 摘要文件名（UTC）与 rollout 文件名（本地时间）换算后一致时，才据此确定时刻。
+- 整理：
+  - 每批一份 `state/curation/<批次>.md`，状态为 `pending → verified → completed`；
+  - 正文核对全部通过后才标 `verified`，再累计登记吸收项，登记回读后才标 `completed`；
+  - 未完成批次是续跑入口，不是锁；
+  - 工作集合包括旧候选、到期复查和替代声明，全部为空才零写入；
+  - 旧待办标“完成”需要执行结果或用户确认；
+  - 路径中的范围写 `personal` 或项目名，不带 `project:`。
+- 调取：读取最近两个有记录日期的每日记忆，按问题检查 undated，并定向查未收录的更正。
+- 模板：更新 `curation`、`run`、`sources`、`record`、`daily`、`AWARENESS`；`integrations/`、插件文档、根 README、`docs/release-install.md` 与三端清单同步改为 1.3.0。
+- 测试与工具：
+  - `tests/scenarios.json` 从 31 条增至 39 条，并按新规则改写 6 条旧场景；
+  - 新增仓库工具 `tools/behavior_fixtures.py`，用于构造虚构夹具并机械检查产物，不进入插件载荷；
+  - 新增 `tests/test_behavior_fixtures.py`，确认检查器能拒绝未运行的夹具。
+
+**仓库检查**
+- `tools/check_package.py` 通过，插件文件 135 个；`tools/sync_skill_resources.py` 无差异。
+- **70/70** 测试通过，新增 6 项：可续跑契约、新场景覆盖和检查器自检 4 项。
+
+**GLM-5.3 隔离试跑**
+
+环境与 1.2.0 相同：Codex CLI 0.160.1，`-m glm-5.3`（provider `cpa-hfs`），`--ephemeral`，`-s workspace-write`（调取用 `read-only`），每组使用独立的 `/tmp` 目录和当轮技能副本。夹具全部虚构，由 `tools/behavior_fixtures.py build <case> <dir>` 生成；`check` 命令比对运行前后的哈希快照，并审计日志中的命令。所有日志中没有出现 `/Users/`、`~/` 或 `$HOME`，未读写 `~/.agents/memory` 或真实客户端数据。
+
+| 组 | 夹具 | 第一轮（修正前规范） | 修正 | 最终规范重跑 |
+|---|---|---|---|---|
+| 采集 ×2 轮 | 5 份 Codex 摘要：正常、已撤回、断开的符号链接（模拟临时不可访问）、旧磁盘路径、无事件时间 | 第 1 轮 14/16，第 2 轮 15/18。撤回零足迹；缺口标需回补；进度停在第 2 项；undated 正确；旧路径归入 demo-api；第 2 轮沿用原清单回补并关闭未结清单。失败项均为时刻写成 `0000`：文件名时间没有确认规则，模型保守处理 | `clients.md` 增加两个文件名的交叉确认规则 | 第 1 轮 16/16，第 2 轮 18/18；时刻为 1000 / 1500 / 1100 |
+| 非空意识二次整理 | 旧意识（待办、候选）、同日旧每日记忆含两条吸收项、新足迹两份、到期复查主题 | 18/19。旧待办、候选、旧正文、旧吸收项均保留，新登记带批次 ID，回读原件后晋升主题。失败项：副本目录写成 `project:demo-api`。人工发现：`deploy-to-staging` 仅凭 AI 汇报就标为完成 | `storage.md` 规定范围目录名；`curation.md` 规定标“完成”所需证据 | 19/19；副本在 `history/demo-api/`；部署待办改为“待确认” |
+| 中断续跑 | `pending` 批次：主题和主记忆已保存，意识与每日记忆未写 | 19/19：复用原批次和基线，不重复建主题，补完正文与登记后标 `completed` | — | 未重跑 |
+| 无变化 | 已全部吸收；只剩证据不足的旧候选 | 2/2：零写入，回报“本次无变化”，并说明候选继续保留 | — | 未重跑 |
+| 调取（只读） | 中断续跑组的最终产物 | 零写入，不读 `state/`；顺序为意识 → 主记忆 → 最近两个日期 → 足迹 → 主题；部署结果标为未验证，回滚说明为未经用户确认的建议 | — | 已使用最终规范 |
+
+中断续跑和无变化两组使用的技能副本早于上述三处修正，与最终源码相差的只有这三处措辞。所有试跑结束后，`storage.md` 又补了一句 1.2 旧足迹缺少新字段时的处理说明，夹具中没有 1.2 足迹，因此这句没有经过行为试跑。
+
+本轮实际执行或部分覆盖的场景（共 13 条）：
+- 采集：`collect-progress-gap`（用不可访问代替活跃会话）、`collect-unknown-event-date`、`collect-duplicate-withdrawn`、`collect-native-memory-checklist`（不含纯问候项）；
+- 整理：`curate-open-items`、`curate-second-pass-preserves-day`、`curate-pending-resume`、`curate-retry-after-failure`、`curate-concurrent-curation`、`curate-ai-claim-not-decision`、`curate-no-change`、`curate-old-candidate-without-footprint`（部分覆盖：无变化组的候选没有到期复查）；
+- 调取：`recall-read-only`。
+
+**分发包**
+
+输出到新目录 `dist/xmemory-1.3.0-20261011/`。XMemory 两包重复构建逐字节一致；包内 `SHA256SUMS` 逐项校验通过（139 / 103 项），载荷中没有 `.py`、`local/` 或试跑工具。解压后的完整包重跑 `check_package` 无错误。Conversation Readers 两包与上一轮逐字节一致。
+
+| 归档 | SHA-256 |
+|---|---|
+| `XMemory-1.3.0.zip` | `efd8872d984a8f20e26f55297c6f46ede5a8991438b3d92ecc9d7d8c8d03cfa2` |
+| `XMemory-1.3.0-skills.zip` | `040c0280430b50f54a106a96001e169b23f5c849a3d3911cf7d15072a39df37c` |
+| `ConversationReaders-0.1.1.zip` | `c578bb5d779bf729ed322440dbd1eb0a9618a9972a235adc59e61cf5a134b09b` |
+| `ConversationReaders-0.1.1-skills.zip` | `279b045e9e44dcc2ea383ff040b30608e2114be2afa52fde00400306e513f0a0` |
+
+**未验证**
+
+- 夹具只包含 Codex 原生摘要和项目文件；会话级采集（部分读取、分页截断、活跃会话、跨天拆分）未实测。
+- ZCode、Claude、Qoder、QoderWork 等其他来源，以及跨客户端合并，未实测。
+- 记录技能、`curate-active-owner`、写入失败注入和定时方式整理未实测。
+- 意识超容量和 30%–70% 的长期稳定性未实测。
+- 真实宿主安装与触发、定时任务和 Hook 接入未实测。
+- 多设备同步、真实首次回填和 Office Memory 迁移未实测。
+- 单一模型、虚构数据、每组只跑一次，结果不代表其他模型或真实数据下的稳定性。
+
+10-10 试运行库的归档、Office Memory 迁移和真实回填仍需另行授权。
 
 ## 1.2.0 跨客户端记忆中心重设计（2026-10-11）
 
@@ -363,7 +442,7 @@ claude plugin validate .claude-plugin/marketplace.json --strict --json
 - 未在真实用户环境注册市场、安装插件、新建会话触发或跨客户端接续。
 - 读取协议尚未合并到任何客户端规则，定时提示词尚未挂到任何客户端；定时运行、`capture = "milestone"` 的实际触发和自然语言触发率都未实测。
 - 多台机器经同步盘或 GitHub 私有仓库共用一个库时的晚到事件、冲突副本和“一处整理”约定，只在文档和临时目录演练中检查，未在真实同步环境验证。
-- 当前 31 个行为场景、长期经验质量和搜索命中率尚未由新会话的独立执行验证。
+- 39 个行为场景中，1.3.0 用虚构夹具执行或部分覆盖了 13 个，其余尚未执行；长期经验质量和搜索命中率尚未由新会话的独立执行验证。
 - 不提供后台采集、Hook 程序、调度器、客户端数据库适配器、并发锁、事务、同步或组织权限。
 - 默认用户级集中根为 `~/.agents/memory/`。已配置其他集中根的用户不会被自动迁移；无权访问时不回退到项目内另存一套。
 - Office Memory 迁移按设计延后到试点之后。未改研究 demo、Office Memory、个人记忆或客户端规则；未提交、推送或对外发布。

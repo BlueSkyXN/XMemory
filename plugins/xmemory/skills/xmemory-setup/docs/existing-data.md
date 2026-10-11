@@ -2,7 +2,7 @@
 
 ## 版本关系
 
-XMemory 1.0.0 是首个正式插件版本，`config.toml` 使用格式名 `xmemory/v1`。研究 demo 只用于验证想法，不属于正式发布历史。1.1.0 和 1.2.0 都在 `xmemory/v1` 名下重新定义了布局；1.2.0 改用 `USER.md`、`AWARENESS.md`、`MEMORY.md`、`topics/`、`daily/`、`state/` 的结构。
+XMemory 1.0.0 是首个正式插件版本，`config.toml` 使用格式名 `xmemory/v1`。研究 demo 只用于验证想法，不属于正式发布历史。1.1.0、1.2.0 和 1.3.0 都在 `xmemory/v1` 名下演进；1.2.0 改用 `USER.md`、`AWARENESS.md`、`MEMORY.md`、`topics/`、`daily/`、`state/` 结构，1.3.0 保留该布局并补足回补、续跑和核对状态。
 
 安装插件不读取或改变研究 demo、Office Memory、客户端原生记忆或已有记忆库。发现目标目录已有未知内容时先确认归属；文件名或格式字符串相同，不能自动视为正式 XMemory 记忆库。项目里的 `.agents/memory/` 与用户级的 `~/.agents/memory/` 只是名字相同。
 

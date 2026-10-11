@@ -178,26 +178,57 @@ class PackageTests(unittest.TestCase):
                        "state/runs/", "event_at", "当前认识", "记忆候选"):
             self.assertIn(phrase, storage)
         curation = (plugin / "references/curation.md").read_text()
-        for phrase in ("关键信息保全", "已有条目损失", "日期绝对化", "30%–70%", "晋升到主记忆",
-                       "亲自读到的用户原话", "支持同一条主张", "逐条判断", "待确认", "范围从窄"):
+        for phrase in ("关键信息保全", "已有条目损失", "日期绝对化", "30%–70%",
+                       "何时成为有效主题", "亲自读到的用户原话", "支持同一条主张",
+                       "逐条判断", "待确认", "范围从窄", "pending", "verified", "completed"):
             self.assertIn(phrase, curation)
         clients = (plugin / "references/clients.md").read_text()
-        self.assertIn("`updated_at` 是 UTC", clients)
+        self.assertIn("`updated_at` 表示源更新时间", clients)
         collection = (plugin / "references/collection.md").read_text()
-        for phrase in ("无可记内容", "逐项抄录", "状态为空的行数为 0"):
+        for phrase in ("无可记内容", "逐项建立", "状态、回补与连续进度", "连续完成的前缀", "daily/undated"):
             self.assertIn(phrase, collection)
         record = (plugin / "skills/xmemory-record/SKILL.md").read_text()
         self.assertIn("不修改旧主题", record)
         self.assertIn("supersedes", record)
         curate = (plugin / "skills/xmemory-curate/SKILL.md").read_text()
         self.assertIn("./templates/AWARENESS.md", curate)
-        self.assertIn("记忆候选", curate)
+        self.assertIn("意识候选", curate)
         setup = (plugin / "skills/xmemory-setup/SKILL.md").read_text()
         for link in ("./integrations/scheduled.md", "./integrations/hooks.md", "./integrations/backfill.md"):
             self.assertIn(link, setup)
         prompt = (plugin / "integrations/scheduled.md").read_text()
         self.assertIn("本次无变化", prompt)
         self.assertIn("XMemory 读取协议", (plugin / "integrations/entry.md").read_text())
+
+    def test_recoverable_workflow_contract(self):
+        plugin = ROOT / "plugins/xmemory"
+        collection = (plugin / "references/collection.md").read_text()
+        curation = (plugin / "references/curation.md").read_text()
+        contract = (plugin / "references/contract.md").read_text()
+        storage = (plugin / "references/storage.md").read_text()
+        for phrase in ("写前读取 `state/withdrawn.md`", "`extends`", "需回补", "未结清单",
+                       "连续完成的前缀", "部分读取"):
+            self.assertIn(phrase, collection)
+        for phrase in ("不证明有人正在运行", "把现有意识原样保存", "不加入本批足迹",
+                       "正文核对全部通过后才标 `verified`", "回读登记", "completed"):
+            self.assertIn(phrase, curation)
+        for phrase in ("失败、活跃会话、部分读取和临时不可访问", "未完成批次", "连续完成前缀"):
+            self.assertIn(phrase, contract)
+        for phrase in ("time_basis", "origin", "extends", "daily/undated.md", "连续完成至", "未结清单",
+                       "不带 `project:` 前缀"):
+            self.assertIn(phrase, storage)
+        self.assertIn("标“完成”需要执行结果或用户确认", curation)
+        self.assertIn("两者按配置时区换算后指向同一时刻",
+                      (plugin / "references/clients.md").read_text())
+
+    def test_behavior_scenarios_cover_v1_3_recovery(self):
+        scenarios = json.loads((ROOT / "tests/scenarios.json").read_text(encoding="utf-8"))
+        ids = {item["id"] for item in scenarios}
+        self.assertEqual(len(ids), len(scenarios))
+        for scenario_id in ("collect-partial-read", "collect-progress-gap", "curate-pending-resume",
+                            "curate-second-pass-preserves-day", "curate-old-candidate-without-footprint",
+                            "curate-active-owner", "record-duplicate-source", "collect-unknown-event-date"):
+            self.assertIn(scenario_id, ids)
 
     def test_terminology_keeps_office_memory_and_ompi_apart(self):
         # Office Memory（自有实践）与 OMPI（外部协议草案）不能混写成缩写 OM。

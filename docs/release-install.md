@@ -1,15 +1,15 @@
-# XMemory 1.2.0 安装包
+# XMemory 1.3.0 安装包
 
 ## 两种包
 
-- `XMemory-1.2.0.zip`：ZCode、Claude Code、Codex 三端插件与各自的市场清单。解压保留整个目录结构。
-- `XMemory-1.2.0-skills.zip`：五个自包含技能，按客户端方式安装 `skills/` 下完整目录；不假定整个 ZIP 可一键导入。
+- `XMemory-1.3.0.zip`：ZCode、Claude Code、Codex 三端插件与各自的市场清单。解压保留整个目录结构。
+- `XMemory-1.3.0-skills.zip`：五个自包含技能，按客户端方式安装 `skills/` 下完整目录；不假定整个 ZIP 可一键导入。
 
 插件代码、技能、市场目录和记忆数据彼此独立。同一台机器上的客户端共用该用户的记忆根，默认位置为 `~/.agents/memory/`；多台机器通过用户选择的同步方式保持内容一致。库内分常驻层（`USER.md`、`AWARENESS.md`、`MEMORY.md`）、主题与每日层（`topics/`、`daily/`）、足迹层（`daily/<日期>/`），项目在 `projects/<项目名>/` 下同构存放，项目名取平台项目根目录名；不在各项目另建数据根或软链接，不依赖 Git。安装不初始化个人数据、不采集历史、不修改客户端规则、不创建 Hook 或定时任务。Office Memory（此前的自有实践）后续迁入集中库并停用旧流程，本次不自动接管。
 
 ## ZCode
 
-在“插件市场 → 添加 → 添加插件市场”粘贴解压根下的 `plugins/` 实际绝对路径。在“个人 → xmemory”安装 XMemory 1.2.0，插件 ID 为 `xmemory@xmemory`，安装后在“设置 → 插件”管理。
+在“插件市场 → 添加 → 添加插件市场”粘贴解压根下的 `plugins/` 实际绝对路径。在“个人 → xmemory”安装 XMemory 1.3.0，插件 ID 为 `xmemory@xmemory`，安装后在“设置 → 插件”管理。
 
 如果已添加源码目录的同名市场，继续刷新原市场，不重复添加解压目录。从开发期市场名 `dev-xmemory-8c7a38ae` 升级时，先移除旧市场再添加本市场。
 
@@ -18,7 +18,7 @@
 将下面的路径替换成解压根（不是 plugins/ 子目录），由用户执行：
 
 ```bash
-claude plugin marketplace add /absolute/path/to/XMemory-1.2.0
+claude plugin marketplace add /absolute/path/to/XMemory-1.3.0
 claude plugin install xmemory@xmemory-claude
 ```
 
@@ -29,7 +29,7 @@ Claude 市场清单在解压根的 `.claude-plugin/marketplace.json`，相对 so
 Codex 市场清单在解压根的 `.agents/plugins/marketplace.json`。已核对的 CLI 0.160.0 支持以下命令，其他版本先查看实际帮助：
 
 ```bash
-codex plugin marketplace add /absolute/path/to/XMemory-1.2.0
+codex plugin marketplace add /absolute/path/to/XMemory-1.3.0
 codex plugin add xmemory@xmemory-codex
 ```
 
