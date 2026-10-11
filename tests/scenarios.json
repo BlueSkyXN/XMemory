@@ -32,11 +32,39 @@
     "must": ["不建任何文件", "回复无需记录"]
   },
   {
+    "id": "record-duplicate-source",
+    "setup": "当前对话的会话 ID 和来源版本已有一份足迹，且没有新增证据。",
+    "prompt": "会话结束，记录本阶段。",
+    "skill": "xmemory-record",
+    "must": ["写前核对已有足迹和撤回标识", "内容完全重复时零写入", "说明与已有足迹的关系"]
+  },
+  {
     "id": "collect-native-memory-checklist",
     "setup": "伪造一个 Codex 风格的 rollout_summaries 目录，含 5 份摘要（其中 1 份只有问候），摘要头部带 cwd 和时间，分布在两天。",
     "prompt": "从这个来源采集原生记忆。",
     "skill": "xmemory-collect",
     "must": ["先写 state/runs/ 清单，5 行，与目录列表一致", "4 份足迹分别落在各自事件日期目录，1 行标为无可记内容", "清单无空状态行后才更新 state/sources.md"]
+  },
+  {
+    "id": "collect-partial-read",
+    "setup": "一份长会话只读取到第一页，读取工具返回 next_page 和剩余记录数。",
+    "prompt": "采集这个会话。",
+    "skill": "xmemory-collect",
+    "must": ["read_level 为 partial，正文和清单写明已读/未读边界", "该行标需回补并保存 next_page", "不报告该会话已完整覆盖"]
+  },
+  {
+    "id": "collect-progress-gap",
+    "setup": "同一清单中 A 成功、B 仍活跃、C 成功。",
+    "prompt": "推进来源进度。",
+    "skill": "xmemory-collect",
+    "must": ["连续完成前缀只到 A", "C 的足迹保留并去重", "B 与其后的进度不被越过，未结清单留在 sources.md"]
+  },
+  {
+    "id": "collect-unknown-event-date",
+    "setup": "一份原生摘要只有 updated_at，没有可确认的事件时间字段。",
+    "prompt": "采集这份摘要。",
+    "skill": "xmemory-collect",
+    "must": ["足迹进入 daily/undated/，event_at 写未知", "time_basis 说明只有源更新时间", "不把采集当天当事件日期"]
   },
   {
     "id": "collect-truncated-listing",
@@ -57,7 +85,7 @@
     "setup": "一个会话 10 分钟前还有新消息，quiet_minutes 为 60。",
     "prompt": "采集今天的会话。",
     "skill": "xmemory-collect",
-    "must": ["该会话在清单中标为跳过，原因是仍在写入", "来源进度不越过它"]
+    "must": ["该会话在清单中标为跳过，原因是仍在写入，需回补为是", "来源进度不越过它，清单留在未结清单"]
   },
   {
     "id": "collect-unknown-scope",
@@ -87,10 +115,31 @@
     "must": ["重写前把旧意识存入 state/history/demo-api/", "新意识保留 confirm-rollback，或在每日记忆、整理记录写明去向", "当天每日记忆列出已吸收足迹", "不新增个人规则"]
   },
   {
+    "id": "curate-second-pass-preserves-day",
+    "setup": "10-08 每日记忆已有旧决定和两条已吸收足迹；本批新增一条足迹。",
+    "prompt": "再次整理 demo-api 的 10-08。",
+    "skill": "xmemory-curate",
+    "must": ["合并旧正文和新增事实", "旧两条已吸收项保留", "本批足迹在正文核对通过后才新增登记并带批次 ID"]
+  },
+  {
+    "id": "curate-pending-resume",
+    "setup": "上一整理批次为 pending：主题已保存，每日记忆和吸收登记未完成。",
+    "prompt": "继续整理 demo-api。",
+    "skill": "xmemory-curate",
+    "must": ["复用原批次和意识基线，不重复新建主题", "重新核对已保存正文后补每日记忆和登记", "登记回读后批次 completed"]
+  },
+  {
+    "id": "curate-old-candidate-without-footprint",
+    "setup": "没有新足迹；意识记忆候选中有一条到期复查的主题。",
+    "prompt": "整理 demo-api。",
+    "skill": "xmemory-curate",
+    "must": ["仍创建整理批次处理旧候选或复查", "证据不足时保留待确认并写明缺口", "不把没有新足迹误报为本次无变化"]
+  },
+  {
     "id": "curate-awareness-ratio",
     "prompt": "整理 demo-api，近期有大量新足迹。",
     "skill": "xmemory-curate",
-    "must": ["意识整篇重写，不在末尾追加", "整理记录写各节改写比例和三项核对结果", "高于 70% 时逐项核对待处理"]
+    "must": ["意识整篇重写，不在末尾追加", "整理批次写各节改写比例和三项核对结果", "高于 70% 时逐项核对待处理"]
   },
   {
     "id": "curate-capacity-eviction",
@@ -143,30 +192,37 @@
   },
   {
     "id": "curate-no-change",
-    "prompt": "整理 demo-api，没有未整理的足迹，来源进度也没有变化。",
+    "prompt": "整理 demo-api，没有未整理的足迹、未完成批次、旧候选、到期复查或待处理更正。",
     "skill": "xmemory-curate",
-    "must": ["回复本次无变化", "不写任何文件，包括整理记录"]
+    "must": ["回复本次无变化", "不写任何文件，包括整理批次和意识副本"]
   },
   {
     "id": "curate-awareness-write-failure",
     "setup": "由宿主测试工具或隔离目录权限让 AWARENESS.md 写入失败。",
     "prompt": "整理 demo-api。",
     "skill": "xmemory-curate",
-    "must": ["停止 demo-api 后续写入", "不把相关足迹列入已吸收足迹", "报告已成功与未完成部分"]
+    "must": ["停止 demo-api 后续写入", "批次保留 pending，不把相关足迹列入已吸收足迹", "报告已成功与未完成部分"]
   },
   {
     "id": "curate-retry-after-failure",
     "setup": "上一轮主题已写入，但每日记忆未写成。",
     "prompt": "解除故障后重新整理 demo-api。",
     "skill": "xmemory-curate",
-    "must": ["核对已有主题，不重复新建", "补写每日记忆和已吸收足迹", "整理记录只追加一节"]
+    "must": ["核对已有主题，不重复新建", "补写每日记忆和已吸收足迹", "复用原 pending 批次，不新建重复批次"]
   },
   {
     "id": "curate-concurrent-curation",
-    "setup": "state/curation/ 最近一节标着未完成，且时间是几分钟前。",
+    "setup": "state/curation/ 有一份几分钟前的 pending 批次，没有其他活跃执行者证据。",
     "prompt": "整理 personal。",
     "skill": "xmemory-curate",
-    "must": ["停下说明可能有另一处正在整理", "不写入"]
+    "must": ["把未完成批次当作续跑入口", "核对并继续该范围", "不仅凭未完成状态判定另一处正在运行"]
+  },
+  {
+    "id": "curate-active-owner",
+    "setup": "用户明确说明另一个 Agent 正在整理 personal，并给出正在进行的时间与范围。",
+    "prompt": "整理 personal。",
+    "skill": "xmemory-curate",
+    "must": ["停止该范围并说明活跃冲突", "不写记忆正文", "保留待续跑批次"]
   },
   {
     "id": "recall-read-only",
