@@ -22,28 +22,33 @@
   - 写前读取 `state/withdrawn.md` 与已有足迹；
   - 新增 `read_level`、`time_basis`、`origin`、`extends`（补充足迹）；
   - 事件日期未知时落到 `daily/undated/`；
-  - Codex 摘要文件名（UTC）与 rollout 文件名（本地时间）换算后一致时，才据此确定时刻。
+  - Codex 摘要文件名（UTC）与 rollout 文件名（本地时间）换算后一致时，才据此确定时刻；
+  - 游标顺序让新条目排在后面：会话按最后更新时间从旧到新，文件名带时间的目录按文件名升序；
+  - 列目录不过滤，断开的链接和无权限条目也列入清单。
+- 记录：只有新的结果、决定、纠正或证据才建补充足迹；重申已记录的待办或确认会话结束按重复处理，零写入。
 - 整理：
   - 每批一份 `state/curation/<批次>.md`，状态为 `pending → verified → completed`；
   - 正文核对全部通过后才标 `verified`，再累计登记吸收项，登记回读后才标 `completed`；
   - 未完成批次是续跑入口，不是锁；
   - 工作集合包括旧候选、到期复查和替代声明，全部为空才零写入；
   - 旧待办标“完成”需要执行结果或用户确认；
-  - 路径中的范围写 `personal` 或项目名，不带 `project:`。
+  - 路径中的范围写 `personal` 或项目名，不带 `project:`；
+  - 已有文件逐个原地更新，不先删除再新建；写入失败时停止正文写入与登记，在批次记录写明中断原因，不修改权限、文件标志或锁来绕过。
 - 调取：读取最近两个有记录日期的每日记忆，按问题检查 undated，并定向查未收录的更正。
 - 模板：更新 `curation`、`run`、`sources`、`record`、`daily`、`AWARENESS`；`integrations/`、插件文档、根 README、`docs/release-install.md` 与三端清单同步改为 1.3.0。
 - 测试与工具：
   - `tests/scenarios.json` 从 31 条增至 39 条，并按新规则改写 6 条旧场景；
   - 新增仓库工具 `tools/behavior_fixtures.py`，用于构造虚构夹具并机械检查产物，不进入插件载荷；
-  - 新增 `tests/test_behavior_fixtures.py`，确认检查器能拒绝未运行的夹具。
+  - 新增 `tests/test_behavior_fixtures.py`，确认检查器能拒绝未运行的夹具；
+  - 补充试跑新增 9 个夹具：会话级采集（含第二轮回补）、记录 4 种、1.2 兼容、写入失败、另一处正在整理。
 
 **仓库检查**
 - `tools/check_package.py` 通过，插件文件 135 个；`tools/sync_skill_resources.py` 无差异。
-- **70/70** 测试通过，新增 6 项：可续跑契约、新场景覆盖和检查器自检 4 项。
+- **74/74** 测试通过，较 1.2.0 新增 10 项：可续跑契约、新场景覆盖和检查器自检 8 项。
 
 **GLM-5.3 隔离试跑**
 
-环境与 1.2.0 相同：Codex CLI 0.160.1，`-m glm-5.3`（provider `cpa-hfs`），`--ephemeral`，`-s workspace-write`（调取用 `read-only`），每组使用独立的 `/tmp` 目录和当轮技能副本。夹具全部虚构，由 `tools/behavior_fixtures.py build <case> <dir>` 生成；`check` 命令比对运行前后的哈希快照，并审计日志中的命令。所有日志中没有出现 `/Users/`、`~/` 或 `$HOME`，未读写 `~/.agents/memory` 或真实客户端数据。
+环境与 1.2.0 相同：Codex CLI 0.160.1，`-m glm-5.3`（provider `cpa-hfs`），`--ephemeral`，`-s workspace-write`（调取用 `read-only`），每组使用独立的 `/tmp` 目录和当轮技能副本。夹具全部虚构，由 `tools/behavior_fixtures.py build <case> <dir>` 生成；`check` 命令比对运行前后的哈希快照，并审计日志中的命令。各组执行的命令中没有出现 `/Users/`、`~/` 或 `$HOME`，未读写 `~/.agents/memory` 或真实客户端数据。更正：日志第 15 行是 Codex 启动警告，含其配置文件路径；这几组运行时 Codex 宿主的记忆功能处于开启状态，隔离边界见下文“补充试跑”。
 
 | 组 | 夹具 | 第一轮（修正前规范） | 修正 | 最终规范重跑 |
 |---|---|---|---|---|
@@ -60,26 +65,78 @@
 - 整理：`curate-open-items`、`curate-second-pass-preserves-day`、`curate-pending-resume`、`curate-retry-after-failure`、`curate-concurrent-curation`、`curate-ai-claim-not-decision`、`curate-no-change`、`curate-old-candidate-without-footprint`（部分覆盖：无变化组的候选没有到期复查）；
 - 调取：`recall-read-only`。
 
+**补充试跑与第二轮修正（2026-10-11 晚）**
+
+隔离加强：
+- Codex CLI 已升至 0.162.1，仍为 `-m glm-5.3`、`--ephemeral`、`/tmp` 独立目录与虚构夹具；
+- `HOME` 指向夹具内的空目录，`CODEX_HOME` 保持原配置，读取器漏写 `--root` 时只会读到空的默认来源；
+- 加 `-c features.memories=false -c features.chronicle=false` 关闭宿主记忆与 chronicle，加 `suppress_unstable_features_warning` 去掉含配置路径的启动警告；
+- 检查器新增“日志未出现用户主目录路径”。最先启动的 6 组（4 组完成、2 组中止）仍开着宿主记忆，结果作废并重跑，不计入下表。
+
+试跑发现的问题与修正：
+
+| 现象（组） | 风险 | 修正位置 |
+|---|---|---|
+| 写入失败组：一次多文件补丁“先删后建”，补丁在 `AWARENESS.md` 失败时，`MEMORY.md`、`daily/2026-10-08.md` 和主题已被删除、尚未重建 | 中途出错会丢正文 | `contract.md` 写入规则 3；`curation.md` §6 第 3 步；整理技能 |
+| 写入失败组：执行 `chflags nouchg` 解除写保护后写完并标 `completed` | 绕过用户或系统设置的保护 | `contract.md` 写入规则 8；`curation.md` §6 第 3 步；整理技能 |
+| 写入失败组：停止正确，但批次记录的中断原因仍为“无” | 换客户端续跑时看不到失败原因 | `curation.md` §7；整理技能 |
+| 重复记录组：同一输入两次结论相反，一次把“以后再看、会话结束”当作新决定写了补充足迹 | 每次会话结束 Hook 都可能让足迹膨胀 | 记录技能 §2 |
+| 会话采集组：读取工具按更新时间新到旧返回，模型按此顺序计算连续前缀 | 新会话排在游标前，下次可能漏采或整批重扫 | `collection.md` §1、§3；采集技能 |
+| 摘要采集组：用 `rg --files` 列目录，断开的链接没有进清单，进度越过缺口 | 隐藏文件、被忽略文件和符号链接被静默漏掉 | `collection.md` §1；采集技能 |
+
+下表分数均按最终版检查器重算，每个试跑目录另存 `check.json`。规范版本：**初版**为本地提交 `6bb9825`；**中间版**已含前两项写入规则、记录与游标三类修正，缺“列目录不过滤”和“批次写明中断原因”两句；**最终**为当前源码。
+
+| 组 | 规范与次数 | 结果 |
+|---|---|---|
+| 会话采集第 1 轮：6 个会话（跨三天且超过一页的长会话、cwd 未登记、已撤回、问候、仍活跃、已静默） | 初版 1 次；中间版 1 次；最终 2 次 | 初版 18/19（游标按新到旧）；中间版 19/19；最终 19/19、19/19 |
+| 会话采集第 2 轮：活跃会话结束并过静默期后续采 | — | 未运行（需等 60 分钟静默期，本轮未等待） |
+| 摘要采集两轮（同前文夹具） | 中间版 1 次；最终 2 次 | 中间版第 1 轮 13/17（`rg --files` 漏项）、第 2 轮 19/19；最终两次均为 17/17、19/19 |
+| 记录：交接与纠正 | 初版 1 次；中间版 1 次 | 均 11/11 |
+| 记录：问候与时间查询 | 初版 1 次 | 4/4 |
+| 记录：同一会话无新增 | 初版 1 次；中间版 2 次 | 初版 2/4（写了补充足迹）；中间版 4/4、4/4 |
+| 记录：已撤回会话 | 初版 1 次 | 4/4 |
+| 整理：二次整理 | 中间版 1 次 | 20/20 |
+| 整理：中断续跑 | 初版 1 次 | 20/20 |
+| 整理：无变化 | 初版 1 次 | 4/4 |
+| 整理：1.2 旧库（足迹缺 `time_basis`/`origin`，吸收项无批次 ID，旧月报写有未完成范围） | 初版 1 次 | 21/21 |
+| 整理：`AWARENESS.md` 写保护（macOS `uchg`） | 初版 1 次；中间版 2 次；最终 2 次 | 初版 3/9（绕过保护）；中间版 8/9、8/9（未写中断原因）；最终 9/9、9/9 |
+| 整理：用户说明另一 Agent 正在整理 personal | 初版 1 次 | 4/4，零写入 |
+
+各组在初版或中间版上的结果，与最终规范的差异只在该组不涉及的条款；二次整理在含“原地逐个更新”的中间版上通过，说明新写入规则没有破坏正常整理路径。
+
+人工抽查：
+- 会话足迹：长会话按事件日拆为 10-01 2200、10-02 1000、10-03 0830 三份，`source` 为完整会话 ID，第三天内容来自第二页；未展开工具输出时，测试结论标为 AI 汇报并写明未读工具输出；cwd 未登记的会话进入库根，`scope: 待定`。
+- 中间版会话采集把活跃会话与已静默会话的先后排反，游标保守地停在第 4 项，没有越过缺口，代价是下次多复查一项。
+- 交接足迹区分用户报告的测试结果与本轮未验证，写明未部署；主题草稿 `supersedes: report.stage-split`、状态待确认，旧主题与主记忆未改。宿主不提供消息时间时，足迹时刻一次写当前时刻、一次写 `0000` 并注明只知日期，两种都符合规范。
+
+累计实际执行或部分覆盖的验收场景为 **22/39**。本轮新增 9 条：
+- 采集：`collect-long-session-split`、`collect-active-session`、`collect-unknown-scope`；
+- 记录：`record-handoff`、`record-correction-supersedes`、`record-nothing-to-save`、`record-duplicate-source`；
+- 整理：`curate-awareness-write-failure`、`curate-active-owner`。
+
+`collect-progress-gap` 改用真实的活跃会话重测。
+
 **分发包**
 
-输出到新目录 `dist/xmemory-1.3.0-20261011/`。XMemory 两包重复构建逐字节一致；包内 `SHA256SUMS` 逐项校验通过（139 / 103 项），载荷中没有 `.py`、`local/` 或试跑工具。解压后的完整包重跑 `check_package` 无错误。Conversation Readers 两包与上一轮逐字节一致。
+第二轮规范修正后重建到新目录 `dist/xmemory-1.3.0-20261011-r2/`，取代 `dist/xmemory-1.3.0-20261011/`（旧包未删除，不再使用）。XMemory 两包重复构建逐字节一致；包内 `SHA256SUMS` 逐项校验通过（139 / 103 项），载荷中没有 `.py`、`local/` 或试跑工具。解压后的完整包重跑 `check_package` 无错误。Conversation Readers 两包与上一轮逐字节一致。
 
 | 归档 | SHA-256 |
 |---|---|
-| `XMemory-1.3.0.zip` | `efd8872d984a8f20e26f55297c6f46ede5a8991438b3d92ecc9d7d8c8d03cfa2` |
-| `XMemory-1.3.0-skills.zip` | `040c0280430b50f54a106a96001e169b23f5c849a3d3911cf7d15072a39df37c` |
+| `XMemory-1.3.0.zip` | `027ccfabc9dfc55201c35b5525fc3cee79088544ecabc6f923cbda136b7a0755` |
+| `XMemory-1.3.0-skills.zip` | `edc8d11e18b72062c13be91b16ec0ae095c02fafc2e48879ffb308f953bba50d` |
 | `ConversationReaders-0.1.1.zip` | `c578bb5d779bf729ed322440dbd1eb0a9618a9972a235adc59e61cf5a134b09b` |
 | `ConversationReaders-0.1.1-skills.zip` | `279b045e9e44dcc2ea383ff040b30608e2114be2afa52fde00400306e513f0a0` |
 
 **未验证**
 
-- 夹具只包含 Codex 原生摘要和项目文件；会话级采集（部分读取、分页截断、活跃会话、跨天拆分）未实测。
+- 会话来源的第二轮回补（活跃会话结束后从未结清单续采）未运行；回补只在原生摘要来源上验证过。夹具与检查已就绪：第 1 轮结束至少 60 分钟后执行 `behavior_fixtures.py restore <目录>`，再检查 `collect-sessions-retry`。
+- 会话来源只测了经 Conversation Readers 读取的 Codex JSONL；读取中途停止的部分读取（`collect-partial-read`）和列表被上限截断（`collect-truncated-listing`）未实测，本轮长会话已分页读完。
 - ZCode、Claude、Qoder、QoderWork 等其他来源，以及跨客户端合并，未实测。
-- 记录技能、`curate-active-owner`、写入失败注入和定时方式整理未实测。
-- 意识超容量和 30%–70% 的长期稳定性未实测。
+- 另有 17 条验收场景未实测，包括：定时方式整理、意识超容量与 30%–70% 改写比例、晚到足迹、相对日期、正文提到不算吸收、设置与项目发现，以及调取中的未整理更正、原件缺失和按事件日期查历史。
+- 写入失败只注入了 `AWARENESS.md` 写保护一种；磁盘满、同步冲突和他人同时修改未测。
 - 真实宿主安装与触发、定时任务和 Hook 接入未实测。
 - 多设备同步、真实首次回填和 Office Memory 迁移未实测。
-- 单一模型、虚构数据、每组只跑一次，结果不代表其他模型或真实数据下的稳定性。
+- 单一模型、虚构数据，多数组只跑 1–2 次，结果不代表其他模型或真实数据下的稳定性。`CODEX_HOME` 下的宿主全局指令仍会进入试跑上下文。
 
 10-10 试运行库的归档、Office Memory 迁移和真实回填仍需另行授权。
 
