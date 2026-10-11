@@ -757,8 +757,12 @@ def sqlite_events(s, warnings, include_tools):
                         if "output" in state:
                             yield event(s, loc + "/result", "tool", tool_text(state["output"]),
                                         kind="tool_result", call_id=b.get("callID"), name=b.get("tool"), **base)
+                    # step-start/step-finish/timeline/compaction 是 ZCode 的生命周期与
+                    # 遥测事件（token 计数、模型切换分隔、压缩操作记录）；压缩摘要本体
+                    # 存于独立 message（summaryMessageId 所指），不由 compaction part 携带。
                     elif b.get("type") not in ("text", "tool", "reasoning", "thinking", "redacted_thinking",
-                                               "image", "file", "document"):
+                                               "image", "file", "document", "step-start", "step-finish",
+                                               "timeline", "compaction"):
                         warnings.append(f"unsupported_body: {source_part}; 未适配的内容块")
         elif s["client"] == "qodercn":
             columns(con, "chat_session_messages", ["session_id", "message_id", "sequence", "payload_json", "created_at"])

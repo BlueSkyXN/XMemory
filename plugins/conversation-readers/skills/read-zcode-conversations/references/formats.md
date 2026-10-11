@@ -4,7 +4,7 @@
 
 ~/.zcode/cli/db/db.sqlite 的 session、message、part 表。
 
-按 session_id 定位消息和内容块，保留原生序号与工具 callID；不以运行日志冒充完整对话。不输出 reasoning、synthetic 或 ignored 内容。
+按 session_id 定位消息和内容块，保留原生序号与工具 callID；不以运行日志冒充完整对话。不输出 reasoning、synthetic 或 ignored 内容。`step-start`、`step-finish`（token 遥测）、`timeline`、`compaction`（压缩操作记录，摘要存于独立 message）属内部事件，静默跳过，不计入正文也不报警。
 
 支持 `list`、`search`、`read`。`--root` 可指定 db.sqlite 文件或直接包含它的目录；ZCode 不读取 JSONL。默认来源不存在时明确报告。可迁移到其他系统，但不同系统的路径需由用户明确指定，本版未宣称完成所有操作系统和客户端版本验收。
 

@@ -874,6 +874,25 @@ class ReaderTests(unittest.TestCase):
         with self.assertRaises(reader.ReaderError):
             self.read("claude", self.root / "absent", "read", "--session", virtual)
 
+    def test_zcode_lifecycle_parts_are_not_unsupported(self):
+        # step-start/step-finish/timeline/compaction 是生命周期与遥测事件，
+        # 静默跳过，不产生 unsupported_body 警告（实测 0.1.2 曾对每条报警刷屏）。
+        sid = "sess_lifecycle-demo"
+        p = self.zcode_db(sid)
+        with sqlite3.connect(p) as c:
+            lifecycle = [
+                {"type": "step-start"},
+                {"type": "step-finish", "reason": "tool-calls", "cost": 0, "tokens": {"total": 28183}},
+                {"type": "timeline", "timelineType": "model_change", "display": "separator", "status": "completed"},
+                {"type": "compaction", "auto": True, "compactReason": "context_limit",
+                 "summaryMessageId": "msg_other", "boundaryId": "compact_demo"},
+            ]
+            for i, data in enumerate(lifecycle):
+                c.execute("INSERT INTO part VALUES(?,?,?,2,?)", (f"lp{i}", "m", sid, json.dumps(data)))
+        out = self.read("zcode", p, "read", "--session", sid)
+        self.assertFalse([w for w in out["warnings"] if w.startswith("unsupported_body")])
+        self.assertEqual([x["text"] for x in out["items"]], ["虚拟路径可定位"])
+
     def test_zstd_rollout_reads_and_reports_missing_tool(self):
         zstd = shutil.which("zstd")
         if not zstd:

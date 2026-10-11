@@ -37,6 +37,11 @@ python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path
 
 精确来源、格式与限制见 [格式说明](./references/formats.md)。分页、JSON 字段、Markdown 导出和活文件行为见 [输出约定](./references/output.md)。
 
+## 标识与线索
+
+- 会话有两种标识：原生 ID（取记录 `sessionId`，缺失时用文件名主干，`id_origin` 区分来源）和 `session_ref`（`workbuddy:jsonl:<id>`，list 返回、read 使用）；`source` 指回真实原件。
+- 线索不全时的定位法：只有 ID——包括从日志或界面复制的引用（含 `.<客户端>-session` 后缀的虚拟路径，磁盘上无此文件）——直接传 `--session`，脚本确定性剥壳，不做模糊匹配；只有项目根时用 `--project` 按记录 `cwd` 的路径边界匹配；只有目录或文件时用 `--root` 限定扫描范围。
+
 ## 使用结果
 
 回答保留对话 ID、相关消息引用、时间和来源位置，区分用户要求、助手自述与工具执行结果。脚本不做 AI 摘要、不向记忆库写入；用户另行要求记忆采集时，再把选定片段和出处交给对应记忆工作流。

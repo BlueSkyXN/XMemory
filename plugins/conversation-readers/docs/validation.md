@@ -7,8 +7,9 @@
 - **Codex 遥测/状态信封归入元数据**：实测 0.162.1 rollout 顶层存在 `token_usage_record`、`world_state`、`inter_agent_communication_metadata`（信封均为 timestamp/ordinal/type/payload，无对话正文），原被通用规则误判 `unsupported_body` 致警告刷屏与 `metadata_complete=false`。现按元数据处理；`json_events` 读取路径本就只认 `response_item`，行为不变。
 - **`.jsonl.zst` 支持**：Codex `local_thread_store_compression` 会把冷 rollout 改写为 `.jsonl.zst`（0.162.1 二进制含该 feature flag 与 `--max-mib-per-second` 限速；AgentLedger `codex_zstd.go` 交叉证实）。读取器发现即处理：系统有 `zstd` 命令时流式解压（byte 偏移基于解压后字节流），无则按 `zstd_missing` 报告未读数量，不静默漏掉。本机当前 0 个 `.zst`，未开启该设置。
 - **`--session` 归一化**：客户端界面复制的虚拟引用 `<工作区>/<ID>.<客户端>-session`（ZCode 实测格式，磁盘无此文件）按文件名确定性剥壳，客户端必须匹配；ZCode 裸 UUID 确定性补全 `sess_` 前缀。不做模糊匹配。
-- **文档**：ZCode SKILL.md 新增「标识与界面引用」；五端 formats.md 各补「项目根与存储位置」映射；输出约定同步上述行为。
-- 以上均有虚构原始记录上的回归测试；真实会话抽查为只读冒烟（本机 db.sqlite 以界面虚拟路径定位并读取成功）。
+- **ZCode 生命周期 part 归入内部事件**：实测 part 表存在 `step-start`/`step-finish`（token 遥测）、`timeline`（模型切换分隔）、`compaction`（压缩操作记录，摘要本体在 `summaryMessageId` 所指的独立 message 中，正常路径已读取），0.1.2 曾对每条误报 `unsupported_body`（单会话可达约 90 条）。现静默跳过，与隐藏推理同等对待。
+- **文档**：ZCode SKILL.md 新增「标识与界面引用」；其余四端 SKILL.md 各补「标识与线索」（两种标识与线索不全定位法）；五端 formats.md 各补「项目根与存储位置」映射；输出约定同步上述行为。
+- 以上均有虚构原始记录上的回归测试；真实会话抽查为只读冒烟（本机 db.sqlite 以界面虚拟路径定位并读取成功；修复后重读同会话 `unsupported_body` 归零）。
 
 ## 0.1.2 加入三端市场
 
