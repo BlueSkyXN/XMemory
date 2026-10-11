@@ -91,11 +91,12 @@ class PackageTests(unittest.TestCase):
                 for line in sums:
                     sha, name = line.split("  ", 1)
                     self.assertEqual(hashlib.sha256(archive.read(f"{label}/{name}")).hexdigest(), sha)
-                payload_names = {name.removeprefix(f"{label}/plugins/xmemory/") for name in archive.namelist()
-                                 if name.startswith(f"{label}/plugins/xmemory/")}
-                actual = {p.relative_to(ROOT / "plugins/xmemory").as_posix()
-                          for p in (ROOT / "plugins/xmemory").rglob("*") if p.is_file()}
-                self.assertEqual(payload_names, actual)
+                for plugin in ("xmemory", "conversation-readers"):
+                    payload_names = {name.removeprefix(f"{label}/plugins/{plugin}/") for name in archive.namelist()
+                                     if name.startswith(f"{label}/plugins/{plugin}/")}
+                    actual = {p.relative_to(ROOT / "plugins" / plugin).as_posix()
+                              for p in (ROOT / "plugins" / plugin).rglob("*") if p.is_file()}
+                    self.assertEqual(payload_names, actual, plugin)
                 self.assertFalse(any("local/" in name or "tools/" in name or "__pycache__" in name
                                      for name in archive.namelist()))
 
@@ -129,11 +130,34 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             archive_path, _ = build(ROOT, Path(tmp))
             with zipfile.ZipFile(archive_path) as archive:
+                manifests = [f"plugins/{plugin}/{name}" for plugin in ("xmemory", "conversation-readers")
+                             for name in ("plugin.json", ".zcode-plugin/plugin.json", ".claude-plugin/plugin.json",
+                                          ".codex-plugin/plugin.json")]
                 for relative in ("plugins/marketplace.json", ".claude-plugin/marketplace.json",
-                                 ".agents/plugins/marketplace.json", "plugins/xmemory/plugin.json",
-                                 "plugins/xmemory/.zcode-plugin/plugin.json",
-                                 "plugins/xmemory/.claude-plugin/plugin.json"):
+                                 ".agents/plugins/marketplace.json", *manifests):
                     self.assertIn(f"{archive_path.stem}/{relative}", archive.namelist())
+
+    def test_every_marketplace_lists_both_plugins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for directory in ("plugins", ".claude-plugin", ".agents"):
+                shutil.copytree(ROOT / directory, root / directory)
+            self.assertEqual(check(root), [])
+            for relative in ("plugins/marketplace.json", ".claude-plugin/marketplace.json",
+                             ".agents/plugins/marketplace.json"):
+                with self.subTest(market=relative):
+                    path = root / relative
+                    original = path.read_text(encoding="utf-8")
+                    data = json.loads(original)
+                    data["plugins"] = [entry for entry in data["plugins"] if entry["name"] != "conversation-readers"]
+                    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                    self.assertTrue(any("must list" in error for error in check(root)))
+                    path.write_text(original, encoding="utf-8")
+            path = root / ".claude-plugin/marketplace.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            next(e for e in data["plugins"] if e["name"] == "conversation-readers")["version"] = "9.9.9"
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            self.assertIn("claude marketplace mismatch: conversation-readers.version", check(root))
 
     def test_resource_drift_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
