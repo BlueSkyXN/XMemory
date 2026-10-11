@@ -9,7 +9,9 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 
 MAX_LINE = 8 * 1024 * 1024
@@ -159,8 +161,63 @@ def columns(con, table, required):
     return names
 
 
+def jsonl_stem(path):
+    """Codex 冷会话会被改写为 .jsonl.zst；文件名身份按去掉两层后缀后的主干计算。"""
+    name = path.name
+    if name.lower().endswith(".zst"):
+        name = name[:-4]
+    if name.lower().endswith(".jsonl"):
+        name = name[:-6]
+    return name
+
+
+def zstd_rows(path, warnings):
+    """流式解压读取 .jsonl.zst；byte 偏移基于解压后字节流，重放需按序解压。"""
+    binary = shutil.which("zstd")
+    if not binary:
+        warnings.append(f"zstd_missing: {path}")
+        return
+    process = subprocess.Popen([binary, "-dcq", "--", str(path)], stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL)
+    offset = 0
+    try:
+        while True:
+            raw = process.stdout.readline(MAX_LINE + 1)
+            if not raw:
+                break
+            if len(raw) > MAX_LINE:
+                warnings.append(f"oversized_record: {path}#byte:{offset}")
+                while raw and not raw.endswith(b"\n"):
+                    raw = process.stdout.readline(MAX_LINE + 1)
+                    if not raw:
+                        break
+                    offset += len(raw)
+                offset += len(raw)
+                continue
+            try:
+                item = json.loads(raw)
+                if not isinstance(item, dict):
+                    raise ValueError("not an object")
+            except (ValueError, UnicodeDecodeError):
+                warnings.append(f"invalid_or_partial_record: {path}#byte:{offset}")
+                offset += len(raw)
+                continue
+            yield offset, item
+            offset += len(raw)
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.stdout.close()
+        process.wait()
+    if process.returncode:
+        warnings.append(f"zstd_stream_error: {path}; 退出码 {process.returncode}")
+
+
 def json_rows(path, warnings):
     """按打开时长度逐行读取；完整检查元数据，不缓存整段历史正文。"""
+    if path.name.lower().endswith(".zst"):
+        yield from zstd_rows(path, warnings)
+        return
     start = path.stat()
     with path.open("rb") as stream:
         while stream.tell() < start.st_size:
@@ -229,7 +286,10 @@ def json_record_kind(client, row):
     if not isinstance(typ, str):
         return "unsupported"
     if client == "codex":
-        if typ in {"session_meta", "turn_context", "event_msg"}:
+        # token_usage_record/world_state/inter_agent_communication_metadata 实测为
+        # 0.16x 的遥测与状态信封（timestamp/ordinal/type/payload），不含对话正文。
+        if typ in {"session_meta", "turn_context", "event_msg", "token_usage_record",
+                   "world_state", "inter_agent_communication_metadata"}:
             return "metadata"
         if typ in {"response_item", "compacted"}:
             p = row.get("payload")
@@ -282,8 +342,9 @@ def native_session_id(client, row):
 def json_summary(client, path, warnings):
     if client == "zcode":
         raise ReaderError("unsupported_source: ZCode 使用已核实的 SQLite 对话表")
-    match = re.search(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", path.stem)
-    sid = match[0] if match else path.stem
+    stem = jsonl_stem(path)
+    match = re.search(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", stem)
+    sid = match[0] if match else stem
     result = summary(client, "jsonl", sid, path, title=None, title_origin=None,
                      project=None, parent_session_id=None, created_at=None, updated_at=None,
                      archived="archived_sessions" in path.parts, id_origin="filename")
@@ -397,14 +458,17 @@ def match_start(text, folded_query):
 
 def catalogue(client, args, warnings):
     roots = [Path(p).expanduser().resolve() for p in args.root] if args.root else defaults(client)
-    files, dbs = set(), set()
+    files, dbs, compressed = set(), set(), set()
     for root in roots:
         if not root.exists():
             warnings.append(f"source_unavailable: {root}")
             continue
         if root.is_file():
-            if root.suffix == ".jsonl":
+            name = root.name.lower()
+            if name.endswith(".jsonl"):
                 files.add(root)
+            elif name.endswith(".jsonl.zst"):
+                compressed.add(root)
             elif root.suffix in {".sqlite", ".db"}:
                 dbs.add(root)
             else:
@@ -416,10 +480,24 @@ def catalogue(client, args, warnings):
             for p in root.rglob("*.jsonl"):
                 if p.is_file() and not p.is_symlink() and (args.include_subagents or "subagents" not in p.parts):
                     files.add(p)
+            # Codex local_thread_store_compression 会把冷 rollout 改写为 .jsonl.zst；
+            # 发现即纳入或报告，不在文件匹配阶段静默漏掉。
+            for p in root.rglob("*.jsonl.zst"):
+                if p.is_file() and not p.is_symlink() and (args.include_subagents or "subagents" not in p.parts):
+                    compressed.add(p)
+    if compressed:
+        if shutil.which("zstd"):
+            files.update(compressed)
+        else:
+            warnings.append(f"zstd_missing: {len(compressed)} 个 .jsonl.zst 会话未读；安装 zstd 或解压后重试")
     # 文件名只决定优先检查顺序，不能取代原生元数据或排除别名文件。
     sid = args.session.split(":")[-1] if args.session else None
-    ordered = sorted(files, key=lambda p: (bool(sid and (p.stem == sid or p.stem.endswith("-" + sid))),
-                                          p.stat().st_mtime_ns, str(p)), reverse=True)
+
+    def name_hint(p):
+        stem = jsonl_stem(p)
+        return bool(sid and (stem == sid or stem.endswith("-" + sid)))
+
+    ordered = sorted(files, key=lambda p: (name_hint(p), p.stat().st_mtime_ns, str(p)), reverse=True)
     if len(ordered) > args.max_sessions:
         warnings.append("session_scan_limit: JSONL 仍有未检查的会话；缩小 --root 或增大 --max-sessions")
     result = []
@@ -748,7 +826,29 @@ def read_events(s, warnings, include_tools):
         yield e
 
 
+UI_REFERENCE = re.compile(r"(?i)^[\w.-]+\.(?:zcode|claude|codex|qodercn|workbuddy)-session$")
+UUID_PLAIN = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
+
+
+def normalize_session(client, value):
+    """客户端界面复制的会话引用是 <工作区>/<ID>.<客户端>-session 虚拟路径，磁盘上不存在；
+    按文件名确定性剥壳（客户端必须匹配），不做模糊匹配。ZCode 原生 ID 带 sess_ 前缀，
+    裸 UUID 同样确定性补全。"""
+    if not value or ":" in value:
+        return value
+    name = str(value).replace("\\", "/").rsplit("/", 1)[-1]
+    if UI_REFERENCE.fullmatch(name):
+        stem, _, suffix = name.rpartition(".")
+        client_name = suffix[:-len("-session")].lower()
+        if client_name == client:
+            value = stem
+    if client == "zcode" and UUID_PLAIN.fullmatch(value):
+        return "sess_" + value
+    return value
+
+
 def run(client, args):
+    args.session = normalize_session(client, args.session)
     warnings = []
     sessions = catalogue(client, args, warnings)
     metadata_complete = all(s.get("metadata_complete", True) for s in sessions) and not any(

@@ -1,6 +1,6 @@
 {
   "name": "conversation-readers",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "五个客户端各一个 Skill 和只读脚本：列出、检索、定位与读取对话，不自动写入记忆。",
   "author": {"name": "BlueSkyXN"},
   "skills": "./skills",

@@ -838,6 +838,64 @@ class ReaderTests(unittest.TestCase):
         out = self.read("qodercn", p, "read", "--session", "session-demo", "--include-tools")
         self.assertEqual([i["text"] for i in out["items"]], ["回退文字", "{}", "结果一", "正文", "{}", "回退结果"])
 
+    def test_codex_telemetry_envelopes_are_metadata(self):
+        p = self.write("rollout.jsonl", [
+            {"type": "session_meta", "payload": {"id": "codex-demo", "cwd": "/work/demo"}},
+            {"type": "token_usage_record", "payload": {"total": 1}},
+            {"type": "world_state", "payload": {"nodes": []}},
+            {"type": "inter_agent_communication_metadata", "payload": {"channel": "board"}},
+            {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user", "content": [{"type": "input_text", "text": "部署核对"}]}},
+        ])
+        out = self.read("codex", p, "list")
+        self.assertFalse([w for w in out["warnings"] if w.startswith("unsupported_body")])
+        self.assertTrue(out["coverage"]["metadata_complete"])
+        self.assertEqual(out["items"][0]["body_format"], "supported")
+        self.assertEqual(self.read("codex", p, "read", "--session", "codex-demo")["items"][0]["text"], "部署核对")
+
+    def zcode_db(self, sid):
+        p = self.root / "db.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES(?,?,?,1,2)", (sid, "界面引用", "/work/demo"))
+            c.execute("INSERT INTO message VALUES(?,?,1,?)", ("m", sid, json.dumps({"role": "user", "parentID": None})))
+            c.execute("INSERT INTO part VALUES(?,?,?,1,?)", ("p1", "m", sid, json.dumps({"type": "text", "text": "虚拟路径可定位"})))
+        return p
+
+    def test_zcode_ui_virtual_reference_and_bare_uuid(self):
+        sid = "sess_04390ec0-1198-462c-a5a0-347d17b254d6"
+        p = self.zcode_db(sid)
+        virtual = f"/Users/fixture-user/work/{sid}.zcode-session"
+        for value in (virtual, sid, sid[len("sess_"):], f"zcode:sqlite:{sid}"):
+            items = self.read("zcode", p, "read", "--session", value)["items"]
+            self.assertEqual([x["text"] for x in items], ["虚拟路径可定位"])
+        # 跨客户端的界面引用不做转换：原样查找，明确报未找到。
+        with self.assertRaises(reader.ReaderError):
+            self.read("claude", self.root / "absent", "read", "--session", virtual)
+
+    def test_zstd_rollout_reads_and_reports_missing_tool(self):
+        zstd = shutil.which("zstd")
+        if not zstd:
+            self.skipTest("需要系统 zstd 命令")
+        plain = self.write("rollout-cold.jsonl", [
+            {"type": "session_meta", "payload": {"id": "codex-cold", "cwd": "/work/demo"}},
+            {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user", "content": [{"type": "input_text", "text": "冷会话正文"}]}},
+        ])
+        packed = plain.with_name(plain.name + ".zst")
+        subprocess.run([zstd, "-qf", "-o", str(packed), str(plain)], check=True)
+        plain.unlink()
+        listed = self.read("codex", self.root, "list")
+        self.assertEqual(listed["items"][0]["session_id"], "codex-cold")
+        self.assertTrue(listed["items"][0]["source"].endswith(".jsonl.zst"))
+        items = self.read("codex", self.root, "read", "--session", "codex-cold")["items"]
+        self.assertEqual(items[0]["text"], "冷会话正文")
+        from unittest import mock
+        with mock.patch.object(reader.shutil, "which", return_value=None):
+            degraded = self.read("codex", self.root, "list")
+        self.assertEqual(degraded["items"], [])
+        self.assertTrue(any(w.startswith("zstd_missing") for w in degraded["warnings"]))
+
 
 if __name__ == "__main__":
     unittest.main()
