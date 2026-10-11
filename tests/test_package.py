@@ -117,6 +117,8 @@ class PackageTests(unittest.TestCase):
                     for raw in LINK.findall(path.read_text()):
                         if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I):
                             continue
+                        if "{{" in raw and "templates" in path.parts:
+                            continue
                         target = (path.parent / unquote(raw.split("#", 1)[0])).resolve()
                         self.assertTrue(target.is_relative_to(skill.resolve()), (path, raw))
                         self.assertTrue(target.is_file(), (path, raw))
@@ -156,31 +158,51 @@ class PackageTests(unittest.TestCase):
             self.assertNotIn("项目内 `.agents/xmemory/`", text, str(path))
         contract = (plugin / "references/contract.md").read_text()
         self.assertIn("不在项目中自动创建记忆目录或软链接", contract)
-        self.assertIn("projects/<id>/", contract)
+        self.assertIn("projects/<项目名>/", contract)
         existing = (plugin / "docs/existing-data.md").read_text()
-        self.assertIn("迁入用户级集中库并停用旧流程", existing)
+        self.assertIn("迁入集中库并停用旧流程", existing)
 
-    def test_two_layer_write_contract(self):
+    def test_memory_hub_contract(self):
         plugin = ROOT / "plugins/xmemory"
-        for name in ("day.md", "BACKLOG.md", "note.md", "record.md", "CURRENT.md", "WITHDRAWN.md"):
+        for name in ("USER.md", "AWARENESS.md", "MEMORY.md", "topic.md", "daily.md", "record.md",
+                     "run.md", "sources.md", "curation.md", "withdrawn.md", "config.toml"):
             self.assertTrue((plugin / "templates" / name).is_file(), name)
+        for name in ("CURRENT.md", "day.md", "note.md", "BACKLOG.md"):
+            self.assertFalse((plugin / "templates" / name).exists(), name)
         contract = (plugin / "references/contract.md").read_text()
-        for phrase in ("采集只新建", "修改已有文件的只有整理", "记账类", "判断类", "不登记设备"):
+        for phrase in ("采集只新建", "整理是唯一修改记忆正文的动作", "AI 的结论或推荐不能记成用户决定",
+                       "进度只在成功后推进", "记忆内容不带设备特征"):
             self.assertIn(phrase, contract)
         storage = (plugin / "references/storage.md").read_text()
-        for phrase in ("YYYY-MM-DDTHHMM-<短名>-<4位随机串>.md", "YYYY-MM-DD.md", "近 30 天", "project:<ID>/"):
+        for phrase in ("daily/YYYY-MM-DD/HHMM-<短名>-<4位随机>.md", "已吸收足迹", "project:<项目名>/",
+                       "state/runs/", "event_at", "当前认识", "记忆候选"):
             self.assertIn(phrase, storage)
+        curation = (plugin / "references/curation.md").read_text()
+        for phrase in ("关键信息保全", "已有条目损失", "日期绝对化", "30%–70%", "晋升到主记忆",
+                       "亲自读到的用户原话", "支持同一条主张", "逐条判断", "待确认", "范围从窄"):
+            self.assertIn(phrase, curation)
+        clients = (plugin / "references/clients.md").read_text()
+        self.assertIn("`updated_at` 是 UTC", clients)
+        collection = (plugin / "references/collection.md").read_text()
+        for phrase in ("无可记内容", "逐项抄录", "状态为空的行数为 0"):
+            self.assertIn(phrase, collection)
         record = (plugin / "skills/xmemory-record/SKILL.md").read_text()
-        self.assertIn("只新建文件", record)
+        self.assertIn("不修改旧主题", record)
         self.assertIn("supersedes", record)
         curate = (plugin / "skills/xmemory-curate/SKILL.md").read_text()
-        self.assertIn("./templates/day.md", curate)
-        self.assertIn("待确认建议", curate)
+        self.assertIn("./templates/AWARENESS.md", curate)
+        self.assertIn("记忆候选", curate)
         setup = (plugin / "skills/xmemory-setup/SKILL.md").read_text()
-        self.assertIn("./integrations/scheduled-curate.md", setup)
-        prompt = (plugin / "integrations/scheduled-curate.md").read_text()
+        for link in ("./integrations/scheduled.md", "./integrations/hooks.md", "./integrations/backfill.md"):
+            self.assertIn(link, setup)
+        prompt = (plugin / "integrations/scheduled.md").read_text()
         self.assertIn("本次无变化", prompt)
         self.assertIn("XMemory 读取协议", (plugin / "integrations/entry.md").read_text())
+
+    def test_terminology_keeps_office_memory_and_ompi_apart(self):
+        # Office Memory（自有实践）与 OMPI（外部协议草案）不能混写成缩写 OM。
+        for path in (ROOT / "plugins/xmemory").rglob("*.md"):
+            self.assertNotRegex(path.read_text(), r"(?<![A-Za-z])OM(?![A-Za-z])", str(path))
 
     def test_no_device_fields_in_templates(self):
         for path in (ROOT / "plugins/xmemory/templates").iterdir():

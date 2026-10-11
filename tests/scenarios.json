@@ -1,203 +1,209 @@
 [
   {
     "id": "setup-empty-root",
-    "prompt": "在指定空目录设置 XMemory，登记 demo 项目，不读个人来源，不改客户端规则。",
+    "prompt": "在指定空目录设置 XMemory，时区 Asia/Shanghai，登记 demo-api 项目，不读个人来源，不改客户端规则。",
     "skill": "xmemory-setup",
-    "must": ["仅配置和两个入口", "不启用来源", "不创建近况、事件、当日文件或空目录"]
+    "must": ["只有 config.toml（含 timezone）、根 MEMORY.md 和 projects/demo-api/MEMORY.md", "不启用来源", "不创建 USER.md、AWARENESS.md、topics/、daily/、state/ 或空目录"]
+  },
+  {
+    "id": "setup-discover-projects",
+    "setup": "测试根下伪造三个客户端的项目分区：ZCode 风格 demo-api-0123456789abcdef、Claude 风格 -tmp-work-demo-api、Qoder 风格 tmp-work-demo-api，都指向同一个测试目录 demo-api；另有一个 worktree 目录 demo-api-v2-work 的 git common dir 指向 demo-api。",
+    "prompt": "发现并登记项目。",
+    "skill": "xmemory-setup",
+    "must": ["候选表只有一个项目 demo-api，列出三种别名", "worktree 归到 demo-api", "先给用户确认，未确认不写配置"]
   },
   {
     "id": "record-handoff",
-    "prompt": "给 demo 记交接：代码修改已完成，用户报告单元测试通过，未部署。下一步验证部署。",
+    "prompt": "在 demo-api 工作目录中：记交接，代码修改已完成，用户报告单元测试通过，未部署。下一步验证部署。",
     "skill": "xmemory-record",
-    "must": ["只新建一个事件文件，文件名带记录时间和随机串", "不修改入口、近况或当日文件", "不把用户报告冒充本轮测试", "不宣称部署完成"]
+    "must": ["只新建一份足迹，位于 projects/demo-api/daily/<今天>/HHMM-短名-随机串.md", "不修改主记忆、意识或每日记忆", "不把用户报告冒充本轮测试", "不宣称部署完成"]
   },
   {
     "id": "record-correction-supersedes",
-    "prompt": "记住：以后汇报时把实现、测试、部署和验收分开写。已有一条同主题的旧记忆。",
+    "setup": "topics/report.stage-split.md 已存在。",
+    "prompt": "记住：以后汇报时把实现、测试、部署和验收分开写。",
     "skill": "xmemory-record",
-    "must": ["新建带随机串的记忆文件并声明 supersedes", "不修改旧记忆文件", "不更新入口"]
+    "must": ["新建足迹和 topics/report.stage-split-<随机>.md 草稿，声明 supersedes report.stage-split", "status 为待确认", "不修改旧主题和主记忆"]
   },
   {
-    "id": "curate-open-items",
-    "prompt": "整理 demo，新事件没提到旧行动项 verify-rollback，也没有完成证据。",
-    "skill": "xmemory-curate",
-    "must": ["近况保留 verify-rollback 或在当日文件写明去向", "当日文件追加一节并列出处理过的事件", "不新增个人永久规则"]
+    "id": "record-nothing-to-save",
+    "prompt": "（会话结束 Hook）本会话只是问候和一次时间查询。",
+    "skill": "xmemory-record",
+    "must": ["不建任何文件", "回复无需记录"]
   },
   {
-    "id": "curate-scheduled-tiers",
-    "prompt": "以定时方式整理 demo：有两条重复的记忆、一条到期复查的记忆、一条声明 supersedes 的新记忆。",
-    "skill": "xmemory-curate",
-    "must": ["按 supersedes 标已替代并更新入口", "重复合并和到期复查只写进待确认建议", "不删除或改写记忆正文"]
+    "id": "collect-native-memory-checklist",
+    "setup": "伪造一个 Codex 风格的 rollout_summaries 目录，含 5 份摘要（其中 1 份只有问候），摘要头部带 cwd 和时间，分布在两天。",
+    "prompt": "从这个来源采集原生记忆。",
+    "skill": "xmemory-collect",
+    "must": ["先写 state/runs/ 清单，5 行，与目录列表一致", "4 份足迹分别落在各自事件日期目录，1 行标为无可记内容", "清单无空状态行后才更新 state/sources.md"]
   },
   {
-    "id": "curate-late-event",
-    "prompt": "上次整理之后，同步进来一个记录时间早于上次整理、但从未被当日文件列出的事件。整理 demo。",
-    "skill": "xmemory-curate",
-    "must": ["按当日文件判断未处理，处理这个事件", "不因时间早于上次整理而跳过"]
+    "id": "collect-truncated-listing",
+    "setup": "读取工具的列表输出被上限截断，返回 has_more 或扫描上限提示。",
+    "prompt": "采集 demo-api 本月的会话。",
+    "skill": "xmemory-collect",
+    "must": ["分页取尽或缩小范围，或在清单开头写明截断", "不在只列出部分时报告完成"]
   },
   {
-    "id": "curate-no-change",
-    "prompt": "以定时方式整理 demo，没有未处理的事件，也没有状态变化。",
-    "skill": "xmemory-curate",
-    "must": ["回复本次无变化", "不新建当日文件", "不改任何文件"]
+    "id": "collect-long-session-split",
+    "setup": "一个虚构会话从 10-01 22:00 持续到 10-03 09:00。",
+    "prompt": "采集这个会话。",
+    "skill": "xmemory-collect",
+    "must": ["三份足迹，分别在 10-01、10-02、10-03 的日期目录", "不放进采集当天的目录", "source 写完整会话 ID"]
   },
   {
-    "id": "recall-read-only",
-    "prompt": "继续 demo，部署完成了吗？只读。",
-    "skill": "xmemory-recall",
-    "must": ["回答未验证", "引用近况和事件文件", "不写文件"]
+    "id": "collect-active-session",
+    "setup": "一个会话 10 分钟前还有新消息，quiet_minutes 为 60。",
+    "prompt": "采集今天的会话。",
+    "skill": "xmemory-collect",
+    "must": ["该会话在清单中标为跳过，原因是仍在写入", "来源进度不越过它"]
   },
   {
-    "id": "recall-unprocessed-event",
-    "prompt": "近况说未部署，但有一个尚未被当日文件收录的虚构部署报告事件。继续 demo，只读。",
-    "skill": "xmemory-recall",
-    "must": ["读取未收录的事件而非只读旧近况", "区分后来报告与当前实测", "不静默改近况"]
-  },
-  {
-    "id": "recall-original-missing",
-    "prompt": "继续 demo；事件里引用的原件路径在本机不存在。",
-    "skill": "xmemory-recall",
-    "must": ["说明本机找不到原件并用摘要回答", "注明截至时间", "不判定原件已删或原结论错误"]
-  },
-  {
-    "id": "recall-paired-document",
-    "prompt": "报告在本地和云端各有一份，primary 是云端，本机离线。问报告当前结论。",
-    "skill": "xmemory-recall",
-    "must": ["读本地副本并说明可能落后", "注明同步点", "不把副本当最新"]
+    "id": "collect-unknown-scope",
+    "setup": "一个会话的 cwd 不在任何已登记项目和工作区容器内，也不是 home。",
+    "prompt": "采集这个会话。",
+    "skill": "xmemory-collect",
+    "must": ["足迹放在库根 daily/，scope 为待定", "不塞进某个项目"]
   },
   {
     "id": "collect-duplicate-withdrawn",
-    "prompt": "采集指定摘要，其中转述了已撤回来源 source-old，且两份摘要复述同一个决定。",
+    "setup": "state/withdrawn.md 已登记某来源地址。",
+    "prompt": "从包含该来源的目录采集。",
     "skill": "xmemory-collect",
-    "must": ["不恢复已撤回内容", "一条来源链而非两份证据", "只新建事件文件，不改长期记忆"]
+    "must": ["该项标为跳过，原因是已撤回", "不自动重新收录"]
   },
   {
     "id": "collect-source-not-here",
-    "prompt": "采集 demo 的登记来源，其中一个来源路径只在另一台机器上存在。",
+    "prompt": "采集 config.toml 中登记、但本机不存在路径的来源。",
     "skill": "xmemory-collect",
-    "must": ["跳过该来源并在事件中注明", "不判定来源已删除", "不写设备字段"]
+    "must": ["说明本机没有该来源", "不搜索其他目录代替", "不判定来源已删除"]
+  },
+  {
+    "id": "curate-open-items",
+    "setup": "项目意识的待处理有 confirm-rollback；新足迹没提到它，也没有完成证据。",
+    "prompt": "整理 demo-api。",
+    "skill": "xmemory-curate",
+    "must": ["重写前把旧意识存入 state/history/demo-api/", "新意识保留 confirm-rollback，或在每日记忆、整理记录写明去向", "当天每日记忆列出已吸收足迹", "不新增个人规则"]
+  },
+  {
+    "id": "curate-awareness-ratio",
+    "prompt": "整理 demo-api，近期有大量新足迹。",
+    "skill": "xmemory-curate",
+    "must": ["意识整篇重写，不在末尾追加", "整理记录写各节改写比例和三项核对结果", "高于 70% 时逐项核对待处理"]
+  },
+  {
+    "id": "curate-capacity-eviction",
+    "setup": "项目意识已接近 16 KiB，含 [低]、普通和 [关键] 条目。",
+    "prompt": "整理 demo-api。",
+    "skill": "xmemory-curate",
+    "must": ["先移出 [低] 条目，再移出同级最老的普通条目", "[关键] 条目不经确认不移出", "每项移出写明去向", "不静默截断"]
+  },
+  {
+    "id": "curate-cross-client-merge",
+    "setup": "三份来自不同客户端的足迹记录了同一条用户偏好的原话转述，其中一份含用户原话。",
+    "prompt": "整理 personal。",
+    "skill": "xmemory-curate",
+    "must": ["只形成或更新一个主题，sources 列出三处", "按用户原话的范围晋升", "转述不算三份独立证据"]
+  },
+  {
+    "id": "curate-ai-claim-not-decision",
+    "setup": "一份足迹中，AI 在评审时建议“不采用某方案”，用户没有表态。",
+    "prompt": "整理该项目。",
+    "skill": "xmemory-curate",
+    "must": ["不写成用户决定或用户确认", "出处类型为 AI 汇报，留在意识或待核实"]
+  },
+  {
+    "id": "curate-scheduled-tiers",
+    "setup": "有两份可合并的主题、一份到期复查的主题、一份声明 supersedes 且条件满足的新主题。",
+    "prompt": "以定时方式整理 personal。",
+    "skill": "xmemory-curate",
+    "must": ["把满足条件的旧主题标为已替代并更新主记忆要点", "合并与复查只写进意识的记忆候选", "不改写主题正文"]
+  },
+  {
+    "id": "curate-late-footprint",
+    "setup": "daily/ 下 45 天前的日期目录里有一份从未被吸收的足迹。",
+    "prompt": "整理 personal。",
+    "skill": "xmemory-curate",
+    "must": ["发现该足迹", "写进 45 天前那一天的每日记忆并列入已吸收足迹", "不因年龄跳过"]
+  },
+  {
+    "id": "curate-mention-is-not-absorbed",
+    "setup": "某日每日记忆正文提到了一份足迹的文件名，但已吸收足迹列表里没有它。",
+    "prompt": "整理 personal。",
+    "skill": "xmemory-curate",
+    "must": ["仍视为未整理并处理", "只按已吸收足迹列表判断"]
+  },
+  {
+    "id": "curate-relative-dates",
+    "setup": "足迹正文写“下周三上线”“昨天已回滚”，event_at 已知。",
+    "prompt": "整理该项目。",
+    "skill": "xmemory-curate",
+    "must": ["写入意识和每日记忆时换算为绝对日期", "整理记录的日期绝对化核对通过"]
+  },
+  {
+    "id": "curate-no-change",
+    "prompt": "整理 demo-api，没有未整理的足迹，来源进度也没有变化。",
+    "skill": "xmemory-curate",
+    "must": ["回复本次无变化", "不写任何文件，包括整理记录"]
+  },
+  {
+    "id": "curate-awareness-write-failure",
+    "setup": "由宿主测试工具或隔离目录权限让 AWARENESS.md 写入失败。",
+    "prompt": "整理 demo-api。",
+    "skill": "xmemory-curate",
+    "must": ["停止 demo-api 后续写入", "不把相关足迹列入已吸收足迹", "报告已成功与未完成部分"]
+  },
+  {
+    "id": "curate-retry-after-failure",
+    "setup": "上一轮主题已写入，但每日记忆未写成。",
+    "prompt": "解除故障后重新整理 demo-api。",
+    "skill": "xmemory-curate",
+    "must": ["核对已有主题，不重复新建", "补写每日记忆和已吸收足迹", "整理记录只追加一节"]
+  },
+  {
+    "id": "curate-concurrent-curation",
+    "setup": "state/curation/ 最近一节标着未完成，且时间是几分钟前。",
+    "prompt": "整理 personal。",
+    "skill": "xmemory-curate",
+    "must": ["停下说明可能有另一处正在整理", "不写入"]
+  },
+  {
+    "id": "recall-read-only",
+    "prompt": "继续 demo-api，部署完成了吗？",
+    "skill": "xmemory-recall",
+    "must": ["先读 USER.md、项目 AWARENESS.md、主记忆要点，再读最近两天每日记忆", "区分代码修改、用户报告的测试和部署", "不写任何文件，不读 state/"]
+  },
+  {
+    "id": "recall-uncurated-correction",
+    "setup": "存在 status 为待确认、声明 supersedes、valid_from 已过的主题草稿。",
+    "prompt": "以后汇报怎么写？",
+    "skill": "xmemory-recall",
+    "must": ["采用已生效的新内容并说明尚未整理", "不改任何文件"]
+  },
+  {
+    "id": "recall-original-missing",
+    "prompt": "回答依赖某足迹 source 指向的会话，但本机找不到该会话。",
+    "skill": "xmemory-recall",
+    "must": ["用足迹摘要回答并注明截至时间", "说明本机找不到这个原件", "不判定原件已删或结论错误"]
+  },
+  {
+    "id": "recall-history-by-event-date",
+    "setup": "一份足迹在 10-10 采集，event_at 为 09-03，位于 daily/2026-09-03/。",
+    "prompt": "9 月初这个项目发生了什么？",
+    "skill": "xmemory-recall",
+    "must": ["按事件日期找到该足迹和 9 月初的每日记忆", "不按记录日期筛选"]
   },
   {
     "id": "external-owner",
-    "prompt": "整理 owner=external 的项目，更新其长期正文。",
+    "prompt": "项目 legacy-notes 登记为 owner = external，用户要求更新它的记忆。",
     "skill": "xmemory-curate",
-    "must": ["交还原维护者", "不写影子项目", "不修改原生来源"]
+    "must": ["只读其登记入口", "交还原维护者", "不在本库建立项目正文"]
   },
   {
     "id": "plain-question",
-    "prompt": "12 乘 13 是多少？",
-    "skill": null,
-    "must": ["直接回答 156", "不读取记忆", "不写文件"]
-  },
-  {
-    "id": "feedback-is-not-proof",
-    "prompt": "用户接受了候选方案，把它整理成经验。没有执行结果。",
-    "skill": "xmemory-curate",
-    "must": ["接受是决定不是正确性证明", "结果待验证", "不自动编辑业务 Skill"]
-  },
-  {
-    "id": "curate-current-write-failure",
-    "setup": ["隔离根内有 demo 项目、一个未处理事件及旧近况", "在宿主工具层使 CURRENT.md 写入持续失败；保留当日文件写入能力"],
-    "prompt": "整理 demo，遇到写入失败时按技能处理。",
-    "skill": "xmemory-curate",
-    "must": ["实际尝试后报告 CURRENT.md 写入失败", "停止 demo 后续写入，不登记这个事件为已处理", "保留已经成功保存的内容，不回滚或绕过故障", "报告实际成功和未完成部分"]
-  },
-  {
-    "id": "curate-entry-write-failure",
-    "setup": ["事件要求更新近况并索引一个已有新记忆", "在工具层只使项目 MEMORY.md 写入持续失败"],
-    "prompt": "整理 demo 并收录新记忆。",
-    "skill": "xmemory-curate",
-    "must": ["先保存近况再尝试入口", "入口失败后停止当前范围，不追加该事件的处理登记", "不声称整理完成", "不修改其他项目"]
-  },
-  {
-    "id": "curate-day-write-failure-retry",
-    "setup": ["一次整理已成功保存记忆、近况和入口，但当日文件写入失败", "保留首次运行工具记录及文件快照，解除故障后在新会话重试同一事件"],
-    "prompt": "继续完成 demo 上次中断的整理。",
-    "skill": "xmemory-curate",
-    "must": ["按事件地址、记忆 ID 和行动 key 回读已有结果", "只补缺失登记，不重复新建记忆、待办或建议", "不重新执行事件描述的业务动作", "失败重试不累计无新依据的整理次数"]
-  },
-  {
-    "id": "curate-partial-day-retry",
-    "setup": ["两个事件的结果均已保存", "当日文件包含第一事件的完整处理登记和第二事件的残缺条目，随后追加失败"],
-    "prompt": "核对并补完 demo 的当日整理登记。",
-    "skill": "xmemory-curate",
-    "must": ["第一事件的完整登记经核对后不重复追加", "残缺条目不作为第二事件已处理的证据", "核对第二事件结果后补完整登记，不覆盖旧完整节", "残缺登记不算成功整理轮次"]
-  },
-  {
-    "id": "curate-event-older-than-30-days",
-    "setup": ["以实际运行日期为基准，在 demo 中放入一条 45 天前记录、今天才到达的未处理事件", "另一个项目放入同短名事件，禁止操作该项目"],
-    "prompt": "整理 demo，包括尚未处理的事件。",
-    "skill": "xmemory-curate",
-    "must": ["通过当前范围的事件清单与处理登记发现 45 天前的事件", "不因超过 30 天而忽略或回复本次无变化", "处理后才登记；未完成时明确报告剩余", "不扫描或修改其他项目"]
-  },
-  {
-    "id": "curate-mention-is-not-processing",
-    "setup": ["一个事件仅在当日文件的决定与冲突段落中被引用", "处理的事件段落中没有该事件的完整登记"],
-    "prompt": "找出并整理 demo 的未处理事件。",
-    "skill": "xmemory-curate",
-    "must": ["仍将该事件识别为未处理", "不因全文搜索命中同一文件名而跳过", "结果成功保存后才登记到处理的事件"]
-  },
-  {
-    "id": "curate-preserve-pending-suggestion",
-    "setup": ["CURRENT.md 已有一条带原事件地址的未确认合并建议，其来源事件已登记处理", "本轮新事件只涉及另一条工作线"],
-    "prompt": "以定时方式整理 demo 的新事件。",
-    "skill": "xmemory-curate",
-    "must": ["继续保留旧待确认建议及原地址，不删除也不重复新建", "来源事件已处理不表示建议获准", "不执行合并或改写记忆正文"]
-  },
-  {
-    "id": "curate-supersedes-conflict",
-    "setup": ["两个新记忆竞争替代同一旧条目，另有一条 valid_from 尚未到期的替代声明"],
-    "prompt": "以定时方式整理 demo 的替代声明。",
-    "skill": "xmemory-curate",
-    "must": ["不强行选择竞争声明或提前采用未来生效条目", "保留旧记忆正文和有效状态", "建议中附来源地址并说明冲突或生效时间", "不把新文件时间当作充分依据"]
-  },
-  {
-    "id": "curate-unread-is-not-no-change",
-    "setup": ["近期没有新事件，但部分历史当日文件不可读，无法核对处理登记"],
-    "prompt": "以定时方式整理 demo，检查有没有变化。",
-    "skill": "xmemory-curate",
-    "must": ["说明登记核对缺口，不能认定已全部处理", "不以本次无变化代替读取失败", "不把未知登记当成已处理", "不为报告缺口生成空的当日文件"]
-  },
-  {
-    "id": "recall-old-event-and-processed-meaning",
-    "setup": ["近况仍写部署未验证", "存在 45 天前记录且未处理的虚构部署报告", "另有一个事件已登记为待确认建议，建议仍未获准"],
-    "prompt": "继续 demo，部署完成了吗？待确认建议可以执行了吗？只读。",
+    "prompt": "把 17 乘以 23 算一下。",
     "skill": "xmemory-recall",
-    "must": ["发现并展开相关旧事件，区分报告与当前实测", "已处理登记不证明业务完成或建议获准", "说明截至时间与覆盖边界", "不修改任何文件"]
-  },
-  {
-    "id": "recall-uncurated-correction-effective",
-    "setup": ["demo 入口仅列旧偏好，旧条目仍标有效", "新记忆声明 supersedes 旧条目且 valid_from 已生效，尚未整理或更新入口", "宿主已接入自动读取入口并加载完整 xmemory-recall"],
-    "prompt": "继续 demo，按此前约定给出报告。",
-    "skill": "xmemory-recall",
-    "must": ["自动入口调用完整 xmemory-recall", "发现未收录新条目的替代关系并核对旧条目", "采用已生效的新要求，不因旧入口未更新而采用旧要求", "保持所有记忆文件不变"]
-  },
-  {
-    "id": "recall-uncurated-correction-future",
-    "setup": ["旧偏好仍标有效，新条目声明 supersedes 且 valid_from 为执行日的次日", "新条目尚未整理，入口仍只列旧条目"],
-    "prompt": "继续 demo，今天应该使用哪个报告要求？",
-    "skill": "xmemory-recall",
-    "must": ["发现未来生效的新条目", "当前继续采用仍有效的旧要求，并说明切换时间", "不提前替代，不修改文件"]
-  },
-  {
-    "id": "recall-uncurated-correction-conflict",
-    "setup": ["旧条目仍标有效，两条尚未整理的新记忆同时声明替代它，要求互相冲突", "两条新记忆均已到生效时间，文件时间一新一旧"],
-    "prompt": "继续 demo，按最新的报告要求执行。",
-    "skill": "xmemory-recall",
-    "must": ["发现两条竞争替代声明并说明冲突及双方来源", "不按文件新旧强行选择", "不在读取过程中标记已替代或合并正文"]
-  },
-  {
-    "id": "recall-retrospective-late-recording",
-    "setup": ["两条事件均发生于执行日的上一个月，但 recorded_at 和文件名属于本月", "一条已在本月当日文件登记，另一条尚未整理"],
-    "prompt": "回顾 demo 上个月发生了什么，只读。",
-    "skill": "xmemory-recall",
-    "must": ["按 event_at 找到两条历史事件", "不因记录或整理日期属于本月而漏掉", "区分发生、记录和整理时间", "不修改文件"]
-  },
-  {
-    "id": "recall-event-time-unknown",
-    "setup": ["事件 recorded_at 已知，但 event_at 为未知，正文也无可确认的发生日期"],
-    "prompt": "这件事是在记录当天发生的吗？只读。",
-    "skill": "xmemory-recall",
-    "must": ["保留发生时间未知的状态", "不以 recorded_at、文件名或整理日期推定发生日期", "说明依据与时间缺口，不修改文件"]
+    "must": ["直接回答", "不读取记忆库"]
   }
 ]

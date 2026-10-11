@@ -36,6 +36,8 @@ def expected_resources(root: Path = ROOT) -> dict[Path, bytes]:
                 for raw in LINK.findall(content.decode("utf-8")):
                     if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I):
                         continue
+                    if "{{" in raw and relative.parts[0] == "templates":
+                        continue
                     target = (source.parent / raw.split("#", 1)[0]).resolve()
                     if not target.is_relative_to(plugin.resolve()):
                         raise ValueError(f"Escaping resource link: {raw}")
