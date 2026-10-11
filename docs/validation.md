@@ -4,6 +4,23 @@
 
 本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
+## ZCode 市场改名 xmemory（2026-10-10）
+
+应用户确认，ZCode 市场名由开发期路径名 `dev-xmemory-8c7a38ae`（ZCode 官方 plugin-creator 对本地目录市场生成的 `dev-<目录>-<路径哈希前 8 位>` 格式）改为 `xmemory`，插件 ID 相应为 `xmemory@xmemory`。Claude（`xmemory-claude`）与 Codex（`xmemory-codex`）市场名不变；三个市场的 schema 与清单内容除名称外无改动，版本号保持 1.1.0／0.1.1。
+
+- 修改范围：`plugins/marketplace.json` 的 `name` 字段，及 README、install.md、release-install.md 中的市场名与插件 ID 引用；两处文档保留一句旧名历史记载与"从旧市场名升级先移除旧市场"的说明。未改动任何技能、脚本或格式定义。
+- 两个包装检查与 **63/63** 测试通过；包内三份市场清单分别为 `xmemory`（ZCode）、`xmemory-claude`、`xmemory-codex`，互不冒充。
+- 四包按"先完成入包文件修改、再打包"输出到 `dist/market-rename-20261010/`，重复构建逐字节一致，解压后完整重跑 63 项测试通过。读取器两包未触碰、哈希与上一轮一致；两个 XMemory 包因市场清单与安装文档入包而更新：
+
+| 归档 | SHA-256 |
+|---|---|
+| `XMemory-1.1.0.zip` | `eeccb5c87e9d68b08fff80f7234bed1c9dc65a6f3e088ab50bfc4a520ee6020e` |
+| `XMemory-1.1.0-skills.zip` | `5b35138e669f1e0fd10558f09474e45095ae35f02be1f7d4da38e52e998980f3` |
+| `ConversationReaders-0.1.1.zip` | `c578bb5d779bf729ed322440dbd1eb0a9618a9972a235adc59e61cf5a134b09b` |
+| `ConversationReaders-0.1.1-skills.zip` | `279b045e9e44dcc2ea383ff040b30608e2114be2afa52fde00400306e513f0a0` |
+
+改名只影响市场标识与文档；本节在隔离环境外的真实 ZCode 客户端上以新市场名完成一次添加、安装与新会话技能发现，仍属实际接入验收范围。
+
 ## 隔离安装验证：Claude Code 与 Codex（2026-10-10）
 
 PR #4 合并（`af74c4a`）后，按实际接入计划的第一步执行隔离安装与配置检查。全部操作在一次性临时 `CLAUDE_CONFIG_DIR`／`CODEX_HOME` 中完成，结束后删除；未读取、未修改任何真实客户端配置或凭据，也未发起模型调用。
