@@ -278,6 +278,24 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(hint["latest_source_updated"], "2026-01-01T09:00:00+08:00")
         self.assertEqual(hint["latest_record_updated"], "2026-10-12T10:00:00+08:00")
 
+    def test_user_links_do_not_duplicate_records_or_become_daily_inputs(self):
+        self.record(coverage="partial")
+        self.write("projects/demo/topics/preferences.md", "topic", "2026-10-12T13:00:00+08:00")
+        self.write("USER.md", "user", "2026-10-12T12:00:00+08:00",
+                   body="[record](records/sessions/claude/r.md)\n"
+                        "[topic](projects/demo/topics/preferences.md)\n")
+        self.write("daily/2026/2026-10-12.md", "daily", "2026-10-12T11:00:00+08:00",
+                   day="2026-10-12")
+        before = snapshot(self.root)
+        result = self.result()
+        hint = result["source_hints"][0]
+        self.assertEqual(hint["records"], 1)
+        self.assertEqual(hint["partial_records"], 1)
+        objects = self.objects(result)
+        self.assertIn("projects/demo/topics/preferences.md", objects["USER.md"]["newer_sources"])
+        self.assertEqual(objects["daily/2026/2026-10-12.md"]["newer_sources"], [])
+        self.assertEqual(snapshot(self.root), before)
+
     def test_exclusions_and_backup_ignored(self):
         self.record()
         p = self.root / "config.toml"

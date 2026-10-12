@@ -327,7 +327,7 @@ def report(root, now=None):
         doc = docs.get(rel)
         inputs = []
         if kind in {"daily", "user"}:
-            inputs = records if kind == "user" else [
+            inputs = list(records) if kind == "user" else [
                 r for r in records if Path(rel).stem in record_days(r["fm"]) or not record_days(r["fm"])
                 or (r["fm"].get("day_basis") == "captured" and "event_days" in r["fm"])]
         elif kind in {"project-index", "awareness"}:

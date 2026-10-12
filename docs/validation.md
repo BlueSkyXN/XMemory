@@ -1,6 +1,6 @@
 # XMemory 验证报告
 
-当前源码版本：**1.5.2，待发布**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.5）。最新核对日期：2026-10-12。已发布版本见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+当前源码版本：**1.5.2，待发布**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.5）。最新核对日期：2026-10-13。已发布版本见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 本文保留各开发阶段的验证记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时；后续完成情况以相应版本的收尾记录为准。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
@@ -41,6 +41,18 @@
 |---|---|
 | `XMemory-1.5.2.zip` | `f3ea659d16c383973e44bc1370dcbe5265a4b8ee7ae6c9510245982067cdc3fb` |
 | `XMemory-1.5.2-skills.zip` | `b3895318d67cce4c62e2089d19c1c63f245465636db8f43abb428f0b9ca7ce49` |
+| `ConversationReaders-0.1.5-skills.zip` | `cdc7e5d4f907e553a802a6df9e1a032b35caf767796a57d229c704072e364de5` |
+
+**1.5.2 追加验证：画像引用与来源统计（2026-10-13）**
+
+- `USER.md` 的输入曾直接引用共享记录列表，追加画像已有链接时会重复加入记录，甚至把主题混入后续日总结的候选输入。改为复制列表，画像仍检查全部既有引用，来源计数和其他对象的输入保持独立。
+- 新增合成回归先在旧实现复现一条记录被统计为两条；修复后确认记录数与 partial 数均为一，主题更新仍提示画像复查，但不会成为日总结的新记录来源，库内文件内容和 mtime 不变。
+- Python 3.11 全套 **95/95**、Python 3.9.6 运行时与读取器 **82/82** 通过；包检查、读取器同步检查及三个包重新构建通过。文件格式、版本号和公共报告字段不变。
+
+| 最新本地构建包 | SHA-256 |
+|---|---|
+| `XMemory-1.5.2.zip` | `74fff51084999c47e0f4fcc2c03c0b966366d223d3956a5797e2c20cd45fce54` |
+| `XMemory-1.5.2-skills.zip` | `d108273b4fcb80bc4f13b45636ef6b4323f43b3589f37f0d0710a7a1018d38e8` |
 | `ConversationReaders-0.1.5-skills.zip` | `cdc7e5d4f907e553a802a6df9e1a032b35caf767796a57d229c704072e364de5` |
 
 ## 1.5.1：更新时间、跨日来源与独立整理（2026-10-12）
