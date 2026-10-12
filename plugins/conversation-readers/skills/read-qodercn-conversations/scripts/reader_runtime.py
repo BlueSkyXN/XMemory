@@ -203,12 +203,11 @@ def zstd_rows(path, warnings):
                 break
             if len(raw) > MAX_LINE:
                 warnings.append(f"oversized_record: {path}#byte:{offset}")
-                while raw and not raw.endswith(b"\n"):
-                    raw = process.stdout.readline(MAX_LINE + 1)
-                    if not raw:
-                        break
+                while raw:
                     offset += len(raw)
-                offset += len(raw)
+                    if raw.endswith(b"\n"):
+                        break
+                    raw = process.stdout.readline(MAX_LINE + 1)
                 continue
             try:
                 item = json.loads(raw)
@@ -854,7 +853,7 @@ def normalize_session(client, value):
     """客户端界面复制的会话引用是 <工作区>/<ID>.<客户端>-session 虚拟路径，磁盘上不存在；
     按文件名确定性剥壳（客户端必须匹配），不做模糊匹配。ZCode 原生 ID 带 sess_ 前缀，
     裸 UUID 同样确定性补全。"""
-    if not value or ":" in value:
+    if not value or (":" in value and not re.match(r"^[A-Za-z]:[\\/]", value)):
         return value
     name = str(value).replace("\\", "/").rsplit("/", 1)[-1]
     if UI_REFERENCE.fullmatch(name):

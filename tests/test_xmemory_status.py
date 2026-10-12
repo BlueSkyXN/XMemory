@@ -85,6 +85,43 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(out["assessment"], "stale")
         self.assertIn("USER.md", out["newer_sources"])
 
+    def test_summary_reports_pending_updates_older_than_itself(self):
+        self.record(updated="2026-10-12T09:30:00+08:00")
+        upstream = {"USER.md": "user", "projects/demo/AWARENESS.md": "awareness",
+                    "projects/demo/MEMORY.md": "project-index"}
+        for path, kind in upstream.items():
+            self.write(path, kind, "2026-10-12T09:00:00+08:00")
+        self.write("memory_summary.md", "summary", "2026-10-12T10:00:00+08:00")
+        before = snapshot(self.root)
+        out = self.objects()["memory_summary.md"]
+        self.assertEqual(snapshot(self.root), before)
+        self.assertEqual(out["assessment"], "review")
+        self.assertIn("upstream_newer_sources", out["reasons"])
+        self.assertEqual(out["newer_sources"], [])
+        self.assertEqual(out["upstream_updates"], [
+            {"path": path, "newer_sources": ["records/sessions/claude/r.md"]}
+            for path in sorted(upstream)])
+        # 上游处理完成后，摘要仍须按真实文件更新时间更新；处理完可恢复 current。
+        for path, kind in upstream.items():
+            self.write(path, kind, "2026-10-12T11:00:00+08:00")
+        out = self.objects()["memory_summary.md"]
+        self.assertEqual(out["assessment"], "stale")
+        self.assertEqual(out["upstream_updates"], [])
+        self.write("memory_summary.md", "summary", "2026-10-12T12:00:00+08:00")
+        self.assertEqual(self.objects()["memory_summary.md"]["assessment"], "current")
+
+    def test_summary_does_not_inherit_unchecked_external_source_review(self):
+        self.record(updated="2026-10-12T08:00:00+08:00")
+        self.write("projects/demo/MEMORY.md", "project-index", "2026-10-12T09:00:00+08:00",
+                   body="[source](../../records/sessions/claude/r.md)")
+        self.write("memory_summary.md", "summary", body="[project](projects/demo/MEMORY.md)")
+        out = self.objects()
+        self.assertEqual(out["records/sessions/claude/r.md"]["assessment"], "review")
+        self.assertEqual(out["memory_summary.md"]["assessment"], "current")
+        self.assertEqual(out["memory_summary.md"]["upstream_updates"], [])
+        # 没有画像依据时可以不建 USER.md，缺少候选对象不强制变成上游待办。
+        self.assertEqual(out["USER.md"]["assessment"], "missing")
+
     def test_topic_change_is_incremental_but_old_index_is_not_a_schedule(self):
         self.write("projects/demo/MEMORY.md", "project-index", "2026-09-01T18:00:00+08:00")
         self.assertEqual(self.objects()["projects/demo/MEMORY.md"]["assessment"], "current")

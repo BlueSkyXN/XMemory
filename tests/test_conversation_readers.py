@@ -879,12 +879,16 @@ class ReaderTests(unittest.TestCase):
         sid = "sess_04390ec0-1198-462c-a5a0-347d17b254d6"
         p = self.zcode_db(sid)
         virtual = f"/Users/fixture-user/work/{sid}.zcode-session"
-        for value in (virtual, sid, sid[len("sess_"):], f"zcode:sqlite:{sid}"):
+        for value in (virtual, f"C:/workspace/{sid}.zcode-session",
+                      f"C:\\workspace\\{sid}.zcode-session", sid, sid[len("sess_"):],
+                      f"zcode:sqlite:{sid}"):
             items = self.read("zcode", p, "read", "--session", value)["items"]
             self.assertEqual([x["text"] for x in items], ["虚拟路径可定位"])
         # 跨客户端的界面引用不做转换：原样查找，明确报未找到。
         with self.assertRaises(reader.ReaderError):
             self.read("claude", self.root / "absent", "read", "--session", virtual)
+        with self.assertRaises(reader.ReaderError):
+            self.read("zcode", p, "read", "--session", f"C:/workspace/{sid}.claude-session")
 
     def test_zcode_lifecycle_parts_are_not_unsupported(self):
         # step-start/step-finish/timeline/compaction 是生命周期与遥测事件，
@@ -926,6 +930,33 @@ class ReaderTests(unittest.TestCase):
             degraded = self.read("codex", self.root, "list")
         self.assertEqual(degraded["items"], [])
         self.assertTrue(any(w.startswith("zstd_missing") for w in degraded["warnings"]))
+
+    def test_zstd_oversized_records_preserve_following_offsets(self):
+        zstd = shutil.which("zstd")
+        if not zstd:
+            self.skipTest("需要系统 zstd 命令")
+        head = json.dumps({"type": "session_meta", "payload": {"id": "cold-long", "cwd": "/work/demo"}}).encode() + b"\n"
+        tail = json.dumps({"type": "response_item", "payload": {"type": "message", "id": "tail",
+                          "role": "user", "content": [{"type": "input_text", "text": "tail message"}]}}).encode() + b"\n"
+        prefix, suffix = b'{"padding":"', b'"}\n'
+        for sizes in ((reader.MAX_LINE + 1,), (reader.MAX_LINE + 257,),
+                      (reader.MAX_LINE * 2 + 257,), (reader.MAX_LINE + 1, reader.MAX_LINE + 257)):
+            with self.subTest(line_sizes=sizes):
+                long_lines = b"".join(prefix + b"x" * (size - len(prefix) - len(suffix)) + suffix for size in sizes)
+                plain = self.root / "long.jsonl"
+                plain.write_bytes(head + long_lines + tail)
+                packed = plain.with_name(plain.name + ".zst")
+                subprocess.run([zstd, "-qf", "-o", str(packed), str(plain)], check=True)
+                expected = len(head) + sum(sizes)
+                for path in (plain, packed):
+                    warnings = []
+                    rows = list(reader.json_rows(path, warnings))
+                    self.assertEqual(rows[-1][0], expected)
+                    self.assertEqual(len(rows), 2)
+                    self.assertEqual(sum(w.startswith("oversized_record:") for w in warnings), len(sizes))
+                    item = self.read("codex", path, "read", "--session", "cold-long")["items"][0]
+                    self.assertEqual(item["text"], "tail message")
+                    self.assertIn(f"@byte:{expected}/", item["record_ref"])
 
 
 if __name__ == "__main__":

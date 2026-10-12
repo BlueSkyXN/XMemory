@@ -1,22 +1,22 @@
-# XMemory 1.5.1 安装包
+# XMemory 1.5.2 安装包
 
-本文对应 1.5.1，安装包与校验文件见 [1.5.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.1)。
+本文对应 1.5.2（待发布）。下列包可由当前源码构建；已发布的安装包与校验文件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 | 包 | 内容 |
 |---|---|
-| `XMemory-1.5.1.zip` | 三端完整市场，包含 XMemory 1.5.1 与独立 Conversation Readers 0.1.4 |
-| `XMemory-1.5.1-skills.zip` | 八个 XMemory 技能、模板和只读 status；不含读取器 |
-| `ConversationReaders-0.1.4-skills.zip` | 五端自包含读取技能，可选安装 |
+| `XMemory-1.5.2.zip` | 三端完整市场，包含 XMemory 1.5.2 与独立 Conversation Readers 0.1.5 |
+| `XMemory-1.5.2-skills.zip` | 八个 XMemory 技能、模板和只读 status；不含读取器 |
+| `ConversationReaders-0.1.5-skills.zip` | 五端自包含读取技能，可选安装 |
 
 Python 3.9+，无额外依赖。完整包解压后，ZCode 添加 `plugins/` 为市场根；Claude Code 与 Codex 添加解压根。分别安装 `xmemory@xmemory`、`xmemory@xmemory-claude` 或 `xmemory@xmemory-codex`。
 
 ```bash
-claude plugin marketplace add /absolute/path/to/XMemory-1.5.1
+claude plugin marketplace add /absolute/path/to/XMemory-1.5.2
 claude plugin install xmemory@xmemory-claude
 ```
 
 ```bash
-codex plugin marketplace add /absolute/path/to/XMemory-1.5.1
+codex plugin marketplace add /absolute/path/to/XMemory-1.5.2
 codex plugin add xmemory@xmemory-codex
 ```
 

@@ -2,7 +2,7 @@
 
 跨客户端 Markdown 记忆库：AI 按技能把会话、别家记忆、项目文件和笔记整理成记录、日总结、项目总结、意识、用户画像与全局入口。
 
-当前版本 **1.5.1**（[Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.1)），文件格式 `xmemory/v1.5`。程序只有只读 `status`，不再维护任务队列、整合锁、ledger 或内嵌读取器；记忆库不依赖 git。Conversation Readers 是同一市场中的另一个可选插件。
+当前源码版本 **1.5.2**（待发布；[已发布版本](https://github.com/BlueSkyXN/XMemory/releases)），文件格式 `xmemory/v1.5`。程序只有只读 `status`，不再维护任务队列、整合锁、ledger 或内嵌读取器；记忆库不依赖 git。Conversation Readers 0.1.5 是同一市场中的另一个可选插件。
 
 ## 使用方式
 
@@ -24,7 +24,7 @@ python3 <插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> stat
 | 五端独立会话读取技能 | `plugins/conversation-readers/` |
 | 构建与仓库检查 | `tools/` |
 | 程序与分发包测试 | `tests/` |
-| 有依据的记忆问答与遗忘验证案例 | `evals/v1.5.1/` |
+| 有依据的记忆问答、遗忘与增量更正验证案例 | `evals/v1.5.1/`、`evals/v1.5.2/` |
 
 三个客户端的市场同时列出两个插件，可分别安装：ZCode 市场根为 `plugins/`，Claude Code 与 Codex 市场根为仓库根。完整市场包、XMemory 独立技能包及 Conversation Readers 技能包见 [安装包说明](docs/release-install.md)。
 

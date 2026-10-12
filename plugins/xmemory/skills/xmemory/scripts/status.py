@@ -372,6 +372,20 @@ def report(root, now=None):
         output["objects"].append({"path": rel, "kind": kind, "updated": doc["time"].isoformat() if doc and doc["time"] else None,
                                   "assessment": state, "reasons": reasons, "newer_sources": sorted(set(newer)),
                                   "size_bytes": doc["size_bytes"] if doc else None})
+    summary = next((item for item in output["objects"] if item["kind"] == "summary"), None)
+    if summary is not None:
+        # 摘要可能晚于新记录，但它所依赖的画像/项目入口尚未处理该记录。
+        # 只传播明确的库内更新；不传播记录固定的 external_source_not_checked。
+        summary["upstream_updates"] = [
+            {"path": item["path"], "newer_sources": item["newer_sources"]}
+            for item in output["objects"]
+            if item["path"] in docs and item["kind"] in {"awareness", "project-index", "user"}
+            and item["assessment"] in {"stale", "review"} and item["newer_sources"]
+        ]
+        if summary["upstream_updates"]:
+            if summary["assessment"] == "current":
+                summary["assessment"] = "review"
+            summary["reasons"].append("upstream_newer_sources")
     for source, settings in sorted(cfg.get("sources", {}).items()):
         selected = [d for d in records if d["fm"].get("source") == source]
         def latest(key):

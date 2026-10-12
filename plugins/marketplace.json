@@ -4,20 +4,20 @@
     {
       "name": "xmemory",
       "source": "./xmemory",
-      "version": "1.5.1",
+      "version": "1.5.2",
       "description": "XMemory：以技能维护跨客户端 Markdown 记忆。六类对象分别更新，程序仅提供只读 status；Conversation Readers 另装可选，定时由客户端负责。不依赖 git，不保存运行状态。",
       "displayName": "XMemory",
       "displayName_i18n": {
         "zh-CN": "XMemory"
       },
       "description_i18n": {
-        "zh-CN": "跨客户端记忆库：一个运行时、八个技能，逐会话提取、整合成项目意识与手册，任何客户端可查。无后台服务。"
+        "zh-CN": "跨客户端 Markdown 记忆库：八个技能分别维护记录、日总结、项目总结、意识、画像与入口；程序仅提供只读 status，定时由客户端负责。"
       }
     },
     {
       "name": "conversation-readers",
       "source": "./conversation-readers",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "description": "五个客户端各一个 Skill 和只读脚本：列出、检索、定位与读取对话，不自动写入记忆。",
       "displayName": "Conversation Readers",
       "displayName_i18n": {
