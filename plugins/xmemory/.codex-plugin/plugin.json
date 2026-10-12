@@ -1,14 +1,14 @@
 {
   "name": "xmemory",
   "version": "1.4.0",
-  "description": "XMemory：跨客户端记忆库。内置运行时清点各客户端会话、管理提取任务与 git 基线，由执行技能的代理逐会话提取并单写者整合成按项目、按时间组织的项目意识与手册。无后台服务。",
+  "description": "XMemory：跨客户端记忆库。一个运行时 CLI 加八个技能：运行时清点各客户端会话、管理提取任务与 git 基线；技能分别负责查阅、记一条、逐会话提取、单写者整合、运行一轮、设置与维护。无后台服务。",
   "author": {
     "name": "BlueSkyXN"
   },
   "skills": "./skills",
   "interface": {
     "displayName": "XMemory",
-    "shortDescription": "跨客户端记忆库：逐会话提取、单写者整合、任何客户端可查。",
+    "shortDescription": "跨客户端记忆库：一个运行时、八个技能，逐会话提取与单写者整合。",
     "developerName": "BlueSkyXN",
     "category": "Productivity",
     "capabilities": [

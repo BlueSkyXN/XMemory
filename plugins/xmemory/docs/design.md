@@ -37,13 +37,30 @@ consolidate 单写者：加锁 → 列出本范围新增/修改/删除的输入 
 
 ## 库结构
 
-见技能内 `references/layout.md`。要点：
+见 `skills/xmemory/references/layout.md`。要点：
 
 - `sessions/` 是逐会话摘要（提取产物），`inbox/` 是当场笔记，两者都是整合的输入；
 - `projects/<项目>/` 下的 `AWARENESS.md`（当前状态）、`MEMORY.md`（任务组手册）、`topics/`（有稳定 key 的条目）、`daily/`（叙述，可选）是整合产物，`timeline/` 由代码生成；
 - `memory_summary.md` 是全局入口；
 - `.xmemory/state.sqlite` 保存会话清单、任务、租约、锁和输入登记，不进 git，可重建；
 - 整个记忆根是 git 仓库，每次提取、导入、整合都是一个提交，可以回看和回滚。
+
+## 技能划分
+
+一个工具、多个技能：运行时 CLI 只有一份（`skills/xmemory/scripts/`），各技能只描述什么时候用、怎么用它。
+
+| 技能 | 职责 |
+|---|---|
+| `xmemory` | 工具本体：命令总表、共同规则、库结构 |
+| `xmemory-recall` | 查阅（只读），`session` 命令回到原会话 |
+| `xmemory-note` | 当场记一条 |
+| `xmemory-run` | 运行一轮：提取 + 整合 + 校验 |
+| `xmemory-extract` | 清点、导入、逐会话提取 |
+| `xmemory-consolidate` | 单写者整合 |
+| `xmemory-setup` | 建库、项目、导入、告知、定时提示词 |
+| `xmemory-maintain` | 状态、检查、忘记、中断处理 |
+
+技能之间通过相对路径引用同一插件里的 `xmemory` 技能，因此安装时要保留整个 `skills/` 目录。
 
 ## 读取
 

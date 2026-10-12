@@ -36,14 +36,25 @@ class PackageTests(unittest.TestCase):
         for name in ("hooks", "commands", "node_modules"):
             self.assertFalse((PLUGIN / name).exists())
 
-    def test_single_skill_links_its_methods(self):
+    def test_one_tool_many_skills(self):
         self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir()}, SKILLS)
-        text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-        for ref in ("references/recall.md", "references/extract.md", "references/consolidate.md",
-                    "references/layout.md"):
-            self.assertIn(ref, text)
-        for command in ("next --client", "submit", "consolidate begin", "consolidate finish", "note", "notice"):
-            self.assertIn(command, text)
+        self.assertEqual(len(SKILLS), 8)
+        expectations = {
+            "xmemory-recall": ("session",), "xmemory-note": ("note",),
+            "xmemory-extract": ("scan", "import codex", "next --client", "submit", "release"),
+            "xmemory-consolidate": ("consolidate begin", "consolidate finish", "consolidate abort"),
+            "xmemory-run": ("status", "check"), "xmemory-setup": ("init", "project add", "import office-memory", "notice"),
+            "xmemory-maintain": ("status", "check", "forget"),
+        }
+        for skill, commands in expectations.items():
+            text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("](../xmemory/SKILL.md)", text, skill)
+            self.assertIn("../xmemory/scripts/xmemory.py", text, skill)
+            for command in commands:
+                self.assertIn(command, text, (skill, command))
+        tool = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        for skill in SKILLS - {"xmemory"}:
+            self.assertIn(f"`{skill}`", tool)
 
     def test_unexpected_script_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -54,6 +65,9 @@ class PackageTests(unittest.TestCase):
             (root / "plugins/xmemory/run.py").unlink()
             (root / "plugins/xmemory/skills/xmemory/scripts/extra.py").write_text("x = 1\n")
             self.assertTrue(any("Unexpected script set" in error for error in check(root)))
+            (root / "plugins/xmemory/skills/xmemory/scripts/extra.py").unlink()
+            (root / "plugins/xmemory/skills/xmemory-note/helper.py").write_text("x = 1\n")
+            self.assertTrue(any("Non-document payload" in error for error in check(root)))
 
     def test_reader_runtime_drift_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -124,10 +138,11 @@ class PackageTests(unittest.TestCase):
                 archive.extractall(base / "extracted")
             skills = base / "extracted" / archive_path.stem / "skills"
             self.assertEqual({p.name for p in skills.iterdir()}, SKILLS)
-            skill = skills / "xmemory"
             for name in ("xmemory.py", "xmemory_runtime.py", "reader_runtime.py"):
-                self.assertTrue((skill / "scripts" / name).is_file(), name)
-            for path in skill.rglob("*.md"):
+                self.assertTrue((skills / "xmemory" / "scripts" / name).is_file(), name)
+            self.assertEqual({p.relative_to(skills).parts[0] for p in skills.rglob("*.py")}, {"xmemory"})
+            skill = skills
+            for path in skills.rglob("*.md"):
                 for raw in LINK.findall(path.read_text()):
                     if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I) or "{{" in raw or "<" in raw:
                         continue

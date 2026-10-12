@@ -362,6 +362,55 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(lib.resolve_project(str(wt)), "demo")
         self.assertEqual(lib.resolve_project(str(self.work / "other")), "unassigned")
 
+    def test_method_paths_exist(self):
+        self.run_ok("scan")
+        nxt = self.run_ok("next", "--client", "codex")
+        self.assertTrue(Path(nxt["instructions"]).is_file(), nxt["instructions"])
+        self.assertIn("（输入结束", Path(nxt["input"]).read_text(encoding="utf-8"))
+        self.submit(nxt["job"])
+        begin = self.run_ok("consolidate", "begin", "--scope", "demo")
+        self.assertTrue(Path(begin["instructions"]).is_file(), begin["instructions"])
+
+    def test_session_command_reads_original(self):
+        out = self.run_ok("session", "zcode:sqlite:sess_a", "--limit", "2")
+        self.assertEqual(len(out["items"]), 2)
+        self.assertIn("以后发布前先等我确认", out["items"][0]["text"])
+        self.assertTrue(out["has_more"])
+        rest = self.run_ok("session", "zcode:sqlite:sess_a", "--offset", str(out["next_offset"]))
+        self.assertFalse(rest["has_more"])
+        code, missing = self.cli("session", "zcode:sqlite:sess_missing")
+        self.assertEqual(code, 2)
+        self.assertIn("本机找不到", missing["error"])
+
+    def test_keyless_pending_items_are_protected(self):
+        self.run_ok("scan")
+        self.extract_all()
+        begin = self.run_ok("consolidate", "begin", "--scope", "demo")
+        self.write_outputs(awareness="# demo\n\n## 当前认识\n- x\n\n## 近期变化\n\n## 冲突与未知\n\n"
+                                     "## 待处理\n\n- **洞察研究线**：例会反馈回收\n- NoteToFilm 收尾（三分叉）\n\n## 记忆候选\n")
+        self.run_ok("consolidate", "finish", begin["id"])
+        self.run_ok("note", "补充一条", "--project", "demo", "--client", "codex")
+        begin = self.run_ok("consolidate", "begin", "--scope", "demo")
+        self.write_outputs(awareness="# demo\n\n## 当前认识\n- x\n\n## 近期变化\n\n## 冲突与未知\n\n"
+                                     "## 待处理\n\n- **洞察研究线**：继续\n\n## 记忆候选\n")
+        code, out = self.cli("consolidate", "finish", begin["id"])
+        self.assertEqual(code, 1)
+        self.assertTrue(any("NoteToFilm" in e for e in out["errors"]), out)
+
+    def test_codex_coverage_reports_unextracted_sessions(self):
+        mem = self.base / "codex" / "rollout_summaries"
+        mem.mkdir(parents=True)
+        sessions = self.base / "codex-sessions" / "2026"
+        sessions.mkdir(parents=True)
+        for tid in ("019e0000-0000-7000-8000-00000000000a", "019e0000-0000-7000-8000-00000000000b"):
+            (sessions / f"rollout-x-{tid}.jsonl").write_text(json.dumps(
+                {"type": "session_meta", "payload": {"id": tid, "cwd": str(self.work / "demo")}}) + "\n", encoding="utf-8")
+        cfg = (self.root / "config.toml").read_text(encoding="utf-8")
+        cfg = cfg.replace("[sources]\n", f"[sources]\ncodex = [{json.dumps(str(self.base / 'codex-sessions'))}]\n")
+        (self.root / "config.toml").write_text(cfg, encoding="utf-8")
+        out = self.run_ok("import", "codex")
+        self.assertEqual((out["codex_sessions_in_scope"], out["not_extracted_by_codex"]), (2, 2))
+
     def test_notice_uses_template(self):
         notice = self.run_ok("notice")["notice"]
         self.assertIn(str(self.root), notice)

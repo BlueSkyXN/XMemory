@@ -27,6 +27,10 @@ import reader_runtime as reader
 
 FORMAT = "xmemory/v1.4"
 SKILL_DIR = Path(__file__).resolve().parents[1]
+# 同一插件里的兄弟技能：运行时只在 xmemory 技能里，各任务技能提供各自的方法说明。
+SKILLS_ROOT = SKILL_DIR.parent
+EXTRACT_METHOD = SKILLS_ROOT / "xmemory-extract" / "references" / "extract.md"
+CONSOLIDATE_METHOD = SKILLS_ROOT / "xmemory-consolidate" / "references" / "consolidate.md"
 CLIENTS = ("codex", "claude", "zcode", "qodercn", "workbuddy")
 EXECUTORS = CLIENTS + ("other",)
 CLIENT_MODES = ("extract", "import", "off")
@@ -258,7 +262,9 @@ class Library:
 # ---------- 会话读取（复用对话读取器） ----------
 
 def reader_args(roots=None, session=None):
-    return SimpleNamespace(root=roots, include_subagents=False, session=session, max_sessions=1_000_000,
+    # 列全部会话时不设上限；按 ID 定位单个会话时沿用读取器的有界扫描（文件名命中的优先检查）。
+    return SimpleNamespace(root=roots, include_subagents=False, session=session,
+                           max_sessions=1_000_000 if session is None else 200,
                            project=None, action="list" if session is None else "read", since=None, until=None)
 
 
@@ -523,7 +529,7 @@ def cmd_next(lib: Library, args):
         output.unlink()
     return {"job": job["job_id"], "holder": holder, "lease_until": iso(now + JOB_LEASE),
             "input": str(task_dir / "input.md"), "input_chars": len(body), "output": str(output),
-            "instructions": str(SKILL_DIR / "references" / "extract.md"),
+            "instructions": str(EXTRACT_METHOD),
             "submit": f"xmemory.py submit {job['job_id']} --client {args.client}", "warnings": warnings[:10]}
 
 
@@ -707,7 +713,46 @@ def cmd_import_codex(lib: Library, args):
             stats["imported"] += 1
     lib.commit("import codex memories", ["sessions"])
     stats["window_start"] = window
+    stats.update(codex_coverage(lib, window, imported_threads(summaries_dir)))
     return stats
+
+
+def imported_threads(summaries_dir: Path) -> set[str]:
+    ids = set()
+    for path in summaries_dir.glob("*.md"):
+        meta = parse_codex_summary(path)
+        if meta:
+            ids.add(meta["thread_id"])
+    return ids
+
+
+def codex_coverage(lib: Library, window: str, extracted: set[str]) -> dict:
+    """统计窗口内属于已启用项目、但 Codex 自己还没提取过的会话；只读每个文件的首行元数据。"""
+    roots = [Path(p).expanduser() for p in lib.cfg.get("sources", {}).get("codex", [])] or \
+        [Path.home() / ".codex" / "sessions", Path.home() / ".codex" / "archived_sessions"]
+    start = datetime.fromisoformat(window).replace(tzinfo=lib.tz).timestamp()
+    in_scope, missing = 0, []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("rollout-*.jsonl"):
+            try:
+                if path.stat().st_mtime < start:
+                    continue
+                with path.open(encoding="utf-8") as stream:
+                    first = json.loads(stream.readline() or "{}")
+            except (OSError, ValueError):
+                continue
+            payload = first.get("payload") if isinstance(first.get("payload"), dict) else {}
+            tid, cwd = payload.get("id"), payload.get("cwd")
+            if first.get("type") != "session_meta" or not tid or not lib.project_enabled(lib.resolve_project(cwd)):
+                continue
+            in_scope += 1
+            if tid not in extracted:
+                missing.append(f"codex:jsonl:{tid}")
+    return {"codex_sessions_in_scope": in_scope, "not_extracted_by_codex": len(missing),
+            "not_extracted_examples": sorted(missing)[:10],
+            "coverage_note": "Codex 尚未提取的会话本版不自行提取（只读导入）；Codex 后台处理后再次 import 即可"}
 
 
 OM_KIND = {"decision": "决定", "fact": "事实", "runbook": "做法", "preference": "偏好", "lesson": "经验"}
@@ -912,7 +957,7 @@ def cmd_consolidate_begin(lib: Library, args):
                                                  ensure_ascii=False), encoding="utf-8")
     return {"changed": True, "id": cid, "scope": scope, "input": str(work / "input.md"), "inputs": len(rows),
             "input_chars": len(body), "remaining_after_this_batch": remaining,
-            "instructions": str(SKILL_DIR / "references" / "consolidate.md"),
+            "instructions": str(CONSOLIDATE_METHOD),
             "allowed_outputs": outputs_for(lib, scope), "lease_minutes": int(CONSOLIDATE_LEASE.total_seconds() // 60),
             "finish": f"xmemory.py consolidate finish {cid}", "abort": f"xmemory.py consolidate abort {cid}"}
 
@@ -960,6 +1005,9 @@ def validate_outputs(lib: Library, scope: str, base: str, changed: list[str]) ->
         for key in OPEN_ITEM.findall(old):
             if key not in text and key not in changed_text:
                 errors.append(f"旧待处理项 {key} 没有保留，也没有写明去向")
+        for sig in pending_signatures(old):
+            if sig not in text and sig not in changed_text:
+                errors.append(f"旧待处理条目“{sig}”没有保留，也没有写明去向（该条没有 key，按开头词核对）")
     if not (sdir / "MEMORY.md").is_file():
         errors.append(f"缺少 {lib.scope_dir(scope)}/MEMORY.md")
     if not (lib.root / "memory_summary.md").is_file():
@@ -978,6 +1026,23 @@ def validate_outputs(lib: Library, scope: str, base: str, changed: list[str]) ->
             if not target.is_relative_to(lib.root.resolve()) or not target.exists():
                 errors.append(f"链接无效：{p} → {raw}")
     return errors
+
+
+def pending_signatures(text: str) -> list[str]:
+    """旧意识“待处理”一节里没有 key 的条目，取加粗短语或开头词作为核对签名。"""
+    m = re.search(r"(?ms)^## 待处理\s*$(.*?)(?=^## |\Z)", text)
+    if not m:
+        return []
+    sigs = []
+    for line in m.group(1).splitlines():
+        if not line.startswith("- ") or line.startswith(("- [ ]", "- [x]", "- [X]")):
+            continue
+        body = line[2:].strip()
+        bold = re.match(r"\*\*(.+?)\*\*", body)
+        token = bold.group(1) if bold else re.split(r"[\s，。；：、（(:;,]", body, maxsplit=1)[0]
+        if len(token) >= 2:
+            sigs.append(token[:24])
+    return sigs
 
 
 def stamp_files(lib: Library, paths: list[str], cid: str, client: str):
@@ -1109,6 +1174,35 @@ def cmd_check(lib: Library, args):
     return {"ok": not errors, "errors": errors, "warnings": warnings[:50]}
 
 
+def cmd_session(args):
+    """只读读取一个原会话的可见消息，供调取时回到原件；不写记忆库。"""
+    client = args.ref.split(":", 1)[0]
+    if client not in CLIENTS:
+        raise XMemoryError(f"无法从 {args.ref} 判断客户端；需要形如 zcode:sqlite:<ID> 的 session_ref")
+    roots = None
+    root = Path(args.root).expanduser() if args.root else default_root()
+    if (root / "config.toml").is_file():
+        roots = tomllib.loads((root / "config.toml").read_text(encoding="utf-8")).get("sources", {}).get(client)
+    warnings: list[str] = []
+    found = [s for s in reader.catalogue(client, reader_args(roots, args.ref), warnings) if s["session_ref"] == args.ref]
+    if len(found) != 1:
+        raise XMemoryError(f"本机找不到这个会话（可能在别的机器上或已移动）：{args.ref}")
+    items, total = [], 0
+    for e in reader.read_events(found[0], warnings, args.include_tools):
+        if e.get("role") == "context" or (not args.include_tools and e["kind"] != "message"):
+            continue
+        if total >= args.offset and len(items) < args.limit:
+            text = e["text"]
+            items.append({"timestamp": e.get("timestamp"), "role": e.get("role"), "kind": e.get("kind"),
+                          "text": text[:args.max_chars], "truncated": len(text) > args.max_chars,
+                          "record_ref": e.get("record_ref")})
+        total += 1
+    has_more = total > args.offset + len(items)
+    return {"session": args.ref, "title": found[0].get("title"), "cwd": found[0].get("project"),
+            "items": items, "next_offset": args.offset + len(items) if has_more else None,
+            "has_more": has_more, "warnings": warnings[:10]}
+
+
 def cmd_notice(args):
     root = Path(args.root).expanduser() if args.root else default_root()
     template = (SKILL_DIR / "templates" / "agents-notice.md").read_text(encoding="utf-8")
@@ -1167,6 +1261,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--session", required=True)
     s.add_argument("--reason")
     sub.add_parser("check", help="只读校验")
+    s = sub.add_parser("session", help="只读读取一个原会话的可见消息（调取时回到原件）")
+    s.add_argument("ref", help="session_ref，例如 zcode:sqlite:<ID> 或 codex:jsonl:<ID>")
+    s.add_argument("--offset", type=int, default=0)
+    s.add_argument("--limit", type=int, default=40)
+    s.add_argument("--max-chars", type=int, default=4000)
+    s.add_argument("--include-tools", action="store_true")
     sub.add_parser("notice", help="输出写入 AGENTS.md 类规则文件的告知段落")
     return p
 
@@ -1176,6 +1276,8 @@ def dispatch(args):
         return cmd_init(args)
     if args.cmd == "notice":
         return cmd_notice(args)
+    if args.cmd == "session":
+        return cmd_session(args)
     lib = Library(Path(args.root).expanduser() if args.root else default_root())
     if args.cmd == "project":
         return cmd_project(lib, args)

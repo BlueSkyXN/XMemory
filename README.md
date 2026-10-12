@@ -33,7 +33,7 @@ consolidate：加锁的单写者整合 → memory_summary.md、projects/<项目>
 .agents/plugins/marketplace.json      Codex 市场，根为本仓库
 plugins/
 ├── marketplace.json                  ZCode 市场，根为 plugins/
-├── xmemory/                          记忆插件：一个技能 xmemory（含运行时、读取器、方法与模板）
+├── xmemory/                          记忆插件：一个运行时 CLI + 八个技能（查阅、记一条、运行一轮、提取、整合、设置、维护、工具本体）
 └── conversation-readers/             会话读取插件：五个客户端各一个只读读取技能
 tools/                                仓库检查、同步与构建脚本（不进入插件）
 tests/                                单元测试
@@ -45,7 +45,7 @@ tests/                                单元测试
 | Claude Code | 本仓库根 | `xmemory@xmemory-claude`、`conversation-readers@xmemory-claude` |
 | Codex | 本仓库根 | `xmemory@xmemory-codex`、`conversation-readers@xmemory-codex` |
 
-XMemory 技能内置一份会话读取运行时（与 Conversation Readers 同源，由同步脚本保持一致），不依赖另装读取插件。
+XMemory 是“一个工具、多个技能”：运行时 CLI 只有一份，放在 `xmemory` 技能里，其余七个技能各管一类活并调用它。运行时内置会话读取（与 Conversation Readers 同源，由同步脚本保持一致），不依赖另装读取插件。
 
 ## 开发检查与构建
 

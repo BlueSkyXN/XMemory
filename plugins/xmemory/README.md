@@ -19,31 +19,35 @@ Codex 已有逐会话记忆（只读）──导入─────────�
 
 - **代码管机械，模型管语义**：清点、项目归属、日期切分、任务认领与租约、时间戳、文件写入、git 提交、校验都由内置运行时完成；逐会话提取和整合由执行技能的客户端代理完成，输出经运行时校验才落盘。
 - **一手输入**：从原始会话提取，用户消息是主要证据；Codex 已从原始会话提取过的逐会话记忆直接复用；Office Memory 可逐字转录。
-- **任何客户端效果相同**：一个技能、同一套任务、模板和校验；记忆根固定在 `~/.agents/memory/`，与当前目录无关。
-- **不常驻**：没有后台进程。需要定时，就在 Codex 自动化、ZCode 定时任务等客户端功能里挂一条提示词（`templates/automation-prompt.md`）。
+- **一个工具，多个技能**：运行时 CLI 只有一份，放在 `xmemory` 技能里；查阅、记一条、提取、整合、运行一轮、设置、维护各由一个技能负责，都调用这同一个 CLI。任何客户端、任何目录执行，任务、模板和校验都相同；记忆根固定在 `~/.agents/memory/`。
+- **不常驻**：没有后台进程。需要定时，就在 Codex 自动化、ZCode 定时任务等客户端功能里挂一条提示词（`xmemory-setup/templates/automation-prompt.md`）。
 - **不强制读写**：只在各客户端的用户级规则文件里告知 XMemory 可用（`notice` 生成告知段落），什么时候查、什么时候记由 AI 自己判断。
 - **存储不设上限**：内容按可检索性组织；只有 `memory_summary.md` 和项目 `AWARENESS.md` 作为入口保持紧凑。
 
 ## 组成
 
 ```text
-skills/xmemory/
-├── SKILL.md                    何时用、各模式怎么做
-├── scripts/xmemory.py          运行时入口（Python 3.11+ 标准库，需要 git）
-├── scripts/xmemory_runtime.py
-├── scripts/reader_runtime.py   各客户端会话只读读取（与 Conversation Readers 同源）
-├── references/                 提取、整合、调取方法与库结构
-└── templates/                  告知段落、定时提示词
+skills/
+├── xmemory/               工具本体：运行时 CLI（scripts/）、命令总表、共同规则、库结构、告知段落模板
+├── xmemory-recall/        查阅记忆（只读），必要时回到原会话
+├── xmemory-note/          当场记一条
+├── xmemory-run/           运行一轮完整管线（“更新记忆”、定时任务）
+├── xmemory-extract/       清点会话、导入 Codex 记忆、逐会话提取（含提取方法）
+├── xmemory-consolidate/   单写者整合（含整合方法与产物格式）
+├── xmemory-setup/         建库、登记项目、导入 Office Memory、告知、定时提示词
+└── xmemory-maintain/      状态、检查、忘记、处理中断
 ```
+
+运行时需要 Python 3.11+ 和 git；`scripts/reader_runtime.py` 与 Conversation Readers 同源。
 
 ## 快速开始
 
 ```bash
-S=<技能目录>/scripts/xmemory.py
+S=<插件>/skills/xmemory/scripts/xmemory.py
 python3 "$S" init --timezone Asia/Shanghai
 python3 "$S" project add <项目名> --path <项目根>
 python3 "$S" scan && python3 "$S" import codex
-python3 "$S" next --client codex      # 领取一个提取任务，按 references/extract.md 处理后 submit
+python3 "$S" next --client codex      # 领取一个提取任务；按 xmemory-extract 技能的提取方法处理后 submit
 ```
 
 完整流程见 [设计](docs/design.md) 与 [安装](docs/install.md)。

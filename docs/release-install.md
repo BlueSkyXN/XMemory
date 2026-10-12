@@ -2,8 +2,8 @@
 
 ## 三种包
 
-- `XMemory-1.4.0.zip`：ZCode、Claude Code、Codex 三端市场完整包。三份市场清单都列出两个插件：XMemory 1.4.0（一个技能，含运行时）与 Conversation Readers（各客户端会话只读读取）。解压保留整个目录结构。
-- `XMemory-1.4.0-skills.zip`：XMemory 技能目录 `skills/xmemory/`（含 `scripts/`、`references/`、`templates/`）。
+- `XMemory-1.4.0.zip`：ZCode、Claude Code、Codex 三端市场完整包。三份市场清单都列出两个插件：XMemory 1.4.0（一个运行时 + 八个技能）与 Conversation Readers（各客户端会话只读读取）。解压保留整个目录结构。
+- `XMemory-1.4.0-skills.zip`：XMemory 的八个技能（`skills/` 整个目录，运行时在 `skills/xmemory/scripts/`）。
 - `ConversationReaders-<版本>-skills.zip`：Conversation Readers 五个自包含技能。
 
 运行时需要 Python 3.11+ 和 git。安装不建库、不读取会话、不修改客户端规则。
@@ -32,7 +32,7 @@ codex plugin add xmemory@xmemory-codex
 
 ## 独立技能
 
-把 `skills/xmemory/` 整目录复制到客户端的用户级技能目录（Codex `~/.agents/skills/`、Claude Code `~/.claude/skills/`、ZCode `~/.zcode/skills/`）。不要只复制 SKILL.md；同一客户端不要同时启用插件和同名独立技能。
+把 `skills/` 下八个技能目录一起复制到客户端的用户级技能目录（Codex `~/.agents/skills/`、Claude Code `~/.claude/skills/`、ZCode `~/.zcode/skills/`）；任务技能通过相对路径调用 `xmemory` 技能里的运行时，缺了它就不能用。同一客户端不要同时启用插件和同名独立技能。
 
 ## 首次使用
 

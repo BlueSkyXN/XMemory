@@ -12,7 +12,7 @@
 | Claude Code | 插件内 `.claude-plugin/plugin.json` | 仓库根 `.claude-plugin/marketplace.json`；市场根为仓库根 |
 | Codex | 插件内 `.codex-plugin/plugin.json` | 仓库根 `.agents/plugins/marketplace.json`；市场根为仓库根 |
 
-三个市场都列出 XMemory 与 Conversation Readers 两个插件。XMemory 已内置会话读取运行时，不依赖 Conversation Readers；后者用于在对话中直接查阅某个会话。
+三个市场都列出 XMemory 与 Conversation Readers 两个插件。XMemory 有八个技能，共用 `xmemory` 技能里的同一个运行时；它已内置会话读取运行时（含 `session` 命令），不依赖 Conversation Readers。
 
 ## ZCode
 
@@ -40,11 +40,11 @@ codex plugin add xmemory@xmemory-codex
 
 ## 独立技能
 
-`XMemory-<版本>-skills.zip` 内是完整的 `skills/xmemory/` 目录（含 `scripts/`、`references/`、`templates/`）。整目录复制到客户端的用户级技能目录，例如 Codex 的 `~/.agents/skills/xmemory/`、Claude Code 的 `~/.claude/skills/xmemory/`、ZCode 的 `~/.zcode/skills/xmemory/`。同一客户端不要同时启用插件和同名独立技能。
+`XMemory-<版本>-skills.zip` 内是完整的 `skills/` 目录（八个技能）。**八个技能要一起复制**到客户端的用户级技能目录，例如 Codex 的 `~/.agents/skills/`、Claude Code 的 `~/.claude/skills/`、ZCode 的 `~/.zcode/skills/`：任务技能通过相对路径调用 `xmemory` 技能里的运行时。同一客户端不要同时启用插件和同名独立技能。
 
 ## 首次使用
 
-以下命令中 `S` 指技能目录下的 `scripts/xmemory.py`。
+以下命令中 `S` 指 `skills/xmemory/scripts/xmemory.py`。日常使用时不必手敲，对代理说出意图即可，对应技能会调用这些命令。
 
 ```bash
 python3 "$S" init --timezone Asia/Shanghai          # 在 ~/.agents/memory 建库；已有其他内容的目录会被拒绝
@@ -55,7 +55,7 @@ python3 "$S" import codex
 python3 "$S" status
 ```
 
-之后在任一客户端对代理说“运行 XMemory 管线”，代理会按技能循环 `next` → 提取 → `submit`，再对有新输入的范围做整合。回填更早的历史时，把 `config.toml` 的 `backfill_days` 调大或用 `scan --days N`，再重复这一轮。
+之后在任一客户端对代理说“更新记忆”，`xmemory-run` 技能会循环 `next` → 提取 → `submit`，再对有新输入的范围做整合。回填更早的历史时，把 `config.toml` 的 `backfill_days` 调大或用 `scan --days N`，再重复这一轮。
 
 ## 告知各客户端
 
@@ -67,7 +67,7 @@ python3 "$S" notice
 
 ## 定时运行
 
-XMemory 没有后台进程。需要定期运行时，把技能 `templates/automation-prompt.md` 填好客户端标识和每轮任务上限，挂到客户端自己的自动化功能上（如 Codex 自动化）。
+XMemory 没有后台进程。需要定期运行时，把 `skills/xmemory-setup/templates/automation-prompt.md` 填好客户端标识和每轮任务上限，挂到客户端自己的自动化功能上（如 Codex 自动化）。
 
 Codex 在受限沙箱中运行时，可能无法写入 `~/.agents/memory`。可以把自动化的工作目录设为记忆根，或按 Codex 当前版本的配置授予该目录写权限；首次运行后用 `status` 和 `check` 确认确实写入。
 

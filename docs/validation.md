@@ -4,25 +4,26 @@
 
 本文保留各开发阶段的本地验证记录。1.3.1 及更早各节是历史记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
-## 1.4.0 重做：运行时 + 单技能（2026-10-12）
+## 1.4.0 重做：一个运行时 + 八个技能（2026-10-12）
 
 起因：1.3.1 首轮真实回填只读各端原生记忆（二手），89 个主题全部“待确认”；整理阶段编造了全部批次、意识和每日记忆的时间；同项目明显不如 Office Memory 与 Codex 原生记忆。重构依据和取舍记录在源码仓库 `local/` 下的重构计划（不进入公开包）。
 
 **改动**
 
-- 插件收缩为一个技能 `xmemory`，内置 Python 标准库运行时 `scripts/xmemory.py`，以及与 Conversation Readers 同源的读取运行时 `scripts/reader_runtime.py`（由 `tools/sync_conversation_readers.py` 同步）。
+- 结构为“一个工具、多个技能”：运行时 CLI 只有一份，在 `xmemory` 技能的 `scripts/`（Python 标准库 `xmemory.py`，以及与 Conversation Readers 同源、由 `tools/sync_conversation_readers.py` 同步的 `reader_runtime.py`）；`xmemory-recall`、`xmemory-note`、`xmemory-run`、`xmemory-extract`、`xmemory-consolidate`、`xmemory-setup`、`xmemory-maintain` 各管一类活，通过相对路径调用它。
 - 机械工作全部由运行时完成：会话清点、项目归属（配置根最长匹配，linked worktree 归主仓库）、按本地日期切分与内容指纹、任务认领与租约、时间戳与会话 ID、git 提交、整合锁、输出校验、时间线生成。
 - 语义工作由执行技能的代理完成：`next` / `submit` 逐会话提取（固定三字段 JSON，运行时校验与脱敏），`consolidate begin` / `finish` / `abort` 单写者整合（按事件日期分批，默认每批 12 项）。
-- Codex 逐会话记忆只读导入；Office Memory 逐字转录；`forget` 留撤回标识，整合时传播删除。
+- Codex 逐会话记忆只读导入，并报告窗口内 Codex 尚未提取的会话数；Office Memory 逐字转录；`session` 只读读回原会话；`forget` 留撤回标识，整合时传播删除；旧意识里没有 key 的待处理条目按开头词核对着落。
 - 读取：不注入、不强制，`notice` 生成写入各客户端用户级规则文件的告知段落。
 - 删除 1.3 的五个技能、共享规范、模板、集成、示例、`tools/sync_skill_resources.py`、`tools/behavior_fixtures.py`、`tests/scenarios.json` 及其测试。
 
 **仓库检查**
 
-- `tools/check_package.py` 通过（插件 18 个文件）；`tools/build_conversation_readers.py --check` 通过；`tools/sync_conversation_readers.py` 无差异；`git diff --check` 无问题。
-- 单元测试 84/84 通过，其中运行时 18 项：初始化拒绝接管旧目录、跨午夜切分、窗口与静默期、子代理排除、提交校验与脱敏、空结果、会话变化后重新提取、分段减少后旧任务作废且不死循环、Codex 导入只读且幂等、Office Memory 逐字转录、整合越界与旧待办丢失与缺小节被拒、整合锁、放弃回滚、分批按日期从早到晚、中文项目名（git 路径不转义）、worktree 归属、忘记后不再收录、检查发现手改。
+- `tools/check_package.py` 通过（插件 25 个文件，八个技能，描述互不相同，任务技能都链接工具技能，Python 只在 `xmemory/scripts/`）；`tools/build_conversation_readers.py --check` 通过；`tools/sync_conversation_readers.py` 无差异；`git diff --check` 无问题。
+- 单元测试 88/88 通过，其中运行时 22 项：方法文档路径存在、`session` 读回原会话与分页、无 key 待处理条目保护、Codex 覆盖统计，以及初始化拒绝接管旧目录、跨午夜切分、窗口与静默期、子代理排除、提交校验与脱敏、空结果、会话变化后重新提取、分段减少后旧任务作废且不死循环、Codex 导入只读且幂等、Office Memory 逐字转录、整合越界与旧待办丢失与缺小节被拒、整合锁、放弃回滚、分批按日期从早到晚、中文项目名（git 路径不转义）、worktree 归属、忘记后不再收录、检查发现手改。
 - 中文项目名测试已确认能抓到问题：临时去掉 `core.quotePath=false` 时该测试失败。
-- `tools/build_release.py` 输出三端完整包、XMemory 技能包和 Conversation Readers 技能包；技能包含完整 `skills/xmemory/`（13 个文件，含三个脚本）。
+- `tools/build_release.py` 输出三端完整包、XMemory 技能包和 Conversation Readers 技能包；技能包含八个技能，脚本只在 `skills/xmemory/scripts/`。
+- 按技能文档原样演练（虚构数据、临时目录、跑完删除）：中文项目名建库 → 清点 → 领取 → 按提取方法格式提交 → 按整合方法模板写意识、手册与全局摘要 → finish 通过 → check 无错误 → rg 命中手册 → `session` 读回原会话。
 
 **真实数据兼容性冒烟（只读，临时目录，跑完删除）**
 
