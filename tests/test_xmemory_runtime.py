@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -83,11 +84,25 @@ class RuntimeTests(unittest.TestCase):
             c.execute("INSERT INTO part VALUES(?,?,?,?,?,?)", (f"{mid}-p", mid, sid, ms(when), 1,
                                                                json.dumps({"type": "text", "text": text})))
 
+    def state(self):
+        con = sqlite3.connect(self.root / ".xmemory/state.sqlite")
+        con.row_factory = sqlite3.Row
+        return con
+
+    def segment(self, job):
+        return self.state().execute("SELECT * FROM segments WHERE job_id=?", (job,)).fetchone()
+
+    def lease_of(self, job):
+        return self.segment(job)["lease_holder"]
+
     def submit(self, job, summary="# 发布前确认\n\n用户要求发布前先确认，不要直接推送；已改为等待确认。",
-               raw="- 偏好信号：发布时，用户说“以后发布前先等我确认，不要直接推送” → 默认先确认", slug="release-confirm"):
-        out = Path(self.root / ".xmemory" / "tasks" / job / "output.json")
+               raw="- 偏好信号：发布时，用户说“以后发布前先等我确认，不要直接推送” → 默认先确认", slug="release-confirm",
+               lease=None):
+        lease = lease or self.lease_of(job) or "none"
+        out = self.root / ".xmemory" / "tasks" / job / lease / "output.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps({"slug": slug, "summary": summary, "raw_memory": raw}, ensure_ascii=False), encoding="utf-8")
-        return self.cli("submit", job, "--client", "codex")
+        return self.cli("submit", job, "--lease", lease, "--client", "codex")
 
     def extract_all(self):
         digests = []
@@ -112,9 +127,6 @@ class RuntimeTests(unittest.TestCase):
         else:
             del cfg["sources"]["codex_memories"]
         (self.root / "config.toml").write_text(xm.dump_config(cfg), encoding="utf-8")
-
-    def git_log(self):
-        return subprocess.run(["git", "-C", str(self.root), "log", "--format=%s"], capture_output=True, text=True).stdout
 
     def write_outputs(self, awareness=None):
         p = self.root / "projects" / "demo"
@@ -165,17 +177,19 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(meta["project"], "demo")
         self.assertEqual(meta["extracted_by"], "codex")
         self.assertTrue(meta["extracted_at"].endswith("+08:00"))
-        self.assertIn("extract", self.git_log())
-        code, out = self.submit(nxt["job"])
+        self.assertEqual(meta["fingerprint"], self.segment(nxt["job"])["fingerprint"])
+        self.assertFalse((self.root / ".git").exists())
+        self.assertFalse((self.root / ".xmemory/tasks" / nxt["job"]).exists())
+        code, out = self.submit(nxt["job"], lease=nxt["lease"])
         self.assertEqual(code, 2)
         self.assertIn("不是已领取", out["error"])
 
     def test_submit_validation_and_empty_and_redaction(self):
         self.run_ok("scan")
-        job = self.run_ok("next", "--client", "codex")["job"]
-        out = self.root / ".xmemory/tasks" / job / "output.json"
-        out.write_text(json.dumps({"slug": "x", "summary": "s"}), encoding="utf-8")
-        self.assertEqual(self.cli("submit", job, "--client", "codex")[0], 2)
+        nxt = self.run_ok("next", "--client", "codex")
+        job = nxt["job"]
+        Path(nxt["output"]).write_text(json.dumps({"slug": "x", "summary": "s"}), encoding="utf-8")
+        self.assertEqual(self.cli("submit", job, "--lease", nxt["lease"], "--client", "codex")[0], 2)
         code, res = self.submit(job, raw="- 令牌 sk-" + "a" * 30 + " 已轮换，记得以后先确认再发布再继续工作")
         self.assertEqual(code, 0, res)
         self.assertTrue(res["redacted"])
@@ -331,7 +345,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(code, 2, out)
         self.write_outputs()
         done = self.run_ok("consolidate", "finish", begin["id"])
-        self.assertTrue(done["committed"])
+        self.assertTrue(done["ok"])
         self.assertTrue(done["timeline"])
         aware = (self.root / "projects/demo/AWARENESS.md").read_text(encoding="utf-8")
         self.assertTrue(aware.startswith("<!-- xmemory: updated "))
@@ -351,16 +365,23 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn(note["note"], Path(begin["input"]).read_text(encoding="utf-8"))
         self.write_outputs(awareness="# demo\n\n## 当前认识\n- x\n\n## 近期变化\n\n## 冲突与未知\n\n## 待处理\n\n## 记忆候选\n")
         digest = next((self.root / "sessions").rglob("*.md"))
-        digest.write_text(digest.read_text(encoding="utf-8") + "\n手改\n", encoding="utf-8")
+        original = digest.read_text(encoding="utf-8")
+        digest.write_text(original + "\n手改\n", encoding="utf-8")
+        extra = self.root / "projects/demo/topics/new.md"
+        extra.parent.mkdir(parents=True, exist_ok=True)
+        extra.write_text("# 新主题\n", encoding="utf-8")
         code, out = self.cli("consolidate", "finish", begin["id"])
         self.assertEqual(code, 1)
         joined = "\n".join(out["errors"])
         self.assertIn("越界改动", joined)
         self.assertIn("release-checklist", joined)
-        subprocess.run(["git", "-C", str(self.root), "checkout", "--", "sessions"], check=True)
-        self.run_ok("consolidate", "abort", begin["id"])
+        digest.write_text(original, encoding="utf-8")
+        aborted = self.run_ok("consolidate", "abort", begin["id"])
         self.assertIn("release-checklist", (self.root / "projects/demo/AWARENESS.md").read_text(encoding="utf-8"))
+        self.assertFalse(extra.exists())
+        self.assertTrue((Path(aborted["backup"]) / "projects/demo/topics/new.md").is_file())
         self.assertIsNone(self.run_ok("status")["consolidation_lock"])
+        self.assertEqual(self.run_ok("check")["errors"], [])
 
     def test_consolidation_batches_oldest_first(self):
         self.run_ok("scan")
@@ -415,7 +436,7 @@ class RuntimeTests(unittest.TestCase):
                                         "## 待处理\n\n## 记忆候选\n", encoding="utf-8")
         (p / "MEMORY.md").write_text("# 任务组：演示\n", encoding="utf-8")
         done = self.run_ok("consolidate", "finish", begin["id"])
-        self.assertTrue(done["committed"])
+        self.assertTrue(done["ok"])
         self.assertTrue(any("演示项目" in t for t in done["timeline"]))
         self.assertEqual(self.run_ok("check")["errors"], [])
 
@@ -540,6 +561,244 @@ class RuntimeTests(unittest.TestCase):
         notice = self.run_ok("notice")["notice"]
         self.assertIn(str(self.root), notice)
         self.assertNotIn("{{root}}", notice)
+
+    # ---------- 1.4.1：输入完整性、写事务与恢复、持久化与重建、任务所有权、增量完整性 ----------
+    def digest_files(self):
+        return sorted((self.root / "sessions").rglob("*.md"))
+
+    def test_partial_read_keeps_digests_until_source_is_fixed(self):
+        self.run_ok("scan")
+        self.assertEqual(len(self.extract_all()), 2)
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE message SET data=? WHERE id='sess_a-m3'", (json.dumps({"role": 5}),))
+        out = self.run_ok("scan", "--force")
+        report = out["clients"]["zcode"]
+        self.assertEqual([p["session"] for p in report["partial_sessions"]], ["zcode:sqlite:sess_a"])
+        self.assertEqual((report["obsolete_jobs"], out["removed_digests"]), (0, []))
+        self.assertEqual(len(self.digest_files()), 2)
+        self.assertTrue(any("读取不完整" in w for w in self.run_ok("check")["warnings"]))
+        # 新出现的读取问题让游标失效：下一轮不加 --force 也会重读；同样的缺口（警告稳定）仍然不删
+        again = self.run_ok("scan")["clients"]["zcode"]
+        self.assertEqual(len(again["partial_sessions"]), 1)
+        self.assertEqual(len(self.digest_files()), 2)
+        self.assertEqual(self.run_ok("scan")["clients"]["zcode"]["partial_sessions"], [])  # 稳定后推进游标
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE message SET data=? WHERE id='sess_a-m3'", (json.dumps({"role": "user"}),))
+        report = self.run_ok("scan", "--force")["clients"]["zcode"]
+        self.assertEqual((report["partial_sessions"], report["new_jobs"], report["changed_jobs"]), ([], 0, 0))
+        self.assertEqual(len(self.digest_files()), 2)
+        self.assertIsNone(self.run_ok("next", "--client", "codex")["job"])
+        self.assertEqual(self.run_ok("status")["sessions_with_read_issues"], 0)
+
+    def test_partial_read_does_not_hide_first_scan(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE message SET data=? WHERE id='sess_a-m3'", (json.dumps({"role": 5}),))
+        self.run_ok("scan")
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE message SET data=? WHERE id='sess_a-m3'", (json.dumps({"role": "user"}),))
+        # 游标没有推进：来源修好后不加 --force 也会补出第二天
+        self.assertEqual(self.run_ok("scan")["clients"]["zcode"]["new_jobs"], 1)
+
+    def test_window_expansion_backfills_earlier_days(self):
+        self.run_ok("scan", "--days", "2")
+        days = lambda: sorted(r[0] for r in self.state().execute("SELECT day FROM segments WHERE ref='zcode:sqlite:sess_a'"))
+        second = (self.night + timedelta(hours=1)).date().isoformat()
+        self.assertEqual(days(), [second])
+        report = self.run_ok("scan")["clients"]["zcode"]
+        self.assertEqual(report["new_jobs"], 1)
+        self.assertEqual(days(), [self.night.date().isoformat(), second])
+
+    def consolidate_demo(self):
+        begin = self.run_ok("consolidate", "begin", "--scope", "demo", "--client", "codex")
+        if not (self.root / "projects/demo/AWARENESS.md").exists():
+            self.write_outputs()
+        return self.run_ok("consolidate", "finish", begin["id"])
+
+    def test_forget_reaches_status_consolidation_and_timeline(self):
+        self.run_ok("scan")
+        self.extract_all()
+        self.consolidate_demo()
+        timeline = self.root / "projects/demo/timeline"
+        self.assertTrue(list(timeline.glob("*.md")))
+        self.run_ok("forget", "--session", "zcode:sqlite:sess_a", "--reason", "用户要求")
+        self.assertEqual(self.run_ok("status")["unconsolidated_inputs"], {"demo": 2})
+        self.assertFalse(list(timeline.glob("*.md")))
+        begin = self.run_ok("consolidate", "begin", "--scope", "demo", "--client", "codex")
+        self.assertEqual(Path(begin["input"]).read_text(encoding="utf-8").count("## [删除]"), 2)
+        self.run_ok("consolidate", "finish", begin["id"])
+        self.assertEqual(self.run_ok("status")["unconsolidated_inputs"], {})
+        ledger = json.loads((self.root / "ledger/consolidated/demo.json").read_text(encoding="utf-8"))
+        self.assertEqual(ledger["inputs"], {})
+        self.assertEqual(self.run_ok("check")["errors"], [])
+
+    def test_input_removed_during_consolidation_is_propagated(self):
+        self.run_ok("scan")
+        self.extract_all()
+        begin = self.run_ok("consolidate", "begin", "--scope", "demo", "--client", "codex")
+        self.run_ok("forget", "--session", "zcode:sqlite:sess_a")
+        self.write_outputs()
+        self.run_ok("consolidate", "finish", begin["id"])
+        self.assertEqual(self.run_ok("status")["unconsolidated_inputs"], {"demo": 2})
+        again = self.run_ok("consolidate", "begin", "--scope", "demo", "--client", "codex")
+        self.assertEqual(Path(again["input"]).read_text(encoding="utf-8").count("## [删除]"), 2)
+
+    def test_state_loss_requires_rebuild_and_restores_everything(self):
+        self.run_ok("scan")
+        self.extract_all()
+        self.consolidate_demo()
+        self.run_ok("forget", "--session", "zcode:sqlite:sess_a", "--reason", "用户要求")
+        self.run_ok("note", "发布清单要包含回滚步骤", "--project", "demo", "--client", "codex")
+        self.assertEqual(self.run_ok("status")["unconsolidated_inputs"], {"demo": 3})
+        shutil.rmtree(self.root / ".xmemory")
+        for argv in (("status",), ("scan",), ("check",)):
+            code, out = self.cli(*argv)
+            self.assertEqual(code, 2, argv)
+            self.assertIn("rebuild", out["error"])
+        self.assertFalse((self.root / ".xmemory/state.sqlite").exists())
+        rebuilt = self.run_ok("rebuild")
+        self.assertEqual((rebuilt["inputs"], rebuilt["pending_deletions"], rebuilt["tombstones"]), (1, 2, 1))
+        self.assertEqual(self.run_ok("status")["unconsolidated_inputs"], {"demo": 3})
+        self.run_ok("scan", "--force")
+        self.assertIsNone(self.run_ok("next", "--client", "codex")["job"])
+        self.assertEqual(self.run_ok("check")["errors"], [])
+
+    def test_rebuild_restores_done_jobs_without_reextraction(self):
+        self.run_ok("scan")
+        self.extract_all()
+        shutil.rmtree(self.root / ".xmemory")
+        self.assertEqual(self.run_ok("rebuild")["done_segments"], 2)
+        report = self.run_ok("scan")["clients"]["zcode"]
+        self.assertEqual((report["new_jobs"], report["changed_jobs"]), (0, 0))
+        self.assertIsNone(self.run_ok("next", "--client", "codex")["job"])
+        self.assertEqual(len(self.digest_files()), 2)
+        self.assertEqual(self.run_ok("status")["unconsolidated_inputs"], {"demo": 2})
+
+    def test_interrupted_submit_rolls_forward(self):
+        self.run_ok("scan")
+        first, second = self.run_ok("next", "--client", "codex"), None
+        real = xm.record_digest
+
+        def crash(*a, **k):
+            real(*a, **k)
+            raise OSError("模拟：摘要已写出，状态库更新前中断")
+        with mock.patch.object(xm, "record_digest", crash):
+            code, _ = self.submit(first["job"])
+        self.assertEqual(code, 2)
+        # 失败后当场按文件对账：摘要已写出，任务记为完成；不会卡在“已完成但文件没登记”
+        self.assertEqual(self.segment(first["job"])["status"], "done")
+        self.assertEqual(self.run_ok("check")["errors"], [])
+        # 进程被杀、来不及对账：状态库落后，下一个写命令先追平
+        second = self.run_ok("next", "--client", "codex")
+        with mock.patch.object(xm, "record_digest", crash), mock.patch.object(xm.Library, "recover", lambda self: None):
+            self.assertEqual(self.submit(second["job"])[0], 2)
+        self.assertEqual(self.segment(second["job"])["status"], "leased")
+        self.assertTrue(any("状态库落后" in w for w in self.run_ok("check")["warnings"]))
+        self.run_ok("scan")
+        self.assertEqual(self.segment(second["job"])["status"], "done")
+        self.assertEqual(self.run_ok("check"), {"ok": True, "errors": [], "warnings": []})
+        # 整合不会被遗留文件卡住
+        self.assertTrue(self.consolidate_demo()["ok"])
+
+    def test_lease_takeover_rejects_old_holder(self):
+        self.run_ok("scan")
+        first = self.run_ok("next", "--client", "codex")
+        self.state().execute("UPDATE segments SET lease_until='2000-01-01T00:00:00+00:00' WHERE job_id=?",
+                             (first["job"],)).connection.commit()
+        second = self.run_ok("next", "--client", "claude")
+        self.assertEqual(second["job"], first["job"])
+        self.assertNotEqual(second["lease"], first["lease"])
+        self.assertEqual(self.segment(first["job"])["attempts"], 1)
+        code, out = self.submit(first["job"], lease=first["lease"], summary="# 旧执行者\n\n这是被接管之后才交上来的旧结果。")
+        self.assertEqual(code, 2)
+        self.assertIn("租约不匹配", out["error"])
+        code, out = self.cli("release", first["job"], "--lease", first["lease"], "--reason", "旧执行者放回")
+        self.assertEqual(code, 2)
+        self.assertNotEqual(first["output"], second["output"])
+        code, out = self.submit(second["job"], lease=second["lease"])
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("旧执行者", (self.root / out["digest"]).read_text(encoding="utf-8"))
+
+    def test_failed_jobs_have_recovery_path(self):
+        self.run_ok("scan")
+        job = None
+        for _ in range(xm.MAX_ATTEMPTS):
+            nxt = self.run_ok("next", "--client", "codex")
+            job = job or nxt["job"]
+            self.assertEqual(nxt["job"], job)
+            self.run_ok("release", job, "--lease", nxt["lease"], "--reason", "做不完")
+        self.assertEqual(self.segment(job)["status"], "failed")
+        self.assertNotEqual(self.run_ok("next", "--client", "codex")["job"], job)
+        self.assertTrue(any("失败次数达到上限" in w for w in self.run_ok("check")["warnings"]))
+        self.assertEqual(self.run_ok("retry", "--failed")["jobs"], [job])
+        self.assertEqual((self.segment(job)["status"], self.segment(job)["attempts"]), ("pending", 0))
+        self.run_ok("skip", job, "--reason", "内容无法使用")
+        self.assertEqual(self.segment(job)["status"], "skipped")
+        self.run_ok("retry", job)
+        self.assertEqual(self.segment(job)["status"], "pending")
+
+    def test_scan_isolates_unreadable_session(self):
+        with sqlite3.connect(self.db) as c:
+            self.add_session(c, "sess_b", "另一个会话", str(self.work / "demo"), [("user", self.night, "另一个会话的内容")])
+        real = xm.session_events
+
+        def flaky(lib, client, ref):
+            if ref.endswith("sess_a"):
+                raise xm.XMemoryError("模拟：读取失败")
+            return real(lib, client, ref)
+        with mock.patch.object(xm, "session_events", flaky):
+            report = self.run_ok("scan")["clients"]["zcode"]
+        self.assertEqual(len(report["errors"]), 1)
+        refs = {r[0] for r in self.state().execute("SELECT DISTINCT ref FROM segments")}
+        self.assertEqual(refs, {"zcode:sqlite:sess_b"})
+        self.assertEqual(self.run_ok("scan")["clients"]["zcode"]["new_jobs"], 2)
+
+    def test_next_returns_job_when_session_unreadable(self):
+        self.run_ok("scan")
+        with mock.patch.object(xm, "session_events", side_effect=xm.XMemoryError("模拟：会话已移动")):
+            code, out = self.cli("next", "--client", "codex")
+        self.assertEqual(code, 2)
+        self.assertIn("已放回", out["error"])
+        rows = self.state().execute("SELECT status, attempts FROM segments WHERE attempts > 0").fetchall()
+        self.assertEqual([tuple(r) for r in rows], [("pending", 1)])
+
+    def test_interrupted_consolidation_is_restored_on_next_begin(self):
+        self.run_ok("scan")
+        self.extract_all()
+        begin = self.run_ok("consolidate", "begin", "--scope", "demo", "--client", "codex")
+        self.write_outputs()
+        self.state().execute("UPDATE locks SET until='2000-01-01T00:00:00+00:00'").connection.commit()
+        self.assertTrue(any("已过期未完成" in w for w in self.run_ok("check")["warnings"]))
+        again = self.run_ok("consolidate", "begin", "--scope", "demo", "--client", "claude")
+        self.assertEqual(again["recovered_interrupted"]["id"], begin["id"])
+        self.assertIn("projects/demo/AWARENESS.md", again["recovered_interrupted"]["restored"])
+        self.assertFalse((self.root / "projects/demo/AWARENESS.md").exists())
+        self.assertTrue(again["changed"])
+
+    def test_runtime_does_not_need_git(self):
+        empty = self.base / "no-tools"
+        empty.mkdir()
+        with mock.patch.dict(os.environ, {"PATH": str(empty)}):
+            self.assertIsNone(shutil.which("git"))
+            self.run_ok("scan")
+            self.extract_all()
+            self.consolidate_demo()
+            self.run_ok("note", "以后先确认再发布", "--project", "demo", "--client", "codex")
+            self.run_ok("forget", "--session", "zcode:sqlite:sess_a")
+            self.assertEqual(self.run_ok("check")["errors"], [])
+        self.assertFalse((self.root / ".git").exists())
+
+    def test_check_reports_unregistered_and_tampered_runtime_files(self):
+        self.run_ok("scan")
+        self.extract_all()
+        self.consolidate_demo()
+        stray = self.root / "sessions/zcode/2026-01/2026-01-01-stray-x.md"
+        stray.parent.mkdir(parents=True)
+        stray.write_text("---\nsession_ref: zcode:sqlite:x\n---\n", encoding="utf-8")
+        month = next((self.root / "projects/demo/timeline").glob("*.md"))
+        month.write_text(month.read_text(encoding="utf-8") + "手改\n", encoding="utf-8")
+        errors = "\n".join(self.cli("check")[1]["errors"])
+        self.assertIn("未登记的输入文件", errors)
+        self.assertIn("运行时生成的文件被改动", errors)
 
 
 if __name__ == "__main__":

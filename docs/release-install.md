@@ -1,12 +1,12 @@
-# XMemory 1.4.0 安装包
+# XMemory 1.4.1 安装包
 
 ## 三种包
 
-- `XMemory-1.4.0.zip`：ZCode、Claude Code、Codex 三端市场完整包。三份市场清单都列出两个插件：XMemory 1.4.0（一个运行时 + 八个技能）与 Conversation Readers（各客户端会话只读读取）。解压保留整个目录结构。
-- `XMemory-1.4.0-skills.zip`：XMemory 的八个技能（`skills/` 整个目录，运行时在 `skills/xmemory/scripts/`）。
+- `XMemory-1.4.1.zip`：ZCode、Claude Code、Codex 三端市场完整包。三份市场清单都列出两个插件：XMemory 1.4.1（一个运行时 + 八个技能）与 Conversation Readers（各客户端会话只读读取）。解压保留整个目录结构。
+- `XMemory-1.4.1-skills.zip`：XMemory 的八个技能（`skills/` 整个目录，运行时在 `skills/xmemory/scripts/`）。
 - `ConversationReaders-<版本>-skills.zip`：Conversation Readers 五个自包含技能。
 
-运行时需要 Python 3.9+ 和 git（macOS 自带的 `python3` 即可）。安装不建库、不读取会话、不修改客户端规则。
+运行时需要 Python 3.9+（macOS 自带的 `python3` 即可），不需要 git。安装不建库、不读取会话、不修改客户端规则。
 
 ## ZCode
 
@@ -17,14 +17,14 @@
 路径替换为解压根（不是 `plugins/` 子目录），由用户执行：
 
 ```bash
-claude plugin marketplace add /absolute/path/to/XMemory-1.4.0
+claude plugin marketplace add /absolute/path/to/XMemory-1.4.1
 claude plugin install xmemory@xmemory-claude
 ```
 
 ## Codex
 
 ```bash
-codex plugin marketplace add /absolute/path/to/XMemory-1.4.0
+codex plugin marketplace add /absolute/path/to/XMemory-1.4.1
 codex plugin add xmemory@xmemory-codex
 ```
 

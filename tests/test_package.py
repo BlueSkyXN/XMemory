@@ -189,7 +189,7 @@ class PackageTests(unittest.TestCase):
             text = (SKILL / name).read_text(encoding="utf-8")
             self.assertTrue("~/.agents/memory" in text or "{{root}}" in text, name)
         manifest = json.loads((PLUGIN / ".zcode-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.4.0")
+        self.assertEqual(manifest["version"], "1.4.1")
 
     def test_terminology_keeps_office_memory_spelled_out(self):
         for path in PLUGIN.rglob("*.md"):

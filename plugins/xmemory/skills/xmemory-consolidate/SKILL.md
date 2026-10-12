@@ -1,6 +1,6 @@
 ---
 name: xmemory-consolidate
-description: "XMemory 管线的整合阶段：在全局锁下，把某个项目（或 personal）新增、修改、删除的会话摘要和笔记并入项目意识 AWARENESS.md、项目手册 MEMORY.md、主题和全局摘要，再交运行时校验并提交。只要做整合时使用；完整一轮请用 xmemory-run。"
+description: "XMemory 管线的整合阶段：在全局锁下，把某个项目（或 personal）新增、修改、删除的会话摘要和笔记并入项目意识 AWARENESS.md、项目手册 MEMORY.md、主题和全局摘要，再交运行时校验并写入。只要做整合时使用；完整一轮请用 xmemory-run。"
 ---
 
 # XMemory 整合
@@ -15,7 +15,7 @@ description: "XMemory 管线的整合阶段：在全局锁下，把某个项目�
    python3 "$XM" consolidate begin --scope <项目名|personal> --client <客户端> [--max-inputs 12]
    ```
 
-   返回 `changed: false` 表示本范围没有新输入，结束。否则得到整合 ID、`input` 文件、允许改动的产物范围，以及 `remaining_after_this_batch`。
+   返回 `changed: false` 表示本范围没有新输入，结束。否则得到整合 ID、`input` 文件、允许改动的产物范围，以及 `remaining_after_this_batch`。`recovered_interrupted` 不为空表示上一次整合中断、租约已过，运行时已把它的半成品恢复到整合前（旧版本在返回的 `backup` 目录），在汇报里说明。
 2. 按 [整合方法](./references/consolidate.md) 读 `input` 和现有产物，修改：
    - `projects/<项目>/AWARENESS.md`（整篇重写，五节固定）；
    - `projects/<项目>/MEMORY.md`（任务组手册）；

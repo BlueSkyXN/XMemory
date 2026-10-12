@@ -4,7 +4,7 @@
     {
       "name": "xmemory",
       "source": "./xmemory",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "description": "XMemory：跨客户端记忆库。一个运行时 CLI 加八个技能：运行时清点各客户端会话、管理提取任务与 git 基线；技能分别负责查阅、记一条、逐会话提取、单写者整合、运行一轮、设置与维护。无后台服务。",
       "displayName": "XMemory",
       "displayName_i18n": {

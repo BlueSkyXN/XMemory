@@ -1,8 +1,8 @@
 # 安装与首次使用
 
-当前版本 **1.4.0**，文件格式 `xmemory/v1.4`。安装的是技能和运行时，不是记忆数据：安装本身不建库、不读取会话、不修改客户端规则。
+当前版本 **1.4.1**，文件格式 `xmemory/v1.4`。安装的是技能和运行时，不是记忆数据：安装本身不建库、不读取会话、不修改客户端规则。
 
-运行时需要 Python 3.9+ 和 git。macOS 自带的 `python3`（Xcode Command Line Tools，与 git 同一套）即可，不依赖 shell 配置里的 PATH。
+运行时需要 Python 3.9+，不需要 git。macOS 自带的 `python3` 即可，不依赖 shell 配置里的 PATH。
 
 ## 三种清单
 
@@ -55,7 +55,9 @@ python3 "$S" import codex                           # 只读：~/.codex/memories
 python3 "$S" status
 ```
 
-之后在任一客户端对代理说“更新记忆”，`xmemory-run` 技能会循环 `next` → 提取 → `submit`，再对有新输入的范围做整合。回填更早的历史时，把 `config.toml` 的 `backfill_days` 调大或用 `scan --days N`，再重复这一轮。
+之后在任一客户端对代理说“更新记忆”，`xmemory-run` 技能会循环 `next` → 提取 → `submit`，再对有新输入的范围做整合。回填更早的历史时，把 `config.toml` 的 `backfill_days` 调大或用 `scan --days N`，再重复这一轮；已扫描过的会话也会补切更早的日期。
+
+备份时备份整个记忆根即可。`.xmemory/` 是可重建的状态库，只恢复了记忆文件时运行 `rebuild`，再 `scan`。
 
 ## 告知各客户端
 
