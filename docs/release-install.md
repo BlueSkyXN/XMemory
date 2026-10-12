@@ -1,43 +1,29 @@
-# XMemory 1.4.1 安装包
+# XMemory 1.5.0 安装包
 
-## 三种包
+| 包 | 内容 |
+|---|---|
+| `XMemory-1.5.0.zip` | 三端完整市场，包含 XMemory 1.5.0 与独立 Conversation Readers 0.1.4 |
+| `XMemory-1.5.0-skills.zip` | 八个 XMemory 技能、模板和只读 status；不含读取器 |
+| `ConversationReaders-0.1.4-skills.zip` | 五端自包含读取技能，可选安装 |
 
-- `XMemory-1.4.1.zip`：ZCode、Claude Code、Codex 三端市场完整包。三份市场清单都列出两个插件：XMemory 1.4.1（一个运行时 + 八个技能）与 Conversation Readers（各客户端会话只读读取）。解压保留整个目录结构。
-- `XMemory-1.4.1-skills.zip`：XMemory 的八个技能（`skills/` 整个目录，运行时在 `skills/xmemory/scripts/`）。
-- `ConversationReaders-<版本>-skills.zip`：Conversation Readers 五个自包含技能。
-
-运行时需要 Python 3.9+（macOS 自带的 `python3` 即可），不需要 git。安装不建库、不读取会话、不修改客户端规则。
-
-## ZCode
-
-在“插件市场 → 添加 → 添加插件市场”粘贴解压根下的 `plugins/` 绝对路径，在“个人 → xmemory”安装 XMemory（`xmemory@xmemory`）。已添加过源码目录的同名市场时，刷新原市场并更新插件，不重复添加。
-
-## Claude Code
-
-路径替换为解压根（不是 `plugins/` 子目录），由用户执行：
+Python 3.9+，无额外依赖。完整包解压后，ZCode 添加 `plugins/` 为市场根；Claude Code 与 Codex 添加解压根。分别安装 `xmemory@xmemory`、`xmemory@xmemory-claude` 或 `xmemory@xmemory-codex`。
 
 ```bash
-claude plugin marketplace add /absolute/path/to/XMemory-1.4.1
+claude plugin marketplace add /absolute/path/to/XMemory-1.5.0
 claude plugin install xmemory@xmemory-claude
 ```
 
-## Codex
-
 ```bash
-codex plugin marketplace add /absolute/path/to/XMemory-1.4.1
+codex plugin marketplace add /absolute/path/to/XMemory-1.5.0
 codex plugin add xmemory@xmemory-codex
 ```
 
-其他版本先查看实际的 `codex plugin --help`。
+独立技能包将八个目录一起复制到客户端的技能目录，保持相对结构；同一客户端不要同时启用同名插件技能与独立技能。
 
-## 独立技能
+首次让代理按 `xmemory-setup` 创建 `xmemory/v1.5` 库、选择来源，然后用 `xmemory-run` 更新记忆。唯一程序是：
 
-把 `skills/` 下八个技能目录一起复制到客户端的用户级技能目录（Codex `~/.agents/skills/`、Claude Code `~/.claude/skills/`、ZCode `~/.zcode/skills/`）；任务技能通过相对路径调用 `xmemory` 技能里的运行时，缺了它就不能用。同一客户端不要同时启用插件和同名独立技能。
+```bash
+python3 <技能目录>/xmemory/scripts/xmemory.py --root <记忆根> status
+```
 
-## 首次使用
-
-见插件内 `docs/install.md`：`init` 建库 → `project add` 登记项目 → `scan`、`import codex` → 在客户端里让代理运行管线 → `notice` 生成告知段落，由用户决定合并进哪些客户端的用户级规则文件。
-
-## 从 1.x 升级
-
-1.x 库（`xmemory/v1`）不兼容，运行时不会接管。先把旧目录移走或归档，再 `init`；Office Memory 用 `import office-memory` 从原件重新转录。
+来源默认关闭；读取器另装可选。安装不触发采集或建库。旧 1.4 库保留，用户确认新目录或归档后再重建，不直接改格式名。

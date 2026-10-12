@@ -31,30 +31,17 @@ class PackageTests(unittest.TestCase):
 
     def test_runtime_code_only_in_skill_scripts(self):
         code = {p.relative_to(PLUGIN).as_posix() for p in PLUGIN.rglob("*") if p.suffix in {".py", ".js", ".sh"}}
-        self.assertEqual(code, {"skills/xmemory/scripts/xmemory.py", "skills/xmemory/scripts/xmemory_runtime.py",
-                                "skills/xmemory/scripts/reader_runtime.py"})
+        self.assertEqual(code, {"skills/xmemory/scripts/xmemory.py", "skills/xmemory/scripts/status.py",
+                                "skills/xmemory/scripts/toml_subset.py"})
         for name in ("hooks", "commands", "node_modules"):
             self.assertFalse((PLUGIN / name).exists())
 
     def test_one_tool_many_skills(self):
         self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir()}, SKILLS)
         self.assertEqual(len(SKILLS), 8)
-        expectations = {
-            "xmemory-recall": ("session",), "xmemory-note": ("note",),
-            "xmemory-extract": ("scan", "import codex", "next --client", "submit", "release"),
-            "xmemory-consolidate": ("consolidate begin", "consolidate finish", "consolidate abort"),
-            "xmemory-run": ("status", "check"), "xmemory-setup": ("init", "project add", "import office-memory", "notice"),
-            "xmemory-maintain": ("status", "check", "forget"),
-        }
-        for skill, commands in expectations.items():
-            text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
-            self.assertIn("](../xmemory/SKILL.md)", text, skill)
-            self.assertIn("../xmemory/scripts/xmemory.py", text, skill)
-            for command in commands:
-                self.assertIn(command, text, (skill, command))
-        tool = (SKILL / "SKILL.md").read_text(encoding="utf-8")
         for skill in SKILLS - {"xmemory"}:
-            self.assertIn(f"`{skill}`", tool)
+            text = (PLUGIN / "skills" / skill / "SKILL.md").read_text()
+            self.assertIn("](../xmemory/SKILL.md)", text, skill)
 
     def test_unexpected_script_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -69,13 +56,16 @@ class PackageTests(unittest.TestCase):
             (root / "plugins/xmemory/skills/xmemory-note/helper.py").write_text("x = 1\n")
             self.assertTrue(any("Non-document payload" in error for error in check(root)))
 
-    def test_reader_runtime_drift_is_rejected(self):
+    def test_xmemory_does_not_need_reader_plugin(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            copy_repo(root)
-            path = root / "plugins/xmemory/skills/xmemory/scripts/reader_runtime.py"
-            path.write_text(path.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
-            self.assertTrue(any("Reader runtime drift" in error for error in check(root)))
+            shutil.copytree(PLUGIN / "skills", root / "skills")
+            import subprocess
+            command = [sys.executable, "-B", str(root / "skills/xmemory/scripts/xmemory.py"), "--help"]
+            result = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("status", result.stdout)
+            self.assertFalse(list((root / "skills").rglob("reader_runtime.py")))
 
     def test_broken_link_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -100,7 +90,7 @@ class PackageTests(unittest.TestCase):
                     path.write_text(original + "\n" + private_path + "\n")
                     self.assertIn("Private absolute path in payload: README.md", check(root))
             path.write_text(original)
-            script = root / "plugins/xmemory/skills/xmemory/scripts/xmemory_runtime.py"
+            script = root / "plugins/xmemory/skills/xmemory/scripts/status.py"
             script.write_text(script.read_text() + "\n# " + paths[0] + "\n")
             self.assertTrue(any("Private absolute path" in e for e in check(root)))
 
@@ -138,7 +128,7 @@ class PackageTests(unittest.TestCase):
                 archive.extractall(base / "extracted")
             skills = base / "extracted" / archive_path.stem / "skills"
             self.assertEqual({p.name for p in skills.iterdir()}, SKILLS)
-            for name in ("xmemory.py", "xmemory_runtime.py", "reader_runtime.py"):
+            for name in ("xmemory.py", "status.py", "toml_subset.py"):
                 self.assertTrue((skills / "xmemory" / "scripts" / name).is_file(), name)
             self.assertEqual({p.relative_to(skills).parts[0] for p in skills.rglob("*.py")}, {"xmemory"})
             skill = skills
@@ -181,15 +171,6 @@ class PackageTests(unittest.TestCase):
             next(e for e in data["plugins"] if e["name"] == "xmemory")["version"] = "9.9.9"
             path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             self.assertIn("claude marketplace mismatch: xmemory.version", check(root))
-
-    def test_format_and_default_root_are_documented(self):
-        runtime = (SKILL / "scripts" / "xmemory_runtime.py").read_text(encoding="utf-8")
-        self.assertIn('FORMAT = "xmemory/v1.4"', runtime)
-        for name in ("SKILL.md", "references/layout.md", "templates/agents-notice.md"):
-            text = (SKILL / name).read_text(encoding="utf-8")
-            self.assertTrue("~/.agents/memory" in text or "{{root}}" in text, name)
-        manifest = json.loads((PLUGIN / ".zcode-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.4.1")
 
     def test_terminology_keeps_office_memory_spelled_out(self):
         for path in PLUGIN.rglob("*.md"):

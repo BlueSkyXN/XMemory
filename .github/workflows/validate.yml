@@ -49,4 +49,4 @@ jobs:
         with:
           python-version: "3.9"
       - name: Run runtime and reader tests
-        run: python -B -m unittest tests.test_xmemory_runtime tests.test_conversation_readers -v
+        run: python -B -m unittest tests.test_xmemory_status tests.test_conversation_readers -v
