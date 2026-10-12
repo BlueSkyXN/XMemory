@@ -118,7 +118,7 @@ class StatusTests(unittest.TestCase):
     def test_links_are_root_scoped_and_encoded_paths_work(self):
         self.record("records/notes/a b.md")
         self.write("USER.md", "user", body='[ok](records/notes/a%20b.md)\n[bad](records/missing.md)\n'
-                   '[external](https://example.invalid/)\n[outside](../not-checked.md)\n'
+                   '[external](https://example.invalid/)\n[malformed-external](http://[bad)\n[outside](../not-checked.md)\n'
                    '[ref]: records/missing-two.md\n')
         broken = [x for x in self.result()["issues"] if x["code"] == "broken_link"]
         self.assertEqual(len(broken), 2)

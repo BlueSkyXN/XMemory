@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from toml_subset import TomlSubset
@@ -87,7 +87,7 @@ def path_kind(relative):
 def safe_target(root, source, target):
     """仅检查根内链接，拒绝通过任何 symlink 访问外部目标。"""
     raw = target.strip("<>")
-    if raw.startswith("#") or urlsplit(raw).scheme or raw.startswith(("/", "~")):
+    if raw.startswith("#") or re.match(r"[a-z][a-z0-9+.-]*:", raw, re.I) or raw.startswith(("/", "~")):
         return None
     decoded = unquote(raw.split("#", 1)[0].split("?", 1)[0])
     if not decoded:
