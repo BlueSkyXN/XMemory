@@ -1,4 +1,4 @@
-"""技能内只读脚本的维护源；由 sync_conversation_readers.py 分发，不安装统一 CLI。"""
+"""技能内只读脚本的维护源；由 sync_conversation_readers.py 分发，不安装统一 CLI。Python 3.9+ 标准库。"""
 from __future__ import annotations
 
 import argparse
@@ -122,13 +122,29 @@ def iso(value):
     return str(value)
 
 
+ISO_PARTS = re.compile(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?)(?:[.,](\d+))?(?:([+-])(\d{2}):?(\d{2})?)?")
+
+
+def parse_iso(value):
+    """ISO 时间；Python 3.9/3.10 的 fromisoformat 不认 Z、非 3/6 位小数秒和 +0000，先规整成它认的写法。"""
+    text = str(value).strip()
+    if text[-1:] in ("Z", "z"):
+        text = text[:-1] + "+00:00"
+    m = ISO_PARTS.fullmatch(text)
+    if m:
+        base, fraction, sign, hours, minutes = m.groups()
+        text = base + ("." + (fraction + "00000")[:6] if fraction else "")
+        text += f"{sign}{hours}:{minutes or '00'}" if sign else ""
+    return datetime.fromisoformat(text)
+
+
 def epoch(value):
     if value is None:
         return 0
     if isinstance(value, (int, float)):
         return value / 1000 if value > 100000000000 else value
     try:
-        d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        d = parse_iso(value)
         if d.tzinfo is None:
             d = d.replace(tzinfo=timezone.utc)
         return d.timestamp()
@@ -998,7 +1014,7 @@ def positive(value):
 
 def date_arg(value):
     try:
-        d = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        d = parse_iso(value)
         return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()
     except ValueError as exc:
         raise argparse.ArgumentTypeError("需要 ISO 日期或时间") from exc

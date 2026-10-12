@@ -1,108 +1,73 @@
 # XMemory
 
-**跨客户端的记忆中心：五个技能把各客户端的记忆和对话，加工成一个按项目、按时间组织的集中记忆库。**
+**跨客户端记忆库：把各客户端的会话逐个提炼，整合成按项目、按时间组织的项目意识和项目手册，任何客户端都能查阅。**
 
-当前版本 **1.3.1**：用户级 `~/.agents/memory/` 集中库，分常驻层（画像、意识、主记忆）、主题与每日层、足迹层；提供读取协议、Hook 模板、定时提示词和首次回填提示词；Claude Code、ZCode、Codex 三端市场同时提供 XMemory 与 Conversation Readers 两个插件，文件格式名为 `xmemory/v1`。`local/xmemory/` 只是研究 demo，不属于正式产品版本线。
+当前版本 **1.4.1**，文件格式 `xmemory/v1.4`。1.4 是一次重做：参照 Codex 原生记忆的两阶段管线，机械工作交给内置运行时，模型只做逐会话提取和单写者整合。1.x 旧库（`xmemory/v1`）不兼容，需要归档后重建。
 
-XMemory 是纯技能、文件式记忆插件。现有 AI 客户端负责执行，Markdown 保存结果，TOML 登记项目和来源。不依赖 Git，不带运行期独立工具、MCP、数据库、Hook 程序、后台任务、锁或额外模型服务。
-
-## 一条流水线，五个技能
+## 怎么工作
 
 ```text
-各客户端原生记忆、会话、工作区（只读）
-  → 记录 / 采集 → 足迹 daily/<日期>/（一个会话一份，带可回查地址）
-  → 整理（一处单写）→ 意识、主记忆、主题、每日记忆、画像
-  → 调取：先常驻层，再按需展开，最后回原件
+各客户端会话（只读）→ scan：代码判定项目、按本地日期切分 → 提取任务
+Codex 已有逐会话记忆（只读）→ import codex
+            ↓
+next / submit：执行技能的代理逐个提取（带租约），运行时校验、脱敏、写入 sessions/
+            ↓
+consolidate：加锁的单写者整合 → memory_summary.md、projects/<项目>/AWARENESS.md、MEMORY.md、topics/、timeline/
+            ↓
+各客户端通过用户级规则文件得知 XMemory 可用，由 AI 自己决定何时查阅
 ```
 
-| 技能 | 职责 | 写入 |
-|---|---|---|
-| `xmemory-setup` 设置 | 数据根、项目发现与别名、来源登记、读取协议、Hook、定时与首次回填 | 配置与入口 |
-| `xmemory-record` 记录 | 当前对话中的纠正、偏好、决定和交接 | 只新建足迹（可加主题草稿） |
-| `xmemory-collect` 采集 | 各客户端原生记忆、指定会话、工作区变化；首次回填 | 只新建足迹；写本批清单与来源进度 |
-| `xmemory-curate` 整理 | 每日记忆、意识重写、主记忆与主题、画像、更正与忘记 | 唯一修改记忆正文；定时运行时判断类改动只写成候选 |
-| `xmemory-recall` 调取 | 按读取协议检索与工作接续 | 不写 |
+| 由代码完成 | 由执行技能的代理完成 |
+|---|---|
+| 清点会话、项目归属（含 worktree）、按本地日期切分、内容指纹 | 读一个会话一天的消息，写会话摘要与原始记忆（JSON） |
+| 任务认领与租约、失败计次与重试、整合锁 | 把新增、修改、删除的输入并入项目意识、手册与全局摘要 |
+| 时间戳、会话 ID、来源指针、时间线；原子写入、状态账本、中断恢复与 rebuild（不需要 git） | 按调取方法查阅记忆 |
+| 校验：越界改动、意识五节、旧待办着落、链接、疑似密钥 | |
 
-```text
-~/.agents/memory/
-├── config.toml   USER.md   AWARENESS.md   MEMORY.md
-├── topics/<主题>.md                 主记忆的子文件
-├── daily/YYYY-MM-DD.md              每日记忆
-├── daily/YYYY-MM-DD/<时刻>-….md     足迹（按事件日期）
-├── projects/<项目名>/               项目记忆，项目名等于平台项目根目录名
-└── state/                           来源进度、采集清单、整理记录、意识副本、撤回标识
-```
+设计说明见 [设计](plugins/xmemory/docs/design.md)，安装见 [安装](plugins/xmemory/docs/install.md)。
 
-同一台机器上的客户端共用该用户的记忆根；多台机器使用**同一逻辑记忆库**，各机器默认位置为 **`~/.agents/memory/`**，通过用户选择的同步方式保持一致。项目记忆位于库内 `projects/<项目名>/`，同时登记各客户端对该项目的别名（ZCode 的 slug、Claude 和 Qoder 的路径编码、Codex 的 cwd），不分散存到各工作区，也不需要项目软链接。
-
-采集先写逐项清单，保留读取边界和需回补项，进度只推进到连续完成前缀；整理按批次执行，正文保存并回读核对后才登记已吸收足迹。意识每次整篇综合重写（常规改写 30%–70% 是自检，不为比例改事实），并核对旧待办、候选、已有条目和日期绝对化。失败时保留未完成批次，重试只补缺失步骤。
-
-Office Memory（此前的自有单项目实践）后续迁入集中库并停用旧流程；1.3.0 继承它的整理判断，并扩展到跨客户端、跨项目、时间轴和后台运行，差异见 [设计](plugins/xmemory/docs/design.md)。完整对照见 [需求覆盖](plugins/xmemory/docs/requirements.md)。
-
-## 三端插件与市场
+## 仓库结构
 
 ```text
 .claude-plugin/marketplace.json       Claude 市场，根为本仓库
 .agents/plugins/marketplace.json      Codex 市场，根为本仓库
 plugins/
-├── marketplace.json                 ZCode 市场，根为 plugins/
-├── xmemory/                         记忆插件（纯文档，五个技能）
-│   ├── plugin.json                  Agent Plugins 通用清单
-│   ├── .codex-plugin/plugin.json     Codex 清单
-│   ├── .claude-plugin/plugin.json    Claude 清单
-│   ├── .zcode-plugin/plugin.json     ZCode 清单
-│   ├── skills/                      五个自包含技能
-│   ├── references/                  共用文档源
-│   ├── templates/                   共用模板源
-│   ├── integrations/                读取协议、Hook、定时与首次回填提示词
-│   ├── examples/                    虚构闭环示例
-│   └── docs/                        设计、来源、安装、验收
-└── conversation-readers/            会话读取插件（五个技能，各带只读 Python 脚本），清单同上
+├── marketplace.json                  ZCode 市场，根为 plugins/
+├── xmemory/                          记忆插件：一个运行时 CLI + 八个技能（查阅、记一条、运行一轮、提取、整合、设置、维护、工具本体）
+└── conversation-readers/             会话读取插件：五个客户端各一个只读读取技能
+tools/                                仓库检查、同步与构建脚本（不进入插件）
+tests/                                单元测试
 ```
 
-三份市场清单都列出两个插件，各自独立安装：XMemory 不依赖读取插件也能工作；需要按会话采集时，读取插件提供各客户端的只读列出与读取。
-
-每个正式技能的配套文件均在其自身目录内，没有跨目录资源依赖。开发工具维护静态副本一致性，不进入插件载荷。
-
-| 客户端 | 添加的实际市场根 | 插件 ID |
+| 客户端 | 添加的市场根 | 插件 ID |
 |---|---|---|
 | ZCode | 本仓库 `plugins/` | `xmemory@xmemory`、`conversation-readers@xmemory` |
 | Claude Code | 本仓库根 | `xmemory@xmemory-claude`、`conversation-readers@xmemory-claude` |
 | Codex | 本仓库根 | `xmemory@xmemory-codex`、`conversation-readers@xmemory-codex` |
 
-[三端安装说明](plugins/xmemory/docs/install.md) 包含真实命令、版本边界和接入步骤。创建市场清单不等于注册或安装。独立技能包仍可用于上述客户端和 Qoder/QoderWork；同一客户端不要同时安装重复入口。
-
-## 设计与验证
-
-借鉴 Codex 的逐会话提取与单写者合并、QoderWork 的意识与反思、ZCode 和 Claude Code 的索引加主题、OpenClaw 的日记与有门槛的晋升、腾讯候选的四层粒度、Devin 与 AMR 的入口结构、OMPI 工作草案的生效时间与墓碑理念，以及 Office Memory 的整理判断。原生后台能力不会自动成为插件功能。
-
-- [设计](plugins/xmemory/docs/design.md)
-- [产品实现与官方规范依据](plugins/xmemory/docs/design-sources.md)
-- [研究 demo 与已有资料](plugins/xmemory/docs/existing-data.md)
-- [原始需求覆盖](plugins/xmemory/docs/requirements.md)
-- [验收标准](plugins/xmemory/docs/acceptance.md)
-- [本次验证结果](docs/validation.md)
-- [分发包说明](docs/release-install.md)
+XMemory 是“一个工具、多个技能”：运行时 CLI 只有一份，放在 `xmemory` 技能里，其余七个技能各管一类活并调用它。运行时内置会话读取（与 Conversation Readers 同源，由同步脚本保持一致），不依赖另装读取插件。
 
 ## 开发检查与构建
 
-[Conversation Readers 插件](plugins/conversation-readers/README.md) 提供 Codex、Claude Code、ZCode、Qoder CN、WorkBuddy 各一个 `Skill + scripts`，用于对话列表、检索、按 ID 读取和分页展开。它需要 Python 3.11+，不自动写入记忆；与 XMemory 列在同一市场，载荷检查见其说明。
-
-Python 3.11+ 仅供维护仓库使用，不是插件运行依赖。
+开发检查与构建需要 Python 3.11+ 和 git（测试用它构造 worktree 夹具）；技能运行时只需 Python 3.9+，不需要 git。
 
 ```bash
-python3 -B tools/sync_skill_resources.py --apply
+python3 -B tools/sync_conversation_readers.py --apply   # 同步读取运行时到各读取技能与 XMemory 技能
 python3 -B tools/check_package.py
+python3 -B tools/build_conversation_readers.py --check
 PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover -s tests -v
-python3 -B tools/build_release.py
+python3 -B tools/build_release.py --output dist/<新目录>
 ```
 
-修改共用文档后同步静态技能资源，检查器会拒绝漂移。构建输出三端市场完整包（含两个插件）、XMemory 五技能包、Conversation Readers 五技能包和各自的 SHA-256；已有同名归档拒绝覆盖，可指定新 `--output`。`tools/`、`tests/`、研究 demo 和个人资料不进入包。
-
-GitHub Actions 在 PR、`main` 更新和手动触发时，使用 Ubuntu 与 Python 3.11 运行包装检查、全部单元测试和临时目录构建。自动检查不执行真实客户端安装、Agent 行为场景或跨设备同步验收。
+构建输出三端市场完整包（含两个插件）、XMemory 技能包、Conversation Readers 技能包及各自的 SHA-256；已有同名归档拒绝覆盖。GitHub Actions 在 PR、`main` 更新和手动触发时运行同样的检查、测试和构建；自动检查不执行真实客户端安装或真实会话提取。
 
 ## 边界
 
-没有程序级锁、事务、跨设备同步或组织权限；靠“采集只新建、整理单写、写前确认、逐项清单”降低风险。原生来源与现有 Office Memory 只读；不自动采集完整历史或改写业务 Skill。可追溯摘要不等于防篡改审计，记忆增多不保证模型更准确。
+- 1.4 默认只提取 ZCode 会话、只读导入 Codex 逐会话记忆；其他客户端可在 `config.toml` 开启。
+- 会话正文由执行技能的客户端模型处理；可按来源限制，默认不限制。
+- 只支持单机；不修改任何客户端原生数据；不保存原始会话副本、密钥或令牌。
+- 运行时校验结构、指针、时间和待办着落；记忆内容是否准确，需要评测和人工抽查。
+
+验证记录见 [验证报告](docs/validation.md)，分发包说明见 [安装包](docs/release-install.md)。
 
 许可证：[GNU GPL v3](LICENSE)。

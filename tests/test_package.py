@@ -13,69 +13,96 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from check_package import SKILLS, check
-from build_release import build
+from check_package import SKILLS, check  # noqa: E402
+from build_release import build  # noqa: E402
+
+PLUGIN = ROOT / "plugins" / "xmemory"
+SKILL = PLUGIN / "skills" / "xmemory"
+
+
+def copy_repo(root: Path):
+    for directory in ("plugins", ".claude-plugin", ".agents"):
+        shutil.copytree(ROOT / directory, root / directory)
 
 
 class PackageTests(unittest.TestCase):
     def test_package_contract(self):
         self.assertEqual(check(), [])
 
-    def test_no_runtime_code_or_components(self):
-        plugin = ROOT / "plugins" / "xmemory"
-        self.assertFalse(any(p.suffix in {".py", ".js", ".mjs", ".sh", ".db"} for p in plugin.rglob("*")))
-        for name in ("scripts", "hooks", "commands", "node_modules"):
-            self.assertFalse((plugin / name).exists())
+    def test_runtime_code_only_in_skill_scripts(self):
+        code = {p.relative_to(PLUGIN).as_posix() for p in PLUGIN.rglob("*") if p.suffix in {".py", ".js", ".sh"}}
+        self.assertEqual(code, {"skills/xmemory/scripts/xmemory.py", "skills/xmemory/scripts/xmemory_runtime.py",
+                                "skills/xmemory/scripts/reader_runtime.py"})
+        for name in ("hooks", "commands", "node_modules"):
+            self.assertFalse((PLUGIN / name).exists())
 
-    def test_skill_descriptions_are_distinct(self):
-        descriptions = []
-        for name in SKILLS:
-            lines = (ROOT / "plugins/xmemory/skills" / name / "SKILL.md").read_text().splitlines()
-            descriptions.append(next(line for line in lines if line.startswith("description:")))
-        self.assertEqual(len(set(descriptions)), 5)
+    def test_one_tool_many_skills(self):
+        self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir()}, SKILLS)
+        self.assertEqual(len(SKILLS), 8)
+        expectations = {
+            "xmemory-recall": ("session",), "xmemory-note": ("note",),
+            "xmemory-extract": ("scan", "import codex", "next --client", "submit", "release"),
+            "xmemory-consolidate": ("consolidate begin", "consolidate finish", "consolidate abort"),
+            "xmemory-run": ("status", "check"), "xmemory-setup": ("init", "project add", "import office-memory", "notice"),
+            "xmemory-maintain": ("status", "check", "forget"),
+        }
+        for skill, commands in expectations.items():
+            text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("](../xmemory/SKILL.md)", text, skill)
+            self.assertIn("../xmemory/scripts/xmemory.py", text, skill)
+            for command in commands:
+                self.assertIn(command, text, (skill, command))
+        tool = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+        for skill in SKILLS - {"xmemory"}:
+            self.assertIn(f"`{skill}`", tool)
+
+    def test_unexpected_script_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            copy_repo(root)
+            (root / "plugins/xmemory/run.py").write_text("print('unexpected')\n")
+            self.assertTrue(any("Non-document payload" in error for error in check(root)))
+            (root / "plugins/xmemory/run.py").unlink()
+            (root / "plugins/xmemory/skills/xmemory/scripts/extra.py").write_text("x = 1\n")
+            self.assertTrue(any("Unexpected script set" in error for error in check(root)))
+            (root / "plugins/xmemory/skills/xmemory/scripts/extra.py").unlink()
+            (root / "plugins/xmemory/skills/xmemory-note/helper.py").write_text("x = 1\n")
+            self.assertTrue(any("Non-document payload" in error for error in check(root)))
+
+    def test_reader_runtime_drift_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            copy_repo(root)
+            path = root / "plugins/xmemory/skills/xmemory/scripts/reader_runtime.py"
+            path.write_text(path.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+            self.assertTrue(any("Reader runtime drift" in error for error in check(root)))
 
     def test_broken_link_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for directory in ("plugins", ".claude-plugin", ".agents"):
-                shutil.copytree(ROOT / directory, root / directory)
-            path = root / "plugins/xmemory/skills/xmemory-recall/SKILL.md"
-            with path.open("a") as stream:
+            copy_repo(root)
+            with (root / "plugins/xmemory/skills/xmemory/SKILL.md").open("a") as stream:
                 stream.write("\n[missing](missing.md)\n")
             self.assertTrue(any("Broken or escaping link" in error for error in check(root)))
-
-    def test_unexpected_runtime_script_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for directory in ("plugins", ".claude-plugin", ".agents"):
-                shutil.copytree(ROOT / directory, root / directory)
-            (root / "plugins/xmemory/run.py").write_text("print('unexpected')\n")
-            self.assertTrue(any("Non-document payload" in error for error in check(root)))
 
     def test_private_absolute_paths_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for directory in ("plugins", ".claude-plugin", ".agents"):
-                shutil.copytree(ROOT / directory, root / directory)
+            copy_repo(root)
             path = root / "plugins/xmemory/README.md"
             original = path.read_text()
             self.assertEqual(check(root), [])
-            # 仅使用虚构目录，覆盖原始路径和 JSON 转义形式。
             windows = "\\".join(("C:", "Users", "fixture-user", "notes.md"))
-            paths = ["/".join(("", base, "fixture-user", "notes.md"))
-                     for base in ("Users", "Volumes", "home")]
-            paths += [windows, json.dumps(windows), windows.replace("\\", "/"),
-                      windows.replace("Users", "users")]
+            paths = ["/".join(("", base, "fixture-user", "notes.md")) for base in ("Users", "Volumes", "home")]
+            paths += [windows, json.dumps(windows), windows.replace("\\", "/")]
             for private_path in paths:
                 with self.subTest(path=private_path):
                     path.write_text(original + "\n" + private_path + "\n")
                     self.assertIn("Private absolute path in payload: README.md", check(root))
-
-    def test_disabled_example_config(self):
-        import tomllib
-        config = tomllib.loads((ROOT / "plugins/xmemory/templates/config.toml").read_text())
-        self.assertNotIn("sources", config)
-        self.assertNotIn("projects", config)
+            path.write_text(original)
+            script = root / "plugins/xmemory/skills/xmemory/scripts/xmemory_runtime.py"
+            script.write_text(script.read_text() + "\n# " + paths[0] + "\n")
+            self.assertTrue(any("Private absolute path" in e for e in check(root)))
 
     def test_archive_is_reproducible_and_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -87,20 +114,19 @@ class PackageTests(unittest.TestCase):
             with zipfile.ZipFile(first) as archive:
                 self.assertIsNone(archive.testzip())
                 label = first.stem
-                sums = archive.read(f"{label}/SHA256SUMS").decode().splitlines()
-                for line in sums:
-                    sha, name = line.split("  ", 1)
-                    self.assertEqual(hashlib.sha256(archive.read(f"{label}/{name}")).hexdigest(), sha)
+                for line in archive.read(f"{label}/SHA256SUMS").decode().splitlines():
+                    digest, name = line.split("  ", 1)
+                    self.assertEqual(hashlib.sha256(archive.read(f"{label}/{name}")).hexdigest(), digest)
                 for plugin in ("xmemory", "conversation-readers"):
-                    payload_names = {name.removeprefix(f"{label}/plugins/{plugin}/") for name in archive.namelist()
-                                     if name.startswith(f"{label}/plugins/{plugin}/")}
+                    payload = {name.removeprefix(f"{label}/plugins/{plugin}/") for name in archive.namelist()
+                               if name.startswith(f"{label}/plugins/{plugin}/")}
                     actual = {p.relative_to(ROOT / "plugins" / plugin).as_posix()
                               for p in (ROOT / "plugins" / plugin).rglob("*") if p.is_file()}
-                    self.assertEqual(payload_names, actual, plugin)
+                    self.assertEqual(payload, actual, plugin)
                 self.assertFalse(any("local/" in name or "tools/" in name or "__pycache__" in name
                                      for name in archive.namelist()))
 
-    def test_portable_skills_are_self_contained(self):
+    def test_portable_skill_is_self_contained(self):
         from check_package import LINK
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -112,19 +138,17 @@ class PackageTests(unittest.TestCase):
                 archive.extractall(base / "extracted")
             skills = base / "extracted" / archive_path.stem / "skills"
             self.assertEqual({p.name for p in skills.iterdir()}, SKILLS)
-            for skill in skills.iterdir():
-                self.assertNotIn("](../../", (skill / "SKILL.md").read_text())
-                for path in skill.rglob("*.md"):
-                    for raw in LINK.findall(path.read_text()):
-                        if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I):
-                            continue
-                        if "{{" in raw and "templates" in path.parts:
-                            continue
-                        target = (path.parent / unquote(raw.split("#", 1)[0])).resolve()
-                        self.assertTrue(target.is_relative_to(skill.resolve()), (path, raw))
-                        self.assertTrue(target.is_file(), (path, raw))
-                self.assertFalse(any(path.suffix in {".py", ".js", ".mjs", ".sh"}
-                                     for path in skill.rglob("*")))
+            for name in ("xmemory.py", "xmemory_runtime.py", "reader_runtime.py"):
+                self.assertTrue((skills / "xmemory" / "scripts" / name).is_file(), name)
+            self.assertEqual({p.relative_to(skills).parts[0] for p in skills.rglob("*.py")}, {"xmemory"})
+            skill = skills
+            for path in skills.rglob("*.md"):
+                for raw in LINK.findall(path.read_text()):
+                    if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I) or "{{" in raw or "<" in raw:
+                        continue
+                    target = (path.parent / unquote(raw.split("#", 1)[0])).resolve()
+                    self.assertTrue(target.is_relative_to(skill.resolve()), (path, raw))
+                    self.assertTrue(target.is_file(), (path, raw))
 
     def test_all_host_catalogs_are_in_archive(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -140,8 +164,7 @@ class PackageTests(unittest.TestCase):
     def test_every_marketplace_lists_both_plugins(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for directory in ("plugins", ".claude-plugin", ".agents"):
-                shutil.copytree(ROOT / directory, root / directory)
+            copy_repo(root)
             self.assertEqual(check(root), [])
             for relative in ("plugins/marketplace.json", ".claude-plugin/marketplace.json",
                              ".agents/plugins/marketplace.json"):
@@ -149,121 +172,28 @@ class PackageTests(unittest.TestCase):
                     path = root / relative
                     original = path.read_text(encoding="utf-8")
                     data = json.loads(original)
-                    data["plugins"] = [entry for entry in data["plugins"] if entry["name"] != "conversation-readers"]
+                    data["plugins"] = [e for e in data["plugins"] if e["name"] != "conversation-readers"]
                     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
                     self.assertTrue(any("must list" in error for error in check(root)))
                     path.write_text(original, encoding="utf-8")
             path = root / ".claude-plugin/marketplace.json"
             data = json.loads(path.read_text(encoding="utf-8"))
-            next(e for e in data["plugins"] if e["name"] == "conversation-readers")["version"] = "9.9.9"
+            next(e for e in data["plugins"] if e["name"] == "xmemory")["version"] = "9.9.9"
             path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            self.assertIn("claude marketplace mismatch: conversation-readers.version", check(root))
+            self.assertIn("claude marketplace mismatch: xmemory.version", check(root))
 
-    def test_resource_drift_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for directory in ("plugins", ".claude-plugin", ".agents"):
-                shutil.copytree(ROOT / directory, root / directory)
-            path = root / "plugins/xmemory/skills/xmemory-recall/references/contract.md"
-            with path.open("a") as stream:
-                stream.write("\nUnexpected independent edit.\n")
-            self.assertTrue(any("Skill resource drift" in error for error in check(root)))
+    def test_format_and_default_root_are_documented(self):
+        runtime = (SKILL / "scripts" / "xmemory_runtime.py").read_text(encoding="utf-8")
+        self.assertIn('FORMAT = "xmemory/v1.4"', runtime)
+        for name in ("SKILL.md", "references/layout.md", "templates/agents-notice.md"):
+            text = (SKILL / name).read_text(encoding="utf-8")
+            self.assertTrue("~/.agents/memory" in text or "{{root}}" in text, name)
+        manifest = json.loads((PLUGIN / ".zcode-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], "1.4.1")
 
-    def test_central_user_root_document_contract(self):
-        plugin = ROOT / "plugins/xmemory"
-        for name in ("references/contract.md", "references/storage.md",
-                     "skills/xmemory-setup/SKILL.md", "integrations/entry.md",
-                     "templates/config.toml", "docs/requirements.md"):
-            text = (plugin / name).read_text()
-            self.assertIn("~/.agents/memory/", text, name)
-        for path in plugin.rglob("*.md"):
-            text = path.read_text()
-            self.assertNotIn("~/.xmemory/", text, str(path))
-            self.assertNotIn("项目内 `.agents/xmemory/`", text, str(path))
-        contract = (plugin / "references/contract.md").read_text()
-        self.assertIn("不在项目中自动创建记忆目录或软链接", contract)
-        self.assertIn("projects/<项目名>/", contract)
-        existing = (plugin / "docs/existing-data.md").read_text()
-        self.assertIn("迁入集中库并停用旧流程", existing)
-
-    def test_memory_hub_contract(self):
-        plugin = ROOT / "plugins/xmemory"
-        for name in ("USER.md", "AWARENESS.md", "MEMORY.md", "topic.md", "daily.md", "record.md",
-                     "run.md", "sources.md", "curation.md", "withdrawn.md", "config.toml"):
-            self.assertTrue((plugin / "templates" / name).is_file(), name)
-        for name in ("CURRENT.md", "day.md", "note.md", "BACKLOG.md"):
-            self.assertFalse((plugin / "templates" / name).exists(), name)
-        contract = (plugin / "references/contract.md").read_text()
-        for phrase in ("采集只新建", "整理是唯一修改记忆正文的动作", "AI 的结论或推荐不能记成用户决定",
-                       "进度只在成功后推进", "记忆内容不带设备特征"):
-            self.assertIn(phrase, contract)
-        storage = (plugin / "references/storage.md").read_text()
-        for phrase in ("daily/YYYY-MM-DD/HHMM-<短名>-<4位随机>.md", "已吸收足迹", "project:<项目名>/",
-                       "state/runs/", "event_at", "当前认识", "记忆候选"):
-            self.assertIn(phrase, storage)
-        curation = (plugin / "references/curation.md").read_text()
-        for phrase in ("关键信息保全", "已有条目损失", "日期绝对化", "30%–70%",
-                       "何时成为有效主题", "亲自读到的用户原话", "支持同一条主张",
-                       "逐条判断", "待确认", "范围从窄", "pending", "verified", "completed"):
-            self.assertIn(phrase, curation)
-        clients = (plugin / "references/clients.md").read_text()
-        self.assertIn("`updated_at` 表示源更新时间", clients)
-        collection = (plugin / "references/collection.md").read_text()
-        for phrase in ("无可记内容", "逐项建立", "状态、回补与连续进度", "连续完成的前缀", "daily/undated"):
-            self.assertIn(phrase, collection)
-        record = (plugin / "skills/xmemory-record/SKILL.md").read_text()
-        self.assertIn("不修改旧主题", record)
-        self.assertIn("supersedes", record)
-        curate = (plugin / "skills/xmemory-curate/SKILL.md").read_text()
-        self.assertIn("./templates/AWARENESS.md", curate)
-        self.assertIn("意识候选", curate)
-        setup = (plugin / "skills/xmemory-setup/SKILL.md").read_text()
-        for link in ("./integrations/scheduled.md", "./integrations/hooks.md", "./integrations/backfill.md"):
-            self.assertIn(link, setup)
-        prompt = (plugin / "integrations/scheduled.md").read_text()
-        self.assertIn("本次无变化", prompt)
-        self.assertIn("XMemory 读取协议", (plugin / "integrations/entry.md").read_text())
-
-    def test_recoverable_workflow_contract(self):
-        plugin = ROOT / "plugins/xmemory"
-        collection = (plugin / "references/collection.md").read_text()
-        curation = (plugin / "references/curation.md").read_text()
-        contract = (plugin / "references/contract.md").read_text()
-        storage = (plugin / "references/storage.md").read_text()
-        for phrase in ("写前读取 `state/withdrawn.md`", "`extends`", "需回补", "未结清单",
-                       "连续完成的前缀", "部分读取"):
-            self.assertIn(phrase, collection)
-        for phrase in ("不证明有人正在运行", "把现有意识原样保存", "不加入本批足迹",
-                       "正文核对全部通过后才标 `verified`", "回读登记", "completed"):
-            self.assertIn(phrase, curation)
-        for phrase in ("失败、活跃会话、部分读取和临时不可访问", "未完成批次", "连续完成前缀"):
-            self.assertIn(phrase, contract)
-        for phrase in ("time_basis", "origin", "extends", "daily/undated.md", "连续完成至", "未结清单",
-                       "不带 `project:` 前缀"):
-            self.assertIn(phrase, storage)
-        self.assertIn("标“完成”需要执行结果或用户确认", curation)
-        self.assertIn("两者按配置时区换算后指向同一时刻",
-                      (plugin / "references/clients.md").read_text())
-
-    def test_behavior_scenarios_cover_v1_3_recovery(self):
-        scenarios = json.loads((ROOT / "tests/scenarios.json").read_text(encoding="utf-8"))
-        ids = {item["id"] for item in scenarios}
-        self.assertEqual(len(ids), len(scenarios))
-        for scenario_id in ("collect-partial-read", "collect-progress-gap", "curate-pending-resume",
-                            "curate-second-pass-preserves-day", "curate-old-candidate-without-footprint",
-                            "curate-active-owner", "record-duplicate-source", "collect-unknown-event-date"):
-            self.assertIn(scenario_id, ids)
-
-    def test_terminology_keeps_office_memory_and_ompi_apart(self):
-        # Office Memory（自有实践）与 OMPI（外部协议草案）不能混写成缩写 OM。
-        for path in (ROOT / "plugins/xmemory").rglob("*.md"):
+    def test_terminology_keeps_office_memory_spelled_out(self):
+        for path in PLUGIN.rglob("*.md"):
             self.assertNotRegex(path.read_text(), r"(?<![A-Za-z])OM(?![A-Za-z])", str(path))
-
-    def test_no_device_fields_in_templates(self):
-        for path in (ROOT / "plugins/xmemory/templates").iterdir():
-            text = path.read_text()
-            self.assertNotRegex(text, r"(?m)^\s*device\s*[:=]", path.name)
-            self.assertNotIn("hostname", text, path.name)
 
     def test_build_does_not_overwrite_existing_archive(self):
         with tempfile.TemporaryDirectory() as tmp:

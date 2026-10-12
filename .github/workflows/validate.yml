@@ -33,3 +33,20 @@ jobs:
         run: python -B tools/build_release.py --output "$RUNNER_TEMP/xmemory-release"
       - name: Build Conversation Readers archives
         run: python -B tools/build_conversation_readers.py --output "$RUNNER_TEMP/conversation-readers-release"
+
+  runtime-python39:
+    # 技能运行时要能在 macOS 自带的 python3（3.9）上跑；开发工具仍用 3.11。
+    name: Skill runtimes on Python 3.9
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.9"
+      - name: Run runtime and reader tests
+        run: python -B -m unittest tests.test_xmemory_runtime tests.test_conversation_readers -v

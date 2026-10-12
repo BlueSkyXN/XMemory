@@ -1,6 +1,6 @@
 # Conversation Readers
 
-版本 **0.1.3**。每个客户端一个 Skill 和自带脚本，提供列出、按关键词检索、按原生 ID 读取、分页与长正文展开。读取结果可用于审阅、报告或工作接续；需要保存为记忆时，再由用户要求的记忆流程处理。0.1.3 起：Codex 遥测/状态信封按元数据处理；Codex 冷会话 `.jsonl.zst` 在系统有 `zstd` 命令时流式解压读取、缺失时按未读报告；`--session` 接受客户端界面复制的 `<工作区>/<ID>.<客户端>-session` 虚拟引用（ZCode 裸 UUID 自动补全 `sess_` 前缀）。
+版本 **0.1.4**。每个客户端一个 Skill 和自带脚本，提供列出、按关键词检索、按原生 ID 读取、分页与长正文展开。读取结果可用于审阅、报告或工作接续；需要保存为记忆时，再由用户要求的记忆流程处理。0.1.3 起：Codex 遥测/状态信封按元数据处理；Codex 冷会话 `.jsonl.zst` 在系统有 `zstd` 命令时流式解压读取、缺失时按未读报告；`--session` 接受客户端界面复制的 `<工作区>/<ID>.<客户端>-session` 虚拟引用（ZCode 裸 UUID 自动补全 `sess_` 前缀）。0.1.4 起：最低 Python 3.9；ISO 时间先规整再解析（`Z`、任意位小数秒、`+0000`），在 3.9 与 3.11 上结果一致。
 
 | 客户端 | Skill | 已适配来源 |
 |---|---|---|
@@ -12,7 +12,7 @@
 
 ## 使用与安装边界
 
-需要 **Python 3.11+**，只用标准库。脚本位于每个 Skill 的 `scripts/read_conversations.py`，无需安装统一 CLI、修改 PATH、配置 MCP 或启动服务。
+需要 **Python 3.9+**（macOS 自带的 `python3` 即可），只用标准库。脚本位于每个 Skill 的 `scripts/read_conversations.py`，无需安装统一 CLI、修改 PATH、配置 MCP 或启动服务。
 
 本插件与 XMemory 列在同一套三端市场中，各自独立安装：ZCode 为 `conversation-readers@xmemory`，Claude Code 为 `conversation-readers@xmemory-claude`，Codex 为 `conversation-readers@xmemory-codex`。插件带 Agent Plugins、Codex、Claude Code 和 ZCode 四份清单。XMemory 采集按会话读取时使用本插件，但两者没有安装依赖；本插件也可单独用于审阅或工作接续。
 

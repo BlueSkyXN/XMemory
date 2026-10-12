@@ -4,20 +4,20 @@
     {
       "name": "xmemory",
       "source": "./xmemory",
-      "version": "1.3.1",
-      "description": "XMemory：跨客户端的记忆中心。用设置、记录、采集、整理、调取五个技能，把各客户端记忆和对话加工成按项目、按时间组织的集中记忆库。纯技能，无后台服务。",
+      "version": "1.4.1",
+      "description": "XMemory：跨客户端记忆库。一个运行时 CLI 加八个技能：运行时清点各客户端会话、管理提取任务与 git 基线；技能分别负责查阅、记一条、逐会话提取、单写者整合、运行一轮、设置与维护。无后台服务。",
       "displayName": "XMemory",
       "displayName_i18n": {
         "zh-CN": "XMemory"
       },
       "description_i18n": {
-        "zh-CN": "跨客户端记忆中心：五个技能把各客户端记忆和对话加工成集中记忆库。无后台服务。"
+        "zh-CN": "跨客户端记忆库：一个运行时、八个技能，逐会话提取、整合成项目意识与手册，任何客户端可查。无后台服务。"
       }
     },
     {
       "name": "conversation-readers",
       "source": "./conversation-readers",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "description": "五个客户端各一个 Skill 和只读脚本：列出、检索、定位与读取对话，不自动写入记忆。",
       "displayName": "Conversation Readers",
       "displayName_i18n": {

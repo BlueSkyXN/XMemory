@@ -15,7 +15,7 @@ FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
 def build(root: Path, output: Path, portable: bool = False) -> tuple[Path, str]:
-    """Full archive: the three host marketplaces with every listed plugin; portable: the five XMemory skills."""
+    """Full archive: the three host marketplaces with every listed plugin; portable: the XMemory skill directory."""
     readers = root / "plugins" / "conversation-readers"
     errors = check(root) + [f"conversation-readers: {item}" for item in check_readers(readers)]
     if errors:

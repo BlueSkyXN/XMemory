@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -10,14 +11,28 @@ import re
 import tomllib
 from urllib.parse import unquote
 
-from sync_skill_resources import sync
-
 ROOT = Path(__file__).resolve().parents[1]
-SKILLS = {"xmemory-setup", "xmemory-record", "xmemory-collect", "xmemory-curate", "xmemory-recall"}
+TOOL = "xmemory"
+SKILLS = {TOOL, "xmemory-recall", "xmemory-note", "xmemory-run", "xmemory-extract", "xmemory-consolidate",
+          "xmemory-setup", "xmemory-maintain"}
 # 市场中的插件及其显示名；conversation-readers 自身的载荷检查在 build_conversation_readers.check。
 PLUGINS = {"xmemory": "XMemory", "conversation-readers": "Conversation Readers"}
 ALLOWED = {".md", ".toml", ".json"}
+SCRIPTS = {"xmemory.py", "xmemory_runtime.py", "reader_runtime.py"}
+# 每个技能必须链接的本地资源；任务技能还必须链接工具技能。
+REQUIRED_LINKS = {
+    TOOL: ("./references/layout.md",),
+    "xmemory-recall": ("./references/recall.md",),
+    "xmemory-extract": ("./references/extract.md",),
+    "xmemory-consolidate": ("./references/consolidate.md",),
+    "xmemory-run": ("../xmemory-extract/SKILL.md", "../xmemory-consolidate/SKILL.md"),
+    "xmemory-setup": ("./templates/automation-prompt.md",),
+}
+# 运行时直接引用的兄弟技能文件。
+RUNTIME_ASSETS = ("xmemory-extract/references/extract.md", "xmemory-consolidate/references/consolidate.md",
+                  "xmemory/templates/agents-notice.md")
 LINK = re.compile(r"\[[^\]]*\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)")
+PRIVATE = re.compile(r"/(?:Users|Volumes|home)/|(?i:[A-Z]:[\\/]+Users[\\/])")
 
 
 def check(root: Path = ROOT) -> list[str]:
@@ -33,7 +48,11 @@ def check(root: Path = ROOT) -> list[str]:
         errors.append("Skills directory is not ./skills")
     skills = plugin / "skills"
     if {p.name for p in skills.iterdir()} != SKILLS:
-        errors.append("Expected exactly five named skills")
+        errors.append(f"Expected exactly the skills {sorted(SKILLS)}")
+    descriptions = []
+    for asset in RUNTIME_ASSETS:
+        if not (skills / asset).is_file():
+            errors.append(f"Missing runtime asset: {asset}")
     for skill in sorted(SKILLS):
         path = skills / skill / "SKILL.md"
         if not path.is_file():
@@ -46,37 +65,50 @@ def check(root: Path = ROOT) -> list[str]:
         else:
             try:
                 description = json.loads(match[2])
+                descriptions.append(description)
                 if not 20 <= len(description) <= 1024:
                     errors.append(f"Description size: {skill}")
             except json.JSONDecodeError:
                 errors.append(f"Description quoting: {skill}")
         if len(text.splitlines()) > 150:
             errors.append(f"Skill is too long: {skill}")
-        if "./references/contract.md" not in text:
-            errors.append(f"Skill-local contract not linked: {skill}")
+        for ref in REQUIRED_LINKS.get(skill, ()) + (() if skill == TOOL else ("../xmemory/SKILL.md",)):
+            if f"]({ref})" not in text:
+                errors.append(f"Skill does not link {ref}: {skill}")
         if "../../" in text:
-            errors.append(f"Skill depends on parent resources: {skill}")
-    try:
-        errors.extend("Skill resource drift: " + item for item in sync(root))
-    except ValueError as exc:
-        errors.append(str(exc))
+            errors.append(f"Skill reaches outside the skills directory: {skill}")
+    if len(set(descriptions)) != len(descriptions):
+        errors.append("Skill descriptions must be distinct")
+    scripts = skills / TOOL / "scripts"
+    if not scripts.is_dir() or {p.name for p in scripts.iterdir() if p.is_file()} != SCRIPTS:
+        errors.append(f"Unexpected script set: {sorted(p.name for p in scripts.iterdir()) if scripts.is_dir() else []}")
+    # 技能内置的读取运行时必须与对话读取插件中的副本逐字一致（二者都由 tools/sync_conversation_readers.py 生成）。
+    bundled = skills / TOOL / "scripts" / "reader_runtime.py"
+    reference = root / "plugins/conversation-readers/skills/read-codex-conversations/scripts/reader_runtime.py"
+    if not bundled.is_file() or not reference.is_file() or bundled.read_bytes() != reference.read_bytes():
+        errors.append("Reader runtime drift: plugins/xmemory/skills/xmemory/scripts/reader_runtime.py")
     for path in sorted(plugin.rglob("*")):
         if path.is_symlink():
             errors.append(f"Symlink in payload: {path.relative_to(plugin)}")
         if not path.is_file():
             continue
         rel = path.relative_to(plugin)
-        if path.suffix not in ALLOWED and path.name != "LICENSE":
+        is_script = rel.parts[:3] == ("skills", TOOL, "scripts") and path.suffix == ".py"
+        if path.suffix not in ALLOWED and path.name != "LICENSE" and not is_script:
             errors.append(f"Non-document payload: {rel}")
+            continue
         text = path.read_text(encoding="utf-8")
-        if re.search(r"/(?:Users|Volumes|home)/|(?i:[A-Z]:[\\/]+Users[\\/])", text):
+        if PRIVATE.search(text):
             errors.append(f"Private absolute path in payload: {rel}")
         if re.search(r"\b(?:TODO|FIXME|YOUR_API_KEY)\b", text):
             errors.append(f"Unresolved scaffold: {rel}")
-        if "{{" in text and "templates" not in rel.parts and not rel.as_posix().endswith("references/storage.md"):
+        if "{{" in text and "templates" not in rel.parts and not is_script:
             errors.append(f"Template token outside templates: {rel}")
         if any(line.rstrip() != line for line in text.splitlines()):
             errors.append(f"Trailing whitespace: {rel}")
+        if is_script:
+            ast.parse(text, filename=str(rel))
+            continue
         if path.suffix == ".json":
             json.loads(text)
         if path.suffix == ".toml":
@@ -88,11 +120,12 @@ def check(root: Path = ROOT) -> list[str]:
         for raw in LINK.findall(text):
             if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I):
                 continue
-            # 模板中的占位链接（含 {{…}}）不是真实链接，由使用者替换。
-            if "{{" in raw and "templates" in rel.parts:
+            # 模板和格式示例中的占位链接（含 <…> 或 {{…}}）不是真实链接，由使用者替换。
+            if "{{" in raw or "<" in raw:
                 continue
             target = (path.parent / unquote(raw.split("#", 1)[0])).resolve()
-            boundary = plugin / "skills" / rel.parts[1] if rel.parts[0] == "skills" else plugin
+            # 技能之间可以互相链接（同一插件的 skills/ 目录内），但不能链接到插件其他位置。
+            boundary = plugin / "skills" if rel.parts[0] == "skills" else plugin
             if not target.is_relative_to(boundary.resolve()) or not target.exists():
                 errors.append(f"Broken or escaping link: {rel}: {raw}")
     for relative in (".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "plugin.json"):
@@ -115,9 +148,6 @@ def check(root: Path = ROOT) -> list[str]:
         if relative == "plugin.json" and data.get("$schema") != "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json":
             errors.append("Missing Agent Plugins schema declaration")
     errors.extend(check_markets(root))
-    cfg = tomllib.loads((plugin / "templates" / "config.toml").read_text(encoding="utf-8"))
-    if cfg != {"format": "xmemory/v1", "capture": "milestone", "quiet_minutes": 60}:
-        errors.append("Template must not enable example sources/projects")
     return errors
 
 

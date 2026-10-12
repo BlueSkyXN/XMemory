@@ -1,4 +1,5 @@
 """虚构原始记录上的行为测试；不读取个人历史，也不启动模型。"""
+from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
 import json
@@ -133,6 +134,17 @@ class ReaderTests(unittest.TestCase):
         items = self.read("workbuddy", p, "read", "--session", "wb", "--include-tools")["items"]
         self.assertEqual([x["kind"] for x in items], ["message", "tool_call", "tool_result"])
         self.assertEqual(items[-1]["call_id"], items[-2]["call_id"])
+
+    def test_iso_times_parse_the_same_on_python_39(self):
+        # 3.9/3.10 的 fromisoformat 不认 Z、非 3/6 位小数秒和 +0000；规整后与 3.11 结果一致
+        expected = datetime(2026, 10, 11, 3, 41, 47, 123456, tzinfo=timezone.utc).timestamp()
+        for value in ("2026-10-11T03:41:47.123456Z", "2026-10-11T03:41:47.1234567Z", "2026-10-11T11:41:47.123456+08:00",
+                      "2026-10-11T03:41:47.123456+0000", "2026-10-11 03:41:47.123456+00", "2026-10-11T03:41:47,123456Z"):
+            with self.subTest(value=value):
+                self.assertAlmostEqual(reader.epoch(value), expected, places=5)
+        self.assertEqual(reader.epoch("2026-10-11T03:41:47.12Z"), reader.epoch("2026-10-11T03:41:47.120Z"))
+        self.assertEqual(reader.epoch("不是时间"), 0)
+        self.assertEqual(reader.parse_iso("2026-10-11").isoformat(), "2026-10-11T00:00:00")
 
     def test_redaction_and_hidden_tool_keys(self):
         p = self.write("s.jsonl", [self.claude(text='password="private-value" Bearer secret-token sk-12345678901234567890')])

@@ -1,8 +1,113 @@
 # XMemory 验证报告
 
-当前版本：**1.3.1**（Conversation Readers 0.1.2）。最新核对日期：2026-10-11。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
+当前版本：**1.4.1**（文件格式 `xmemory/v1.4`；Conversation Readers 0.1.4）。最新核对日期：2026-10-12。
 
-本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+本文保留各开发阶段的本地验证记录。1.3.1 及更早各节是历史记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.4.1：运行时可靠性，不再依赖 git（2026-10-12）
+
+**起因**
+
+外部审查与本地探针在 1.4.0 上确认了一组可靠性缺陷：读取不完整时作废并删除旧摘要；状态库丢失后静默新建空库，待整合输入、撤回和已完成任务全部“消失”；扩大回填窗口不会补切已扫描过的会话；删除不计入 `status` 的待整合输入，时间线保留空月份；提交时 git 失败会留下“任务已完成、文件未提交”的状态，之后每次整合 `finish` 都报越界；旧领取者在租约被接管后仍能提交；失败三次的任务既领不到，文档给的两条恢复路径也走不通；一个会话读取报错会中断整轮 scan；租约过期不计失败次数。按用户要求，修复后运行时不依赖 git。
+
+**改动**
+
+- 不再使用 git：`init` 不建仓库，提取、导入、整合不提交；worktree 归属改为直接读 `.git` 文件。
+- 状态分层：撤回记录 `ledger/forgotten.jsonl` 与各范围已整合版本 `ledger/consolidated/<范围>.json` 随记忆文件保存；`.xmemory/state.sqlite` 可用新命令 `rebuild` 从文件重建（已完成的提取任务按摘要 frontmatter 中的任务与完整指纹恢复）。状态库缺失或库标识不一致时所有命令拒绝运行并提示 `rebuild`。
+- 写事务：持有状态库写锁；改文件前把 `ledger/state.json` 的写入代数加一，文件原子替换，提交时状态库记下同一代数。失败时当场按文件对账，进程被杀则由下一个写命令对账（只前滚：登记已写出的摘要、补删已撤回会话的摘要、重复摘要移到 `.xmemory/recovered/`）。
+- 整合：`begin` 记录全库内容指纹并给本范围产物留副本；`finish` 用指纹判断改动，范围外的变化必须是运行时自己写的（整合期间的提取、forget 不再误报越界）；`abort` 和中断后的下一次 `begin` 用副本恢复到整合前，被替换的版本备份 14 天。整合账本与产物同一事务写入；整合期间被删除的输入下一轮作为删除再传播。
+- 读取不完整：只新增分段、内容增长的分段重新提取；不作废、不删除或替换已有摘要；新出现的读取问题让游标失效，下次重读。
+- 回填：记录每个会话已覆盖的窗口起点，扩大窗口时补切更早的日期。
+- 删除传播：`status` 与 `consolidate begin` 共用一个待整合条件；`forget` 先记账、再删摘要，并当场重新生成时间线；时间线删除已无内容的月份。
+- 任务所有权：`next` 返回租约，`submit`、`release` 必须带 `--lease`，在事务内核对；每个领取者有自己的输出路径。放回、租约过期、领取后读不到会话都计一次失败，满三次转为 `failed`；新增 `retry`、`skip`。
+- scan 按会话隔离读取错误；提取任务的输入在任务结束（完成、跳过、作废、忘记）后删除。
+
+**仓库检查**
+
+- `tools/check_package.py` 通过（插件 25 个文件）；`tools/build_conversation_readers.py --check` 通过；`tools/sync_conversation_readers.py` 无差异；`git diff --check` 无问题；`tools/build_release.py` 构建出 `XMemory-1.4.1.zip` 与 `XMemory-1.4.1-skills.zip`（临时目录）。
+- Python 3.11 上单元测试 108/108 通过（运行时 41 项）；运行时与读取器测试在系统 Python 3.9.6 上 94/94 通过。
+- 新增 15 项运行时测试，审查与探针的复现都转成了测试：读取不完整不删摘要且来源修好后恢复、首轮读取不完整不吞掉日期、扩大窗口补切、forget 进入待整合与时间线、整合期间删除的传播、删除状态库后拒绝运行并由 rebuild 恢复待整合输入与撤回、rebuild 后不重复提取、提交中断后当场与下一个写命令的对账（整合不再被卡住）、租约接管后旧领取者被拒且输出互不覆盖、失败上限与 retry/skip、scan 隔离单个会话错误、领取后读不到会话时放回计次、中断整合在下一次 begin 时恢复、PATH 中没有 git 时完整跑一轮、check 发现未登记输入与被改的时间线。
+- 端到端冒烟：`env -i`、PATH 不含 git、系统 Python 3.9.6 执行 `xmemory.py`：init、project add、note、status、check 正常；删除 `.xmemory` 后 status 拒绝运行，`rebuild` 恢复 1 个待整合输入。
+
+**未验证**
+
+- 没有用真实会话做提取与整合的行为试跑；读取警告在真实数据中的分布（会不会让很多会话每轮重读）尚未观察。
+- `$SKILL_DIR` 在各客户端的解析没有逐端核实。
+- CI 的 Python 3.9 任务还没在 GitHub 上运行过（分支未推送）。
+
+## 1.4.0 补充：Codex 两版记忆与 Python 3.9（2026-10-12）
+
+**起因**
+
+- 本机 Codex 同时在写 `~/.codex/memories`（V1）和 `~/.codex/memories_v2`（V2）。初版只读 V1：近 7 天 24 个 Codex 主会话里，有 6 个只在 V2 里有摘要，会被悄悄漏掉。V2 没有原始记忆块，摘要超过约 9000 字节会被从中间截断（本机 26 份里有 7 份）。
+- 客户端执行命令的 shell 不一定读用户的 shell 配置，`python3` 可能是 macOS 自带的 3.9.6（Xcode Command Line Tools）。初版运行时依赖 3.11 才有的 `tomllib`，在 3.9 上一导入就报错。本机历史会话里，Codex、Claude Code、ZCode 都出现过 3.9.6；Codex 里有代理直接执行 `python3` 时因缺少 `tomllib` 失败的记录。
+
+**改动**
+
+- `import codex` 默认同时读 V1 和 V2 两个根（`sources.codex_memories` 可以配成列表，仍兼容单个路径）。同一会话取较新的快照；同一快照优先有原始记忆块、未被截断的那份。会话摘要的 frontmatter 标出 `codex_memory` 与 `codex_truncated_chars`。
+- 告警：配置的根不存在、摘要格式认不出、V1 没有 `raw_memories.md`、V1 比新版本落后超过 3 天、出现本版不认识的 `memories_v*` 目录。告警和计数同时写进 `status` 的 `last_codex_import`。
+- 覆盖统计改为两版的并集，并排除子代理会话（Codex 本身不为子代理写记忆）。
+- 运行时改为 Python 3.9+：
+  - `config.toml` 改用内置的 TOML 子集解析器（注释、表头、字符串、整数、布尔、数组），超出子集的写法明确报错，所有解释器结果一致；
+  - 时间解析改用读取器的 `parse_iso`；
+  - 入口在 3.9 以下时输出明确的 JSON 错误，不再抛出栈信息。
+- 修正：`dump_config` 的表头和键名改为统一转义。此前项目名含 DEL 字符时会写出不合法的 TOML，是新测试发现的。
+- Conversation Readers 升到 0.1.4（Python 3.9 兼容与时间规整，见其验证记录）。
+- CI 增加 Python 3.9 任务，跑运行时与读取器测试。
+
+**仓库检查**
+
+- `tools/check_package.py` 通过（插件 25 个文件）；`tools/build_conversation_readers.py --check` 通过；`tools/sync_conversation_readers.py` 无差异；`git diff --check` 无问题。
+- Python 3.11 上单元测试 93/93 通过；运行时与读取器测试在系统 Python 3.9.6 上 79/79 通过。
+- 新增的测试覆盖：
+  - V1/V2 合并：较新快照优先、同一快照取 V1、截断标记、源文件不变、幂等、Codex 删除旧摘要后副本保留；
+  - 导入变薄告警：根缺失、格式认不出、没有原始记忆块、V1 停更；默认位置下发现不认识的版本目录；
+  - 配置解析器：往返一致、手写子集与 `tomllib` 结果一致、超出子集与不合法的写法都报错；
+  - 覆盖统计排除子代理；读取器时间规整。
+
+**真实数据冒烟（只读，临时目录，跑完删除）**
+
+- 环境：`env -i` 最小 PATH 下的 `/bin/sh`，`python3` 为系统自带的 3.9.6。
+- 读本机两个 Codex 记忆根：200 个文件全部能解析，合并后 180 个会话（V1 174、V2 26，其中 V2 独有 6）。V1 最新到 10-10、V2 最新到 10-11，未触发停更告警。
+- 登记三个试点项目，按 30 天窗口导入 28 个会话：24 个来自 V1，4 个只有 V2 摘要（初版会漏掉），其中 1 个被 Codex 截断。重复导入时 28 个全部不变。窗口内这三个项目共 41 个 Codex 主会话，其中 9 个两版记忆都没有。
+
+**未验证**
+
+- CI 的 Python 3.9 任务还没在 GitHub 上运行过（分支未推送）。
+- 两版都没有的 Codex 会话是否由 XMemory 自己提取，等用户决定。
+
+## 1.4.0 重做：一个运行时 + 八个技能（2026-10-12）
+
+起因：1.3.1 首轮真实回填只读各端原生记忆（二手），89 个主题全部“待确认”；整理阶段编造了全部批次、意识和每日记忆的时间；同项目明显不如 Office Memory 与 Codex 原生记忆。重构依据和取舍记录在源码仓库 `local/` 下的重构计划（不进入公开包）。
+
+**改动**
+
+- 结构为“一个工具、多个技能”：运行时 CLI 只有一份，在 `xmemory` 技能的 `scripts/`（Python 标准库 `xmemory.py`，以及与 Conversation Readers 同源、由 `tools/sync_conversation_readers.py` 同步的 `reader_runtime.py`）；`xmemory-recall`、`xmemory-note`、`xmemory-run`、`xmemory-extract`、`xmemory-consolidate`、`xmemory-setup`、`xmemory-maintain` 各管一类活，通过相对路径调用它。
+- 机械工作全部由运行时完成：会话清点、项目归属（配置根最长匹配，linked worktree 归主仓库）、按本地日期切分与内容指纹、任务认领与租约、时间戳与会话 ID、git 提交、整合锁、输出校验、时间线生成。
+- 语义工作由执行技能的代理完成：`next` / `submit` 逐会话提取（固定三字段 JSON，运行时校验与脱敏），`consolidate begin` / `finish` / `abort` 单写者整合（按事件日期分批，默认每批 12 项）。
+- Codex 逐会话记忆只读导入，并报告窗口内 Codex 尚未提取的会话数；Office Memory 逐字转录；`session` 只读读回原会话；`forget` 留撤回标识，整合时传播删除；旧意识里没有 key 的待处理条目按开头词核对着落。
+- 读取：不注入、不强制，`notice` 生成写入各客户端用户级规则文件的告知段落。
+- 删除 1.3 的五个技能、共享规范、模板、集成、示例、`tools/sync_skill_resources.py`、`tools/behavior_fixtures.py`、`tests/scenarios.json` 及其测试。
+
+**仓库检查**
+
+- `tools/check_package.py` 通过（插件 25 个文件，八个技能，描述互不相同，任务技能都链接工具技能，Python 只在 `xmemory/scripts/`）；`tools/build_conversation_readers.py --check` 通过；`tools/sync_conversation_readers.py` 无差异；`git diff --check` 无问题。
+- 单元测试 88/88 通过，其中运行时 22 项：方法文档路径存在、`session` 读回原会话与分页、无 key 待处理条目保护、Codex 覆盖统计，以及初始化拒绝接管旧目录、跨午夜切分、窗口与静默期、子代理排除、提交校验与脱敏、空结果、会话变化后重新提取、分段减少后旧任务作废且不死循环、Codex 导入只读且幂等、Office Memory 逐字转录、整合越界与旧待办丢失与缺小节被拒、整合锁、放弃回滚、分批按日期从早到晚、中文项目名（git 路径不转义）、worktree 归属、忘记后不再收录、检查发现手改。
+- 中文项目名测试已确认能抓到问题：临时去掉 `core.quotePath=false` 时该测试失败。
+- `tools/build_release.py` 输出三端完整包、XMemory 技能包和 Conversation Readers 技能包；技能包含八个技能，脚本只在 `skills/xmemory/scripts/`。
+- 按技能文档原样演练（虚构数据、临时目录、跑完删除）：中文项目名建库 → 清点 → 领取 → 按提取方法格式提交 → 按整合方法模板写意识、手册与全局摘要 → finish 通过 → check 无错误 → rg 命中手册 → `session` 读回原会话。
+
+**真实数据兼容性冒烟（只读，临时目录，跑完删除）**
+
+- 在临时记忆根登记两个试点项目，对本机 ZCode 数据库运行 `scan`（只存标题、目录与指纹，不写会话正文）：列出 1140 个会话，跳过 563 个子代理会话；7 天窗口内两个项目 65 个会话，2 个仍活跃暂不处理；生成 84 个提取任务（46 / 38），单任务正文平均约 5.5 万字符，据此把默认上限从 12 万降到 6 万并加入结束标记。
+- 本机 Codex 记忆 174 份逐会话摘要全部可解析，`raw_memories.md` 174 个线程块与之对应；冒烟中未导入。
+
+**未验证**
+
+- 真实代理执行提取与整合的质量（试点计划由 Codex 执行）。
+- Codex 在受限沙箱中能否写入 `~/.agents/memory`、技能在 ZCode / Claude Code / Codex 中的实际安装与调用。
+- 告知段落是否让 AI 在该查时主动查阅；与 Codex 原生记忆、Office Memory 的效果对比（试点评测）。
+- 多设备同步（1.4 只支持单机）。
 
 ## 1.3.1 读取插件并入市场（2026-10-11）
 

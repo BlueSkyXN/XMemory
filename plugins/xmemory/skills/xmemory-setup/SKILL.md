@@ -1,72 +1,53 @@
 ---
 name: xmemory-setup
-description: "设置 XMemory 用户级集中记忆库时使用：初始化或检查 ~/.agents/memory/、发现并登记项目（项目名用平台项目根目录名并登记各客户端别名）、登记各客户端原生记忆与会话来源、接入读取协议、Hook 和定时提示词、准备首次回填。只改配置和入口，不采集正文、不改客户端原生数据。"
+description: "设置 XMemory 时使用：在 ~/.agents/memory 建库、登记或启停项目、逐字导入 Office Memory、生成并合并“XMemory 可用”的告知段落到各客户端用户级规则文件、准备定时运行提示词。只改配置和入口，不提取会话。"
 ---
 
 # XMemory 设置
 
-建立并维护所有客户端、多台机器共用的集中记忆库。设置不是采集：登记来源时不读其中的会话或记忆正文。
+命令和共同规则见 [xmemory 工具](../xmemory/SKILL.md)。下文 `XM` 指 `"$SKILL_DIR/../xmemory/scripts/xmemory.py"`。
 
-## 开始
+## 建库
 
-先读 [共同约定](./references/contract.md) 和 [文件格式](./references/storage.md)；登记来源时读 [客户端读取映射](./references/clients.md)；接入已有资料或迁移时读 [研究 demo 与已有资料](./docs/existing-data.md)。相对路径以本 SKILL.md 所在目录为基准。
+```bash
+python3 "$XM" init --timezone <IANA 时区，如 Asia/Shanghai>
+```
 
-默认记忆根是 `~/.agents/memory/`，与当前工作区无关；用户明确路径或已有明确配置可以覆盖。不在项目中创建数据根或软链接；宿主不能访问集中库时如实说明，不回退到项目内另建副本。
+未指定时区时用本机时区。目标目录已存在且不是 `xmemory/v1.4` 库时，运行时会拒绝；不要替用户移动或删除旧目录，先说明情况、等用户决定。
 
-## 按请求执行
+## 登记项目
 
-### 检查设置
+```bash
+python3 "$XM" project add <项目名> --path <项目根>   # 可多次 --path
+python3 "$XM" project list
+python3 "$XM" project disable <项目名>
+```
 
-只读 `config.toml`、入口和用户点名的范围，检查格式、项目登记与别名冲突、来源路径在本机是否存在、链接和维护主体。报告具体问题，不自动修复，不读来源正文。来源只在别的机器上存在是正常的，只说明“本机没有”。
+- 项目名用平台项目根目录名，原样保留（可含中文）。
+- 只有登记且启用的项目会生成提取任务；会话按工作目录归属，linked worktree 归主仓库。
+- 回填深度由 `config.toml` 的 `backfill_days` 决定（默认 7 天）。
+- 客户端开关在 `[clients]`：`extract`、`import`、`off`；`[restrict]` 可限制某来源只在指定客户端处理，默认不限制。
 
-### 初始化
+## 导入 Office Memory
 
-1. 检查目标路径。不存在或为空才继续；已有有效 XMemory 配置就按增量设置处理；有其他内容或格式未知时停止，说明归属冲突。
-2. 按 [配置模板](./templates/config.toml) 创建 `config.toml`。使用用户指定的时区，未指定时读取本机时区；无法确定才询问。只填实际确认的项目和来源。
-3. 按 [主记忆模板](./templates/MEMORY.md) 创建根 `MEMORY.md`，只列实际存在的入口；登记了项目时创建其 `projects/<项目名>/MEMORY.md`。
-4. 不预建画像、意识、主题、每日记忆、`state/` 和空目录，它们在有内容时产生。不扫描历史，不修改原生客户端数据，不创建任务或 Hook。
-5. 回报记忆根、项目和写入边界，并说明接下来可做的事：接入读取协议、首次回填、挂定时提示词。
+```bash
+python3 "$XM" import office-memory --project <项目名> --path <项目根>/.agents
+```
 
-### 发现并登记项目
+长期条目转为 `topics/<key>.md`，日期记录转为 `daily/`，意识转为 `AWARENESS.md`，正文逐字保留。目标已存在时会拒绝，确认后才加 `--force`。
 
-项目名等于平台项目根目录名，原样保留（含中文和大小写）。目标是让各客户端对同一个项目的不同叫法，都指向同一个项目名。
+## 告知各客户端
 
-1. 收集候选（只列目录名和元数据，不读正文）：
-   - ZCode：`~/.zcode/cli/memories/projects/` 下的 `<目录名小写>-<hash>`；
-   - Claude Code：`~/.claude/projects/` 下的路径编码目录；
-   - Qoder CLI：`~/.qoder-cn/memories/*/projects/` 下的路径编码目录；
-   - Trae：`~/.trae-cn/memory/projects/` 下的路径编码目录；
-   - Codex：`~/.codex/memories/MEMORY.md` 中的 `applies_to: cwd=…`；
-   - 各端会话：已安装会话读取技能时，用其列表输出中的 cwd。
-2. 还原项目根：
-   - 路径编码有损时，按“把 `-` 还原为 `/`、检查路径是否存在”逐段尝试，仍有歧义就用会话 cwd 判断；
-   - 对存在的路径执行 `git -C <路径> rev-parse --show-toplevel --git-common-dir`，linked worktree 归到主仓库；
-   - 不是 Git 仓库时，取用户确认的项目根，或工作区容器下的第一层目录候选；已经确认的历史 roots/aliases 不因本机路径不可达而失效。
-3. 归并：同一项目根合并为一个候选，记录各客户端别名；home、工作区容器本身和未登记的临时目录归 personal。同名不同根先用 `<名>@<父目录名>` 区分，仍冲突时列给用户指定唯一后缀；不覆盖已有项目。用户明确指定的临时测试项目按登记范围处理。
-4. 把尚未确认的候选表给用户确认：项目名、根路径、Git 远程、各客户端别名、会话数量（如可得）。当前请求已明确给定项目/来源时直接按授权登记，不重复询问；新发现且归属不明的项仍先列出。
-5. 无法还原或无法归并的项单独列出，不猜。
+```bash
+python3 "$XM" notice
+```
 
-### 登记来源
+只有用户明确要求时，才把输出的段落合并进各客户端的用户级规则文件，例如 Codex 的全局 AGENTS.md、Claude Code 的全局 CLAUDE.md、ZCode 的全局 AGENTS.md。合并前先读现有内容，不覆盖已有规则，不重复添加；已有旧版 XMemory 段落时替换它，并告诉用户改了哪些文件。
 
-按 [客户端读取映射](./references/clients.md)，为本机实际存在的原生记忆和会话目录生成 `[sources.<id>]`：写 `client`、`kind`、`path`、`route`，默认 `enabled = false`，用户确认后启用。会话来源写明可用的只读读取方式；没有读取方式的不启用。已有 Office Memory 等外部维护者，使用 `owner = "external"` 登记入口；迁移另按迁移步骤执行。
+## 定时运行
 
-修改已有配置时只改点名部分，规范化路径并按目录边界比较；同一路径或别名归属不同项目时，先消除冲突。
+XMemory 没有后台进程。需要定期运行时，把 [定时提示词](./templates/automation-prompt.md) 里的占位填好，交给用户挂到客户端自己的自动化功能上。不要替用户创建定时任务。
 
-### 接入客户端
+## 回报
 
-设置不自动编辑 AGENTS.md、CLAUDE.md 或其他客户端规则。用户明确要求接入时：
-
-1. 先找出实际生效的规则文件，检查是否已有 XMemory 段落或 override，不覆盖旧规则。
-2. 合并 [读取协议](./integrations/entry.md)；数据根不同则替换为实际路径。项目根规则文件可加一行“XMemory 项目：<项目名>”，只写用户确认过的名字。
-3. 需要被动采集时，按 [Hook 模板](./integrations/hooks.md) 给出该客户端的接法，由用户确认后配置。
-4. 需要后台运行时，按 [定时提示词](./integrations/scheduled.md) 填好范围、来源和同步命令，交给用户挂到客户端的定时任务上；不替用户创建任务。
-5. 首次导入历史时，给出 [首次回填提示词](./integrations/backfill.md) 并说明分批方式。
-
-## 完成检查
-
-- 配置可解析，格式为 `xmemory/v1`，`timezone` 已填；
-- 项目名唯一，别名无冲突，每个入口指向真实文件；
-- 没有示例占位内容被当成事实；
-- 没有读取来源正文，没有修改原生数据。
-
-没有解析工具时，说明只做了人工结构检查，不声称 TOML 校验通过。不要把初始化成功报告为“已自动记忆”。
+报告记忆根、时区、登记的项目、导入结果、改动了哪些规则文件；未做的步骤写明原因。
