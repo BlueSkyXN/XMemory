@@ -2,7 +2,21 @@
 
 当前版本：**1.4.1**（文件格式 `xmemory/v1.4`；Conversation Readers 0.1.4）。最新核对日期：2026-10-12。
 
-本文保留各开发阶段的本地验证记录。1.3.1 及更早各节是历史记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+本文保留各开发阶段的验证记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时；后续完成情况以相应版本的收尾记录为准。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.4 收尾：主线、CI 与发布包（2026-10-12）
+
+- [PR #11](https://github.com/BlueSkyXN/XMemory/pull/11) 已合并；发布标签 `v1.4.1` 指向 `5fb5cc081c49d14d04af90f13cd4cef7daaaae75`。原开发分支末端 `7397a81` 与该提交的 Git tree 相同，没有遗漏的文件改动。
+- [PR CI](https://github.com/BlueSkyXN/XMemory/actions/runs/38225996144) 与 [合并后 CI](https://github.com/BlueSkyXN/XMemory/actions/runs/38226144536) 均成功，包含 Python 3.11 包检查、测试和构建，以及 Python 3.9 运行时与读取器测试。
+- [v1.4.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.4.1) 已发布。下载三个 ZIP 及校验文件，核对 GitHub asset digest、外部与包内 SHA-256、ZIP 完整性；从相同源码重新构建，三个 ZIP 的字节和 SHA-256 均与发布包一致。
+- 收尾仅修正插件及市场描述中遗留的“git 基线”，改为“整合进度”，并明确不依赖 git；不改变运行时，不移动发布标签，不替换已发布附件。原发布包仍含旧描述。
+- 1.4 的交付范围至此收束。真实代理提取与整合质量、逐端安装调用和多机同步未由这些检查证明，沿用下文的未验证边界。
+
+| 发布附件 | SHA-256 |
+|---|---|
+| `XMemory-1.4.1.zip` | `677a603057f0857945a81447f8197f9cb5bfe40026b0fd84d7c7432a452ca598` |
+| `XMemory-1.4.1-skills.zip` | `ddfb098e96c83c2df2f35f1987645afb91f86b72e9046a74c788ca650a3d74fb` |
+| `ConversationReaders-0.1.4-skills.zip` | `0390a02f8d683c0434d9396f87f4dea6ad574ed090cb02789d80ea97eb0d4a2f` |
 
 ## 1.4.1：运行时可靠性，不再依赖 git（2026-10-12）
 
@@ -33,7 +47,7 @@
 
 - 没有用真实会话做提取与整合的行为试跑；读取警告在真实数据中的分布（会不会让很多会话每轮重读）尚未观察。
 - `$SKILL_DIR` 在各客户端的解析没有逐端核实。
-- CI 的 Python 3.9 任务还没在 GitHub 上运行过（分支未推送）。
+- 以上本地验证完成后，Python 3.9 任务已在 PR 与合并后 CI 通过，见本页收尾记录。
 
 ## 1.4.0 补充：Codex 两版记忆与 Python 3.9（2026-10-12）
 
