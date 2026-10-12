@@ -33,13 +33,6 @@ def sync(root=ROOT, apply=False):
                 if apply:
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(data)
-    # XMemory 技能内置同一份读取运行时，供清点与提取直接调用。
-    path = root / "plugins/xmemory/skills/xmemory/scripts/reader_runtime.py"
-    if not path.is_file() or path.read_bytes() != source:
-        errors.append(str(path.relative_to(root)))
-        if apply:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(source)
     return errors
 
 

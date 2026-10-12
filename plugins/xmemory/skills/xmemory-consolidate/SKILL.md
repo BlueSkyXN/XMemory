@@ -1,39 +1,26 @@
 ---
 name: xmemory-consolidate
-description: "XMemory 管线的整合阶段：在全局锁下，把某个项目（或 personal）新增、修改、删除的会话摘要和笔记并入项目意识 AWARENESS.md、项目手册 MEMORY.md、主题和全局摘要，再交运行时校验并写入。只要做整合时使用；完整一轮请用 xmemory-run。"
+description: "更新 XMemory 的日总结、项目总结、项目意识、用户画像或全局摘要中的任意对象。依据各自来源编写和整理，不要求先完成其他总结。"
 ---
 
-# XMemory 整合
+# 更新记忆对象
 
-命令和共同规则见 [xmemory 工具](../xmemory/SKILL.md)。下文 `XM` 指 `"$SKILL_DIR/../xmemory/scripts/xmemory.py"`。同一时间只有一处在整合。
+先读 [共同规则](../xmemory/SKILL.md)，再按用户指定对象阅读 [对象工序](../xmemory/references/objects.md) 的对应部分。只更新选定范围，不运行旧版整合命令。
 
-## 步骤
+| 对象 | 直接来源 | 输出 |
+|---|---|---|
+| 日总结 | 当天各类记录 | 全局 `daily/<年>/<日期>.md` |
+| 项目总结 | 该项目记录 | `MEMORY.md` 索引和 `topics/` |
+| 项目意识 | 该项目近期记录及旧意识中的未决事项 | `AWARENESS.md` |
+| 用户画像 | 各记录中的稳定偏好、纠正及导入的画像依据 | `USER.md` |
+| 全局摘要 | 已有项目意识、索引及 `USER.md` | `memory_summary.md` |
 
-1. 开始：
+## 完成一个对象
 
-   ```bash
-   python3 "$XM" consolidate begin --scope <项目名|personal> --client <客户端> [--max-inputs 12]
-   ```
+1. 确认对象本轮应处理的来源范围，读取现有对象及相关记录。缺少可选的日总结或项目总结，不阻止直接从记录更新意识。
+2. 重写、合并或退役旧内容前复制本次文件作为备份；按照该对象的工序处理新旧证据。
+3. 给结论保留来源链接；原始会话与二手记忆出现同一事实时合并内容并保留双方出处，不把两次转述算作两个独立证据。
+4. 完整处理范围后，用实际完成时间更新该对象的 `updated`。项目总结先完成主题文件，再更新索引；只处理了部分主题就不推进索引时间。
+5. 读回检查正文和链接，运行只读 `status`。汇报本次完成的对象及仍需更新的对象。
 
-   返回 `changed: false` 表示本范围没有新输入，结束。否则得到整合 ID、`input` 文件、允许改动的产物范围，以及 `remaining_after_this_batch`。`recovered_interrupted` 不为空表示上一次整合中断、租约已过，运行时已把它的半成品恢复到整合前（旧版本在返回的 `backup` 目录），在汇报里说明。
-2. 按 [整合方法](./references/consolidate.md) 读 `input` 和现有产物，修改：
-   - `projects/<项目>/AWARENESS.md`（整篇重写，五节固定）；
-   - `projects/<项目>/MEMORY.md`（任务组手册）；
-   - 必要时 `projects/<项目>/topics/`、`projects/<项目>/daily/`；
-   - 全局 `memory_summary.md` 中与本项目有关的部分。
-
-   personal 范围对应 `personal/`。
-3. 完成：`python3 "$XM" consolidate finish <ID>`。
-   - 校验失败会列出原因（越界改动、缺小节、旧待办没有着落、链接无效、疑似密钥），修正后再 finish；
-   - 确实无法完成：`python3 "$XM" consolidate abort <ID>`，产物恢复到整合前。
-4. `remaining_after_this_batch` 大于 0 时，finish 后继续下一批。
-
-## 不要做
-
-- 不改 `sessions/`、`inbox/`、`timeline/`（运行时生成）和 `config.toml`。
-- 不写时间戳；finish 时运行时会写入。
-- 不在另一处整合进行中时强行开始；`begin` 报锁冲突就等它结束或租约过期。
-
-## 回报
-
-报告整合的范围和批次数、意识里当前认识和待处理的主要变化、新增或改动的任务组、仍剩余的输入数，以及校验结果。
+没有新偏好时不凑画像；没有当天内容时不建日总结。判断冲突无法解决时并列来源，写明未知；不以“更晚写入”自动判定哪边正确。

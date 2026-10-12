@@ -18,19 +18,18 @@ SKILLS = {TOOL, "xmemory-recall", "xmemory-note", "xmemory-run", "xmemory-extrac
 # 市场中的插件及其显示名；conversation-readers 自身的载荷检查在 build_conversation_readers.check。
 PLUGINS = {"xmemory": "XMemory", "conversation-readers": "Conversation Readers"}
 ALLOWED = {".md", ".toml", ".json"}
-SCRIPTS = {"xmemory.py", "xmemory_runtime.py", "reader_runtime.py"}
+SCRIPTS = {"xmemory.py", "status.py", "toml_subset.py"}
 # 每个技能必须链接的本地资源；任务技能还必须链接工具技能。
 REQUIRED_LINKS = {
-    TOOL: ("./references/layout.md",),
-    "xmemory-recall": ("./references/recall.md",),
-    "xmemory-extract": ("./references/extract.md",),
-    "xmemory-consolidate": ("./references/consolidate.md",),
-    "xmemory-run": ("../xmemory-extract/SKILL.md", "../xmemory-consolidate/SKILL.md"),
-    "xmemory-setup": ("./templates/automation-prompt.md",),
+    TOOL: ("./references/format.md", "./references/status.md"),
+    "xmemory-extract": ("../xmemory/references/sources.md",),
+    "xmemory-consolidate": ("../xmemory/references/objects.md",),
+    "xmemory-run": ("../xmemory-extract/SKILL.md",),
+    "xmemory-setup": ("../xmemory/templates/automation-prompt.md",),
 }
 # 运行时直接引用的兄弟技能文件。
-RUNTIME_ASSETS = ("xmemory-extract/references/extract.md", "xmemory-consolidate/references/consolidate.md",
-                  "xmemory/templates/agents-notice.md")
+RUNTIME_ASSETS = ("xmemory/references/objects.md", "xmemory/references/sources.md",
+                  "xmemory/templates/config.toml", "xmemory/templates/agents-notice.md")
 LINK = re.compile(r"\[[^\]]*\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)")
 PRIVATE = re.compile(r"/(?:Users|Volumes|home)/|(?i:[A-Z]:[\\/]+Users[\\/])")
 
@@ -82,11 +81,6 @@ def check(root: Path = ROOT) -> list[str]:
     scripts = skills / TOOL / "scripts"
     if not scripts.is_dir() or {p.name for p in scripts.iterdir() if p.is_file()} != SCRIPTS:
         errors.append(f"Unexpected script set: {sorted(p.name for p in scripts.iterdir()) if scripts.is_dir() else []}")
-    # 技能内置的读取运行时必须与对话读取插件中的副本逐字一致（二者都由 tools/sync_conversation_readers.py 生成）。
-    bundled = skills / TOOL / "scripts" / "reader_runtime.py"
-    reference = root / "plugins/conversation-readers/skills/read-codex-conversations/scripts/reader_runtime.py"
-    if not bundled.is_file() or not reference.is_file() or bundled.read_bytes() != reference.read_bytes():
-        errors.append("Reader runtime drift: plugins/xmemory/skills/xmemory/scripts/reader_runtime.py")
     for path in sorted(plugin.rglob("*")):
         if path.is_symlink():
             errors.append(f"Symlink in payload: {path.relative_to(plugin)}")
