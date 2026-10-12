@@ -1,0 +1,31 @@
+# xmemory/v1.5 配置模板。按用户选择填写；不保存运行进度。
+format = "xmemory/v1.5"
+# 建库时替换为用户实际使用的 IANA 时区。
+timezone = "Etc/UTC"
+exclude_sessions = []
+
+# 每项来源可独立启用。paths 只填已确认的目录或文件。
+[sources.claude_sessions]
+enabled = false
+kind = "sessions"
+client = "claude"
+paths = ["~/.claude/projects/"]
+
+[sources.codex_memory]
+enabled = false
+kind = "memory"
+client = "codex"
+paths = ["~/.codex/memories/rollout_summaries/", "~/.codex/memories_v2/rollout_summaries/"]
+
+[sources.project_files]
+enabled = false
+kind = "files"
+client = "filesystem"
+paths = []
+
+# 替换 example 为实际项目名，加入已确认的项目根或 worktree 路径。
+[projects.example]
+roots = []
+
+[limits]
+# 意识大小上限未有默认产品值；用户选定后再填写整数 awareness_max_bytes。
