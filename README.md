@@ -2,7 +2,7 @@
 
 跨客户端 Markdown 记忆库：AI 按技能把会话、别家记忆、项目文件和笔记整理成记录、日总结、项目总结、意识、用户画像与全局入口。
 
-当前源码 **1.5.1**，已发布稳定版为 [1.5.0](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.0)，文件格式 `xmemory/v1.5`。程序只有只读 `status`，不再维护任务队列、整合锁、ledger 或内嵌读取器；记忆库不依赖 git。Conversation Readers 是同一市场中的另一个可选插件。
+当前版本 **1.5.1**（[Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.1)），文件格式 `xmemory/v1.5`。程序只有只读 `status`，不再维护任务队列、整合锁、ledger 或内嵌读取器；记忆库不依赖 git。Conversation Readers 是同一市场中的另一个可选插件。
 
 ## 使用方式
 

@@ -13,7 +13,7 @@
 - [status](../../plugins/xmemory/skills/xmemory/references/status.md)
 - [设计与已知边界](../../plugins/xmemory/docs/design.md)
 
-## 1.5.1（开发版本，尚未发布）
+## 1.5.1
 
 - 正文保存总是写真实 `updated`；未完成的派生对象不覆盖正式文件，partial 记录保留显式缺口。
 - 日常增量与客户端每 7 天的完整整理分开，不增加库内状态。

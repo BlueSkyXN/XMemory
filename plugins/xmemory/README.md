@@ -19,6 +19,6 @@ python3 <本插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> s
 
 1.5.1 统一真实更新时间，分开日常增量与每 7 天的客户端整理任务，支持跨日导入关联，并明确原生会话身份与读取器引用的区别。1.5.0 库可以直接读取；可选字段与旧身份的兼容边界见设计文档。
 
-库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 1.5.1，已发布稳定版为 [1.5.0](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.0)。
+库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前版本为 [1.5.1](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.1)。
 
 许可证：GNU GPL v3。

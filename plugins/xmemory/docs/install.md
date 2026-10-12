@@ -1,6 +1,6 @@
 # 安装与首次使用
 
-当前源码 **1.5.1**，已发布稳定版为 [1.5.0](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.0)，格式 `xmemory/v1.5`，需要 Python 3.9+。安装仅提供技能和只读程序，不建库、不采集、不修改客户端配置。
+当前版本 **1.5.1**（[Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.1)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装仅提供技能和只读程序，不建库、不采集、不修改客户端配置。
 
 ## 市场安装
 
