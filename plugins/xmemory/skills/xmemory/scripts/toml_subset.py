@@ -167,4 +167,3 @@ class TomlSubset:
                 self.i += 1
             elif self.peek() != "]":
                 self.error("数组元素之间要用逗号分隔")
-
