@@ -1,10 +1,30 @@
 # XMemory 验证报告
 
-当前版本：**1.5.0**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.4）。最新核对日期：2026-10-12。
+当前版本：**1.5.1**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.4）。最新核对日期：2026-10-12。发布记录见 [1.5.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.1)。
 
 本文保留各开发阶段的验证记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时；后续完成情况以相应版本的收尾记录为准。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
+## 1.5.1：更新时间、跨日来源与独立整理（2026-10-12）
+
+- 技能统一正文修改与真实 `updated`，未完成的派生对象暂不覆盖；项目增量只处理相关主题，完整整理另用客户端每 7 天的提示词，不增加库内状态。
+- `event_days` 只枚举明确事件日期；无该字段时兼容 1.5.0 的 `day`。日期或项目被更正后，已有来源链接仍能触发旧对象复查；无效日期保留未知范围，不静默当作已完整。
+- 新身份用经核实的 `client:<原生 ID>`，读取器引用保留作定位。旧身份保持精确匹配并给复核提示，不自动把文件名或虚拟引用转成原生 ID。
+- 来源参考增加 WorkBuddy 工作区与 Qoder CN CLI 项目记忆。补充 [六个合成效用案例](../evals/v1.5.1/README.md)，13 处证据引文均能定位；独立新会话行为评测尚未执行。
+- Python 3.11 全套 **91/91** 通过，Python 3.9.6 的 status 与读取器 **78/78** 通过，其中 status **25 项**。新增回归覆盖跨日关联、不补造日期、旧单日兼容、无效字段、部分读取的更新时间传播、未完成项目增量、跨来源遗忘身份和旧引用兼容。
+- `tools/check_package.py`、读取器包检查与同步检查、八个技能 `quick_validate.py`、Claude 插件与市场严格校验通过；Claude 校验无错误和警告，另有非阻断的 README 安装行建议。
+- 三个安装包构建成功，ZIP 完整性、外部与包内 SHA-256 全部核对通过。解压独立技能包，在系统 Python 3.9.6 下用合成库验证跨日、排除与 partial 提示；调用前后文件内容、mtime 与清单相同，不生成字节码，不依赖读取器插件。
+- 本次没有修改真实记忆库、客户端配置或定时任务。程序与包验证不证明真实客户端的召回质量；发布不代表独立新会话行为评测已经完成。
+
+| 发布构建附件 | SHA-256 |
+|---|---|
+| `XMemory-1.5.1.zip` | `e15d1f31d3f38fd64c21e5dafb3ff7460905d747464bb70f189323a1d16e9ca3` |
+| `XMemory-1.5.1-skills.zip` | `e50ff248c4faf1fdd7bbb7bfe269b62af3338d6dfbc7225b9ac23b6ee9fb96a2` |
+| `ConversationReaders-0.1.4-skills.zip` | `0390a02f8d683c0434d9396f87f4dea6ad574ed090cb02789d80ea97eb0d4a2f` |
+
 ## 1.5.0：技能优先与只读 status（2026-10-12）
+
+- [PR #13](https://github.com/BlueSkyXN/XMemory/pull/13) 已合并，[1.5.0 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.0) 已发布，标签指向 `e6c23aff3a735ce7947c93dc0f53ab1a96250f22`。
+- [PR CI](https://github.com/BlueSkyXN/XMemory/actions/runs/38243191805) 与 [合并后 CI](https://github.com/BlueSkyXN/XMemory/actions/runs/38243544721) 全部成功。发布的三个 ZIP 下载回读后 SHA-256 与本地发布构建一致。
 
 - 八个技能承接六类独立对象的工序、来源参考与模板，正式资源移入插件，不依赖客户端 `$SKILL_DIR` 环境变量。
 - 程序只保留 status，读取记忆目录，输出更新线索、问题位置、来源时间与当前时间。无客户端读取、无写命令、无状态文件或锁；解析配置沿用既有标准库 TOML 子集。

@@ -11,6 +11,8 @@ evidence: "{{evidence}}"
 projects: []
 day: "{{day}}"
 day_basis: "{{day_basis}}"
+# 跨日文件才增加非空 event_days 字符串数组；只列有依据的日期，captured 时省略。
+# session_refs 使用 client:<已核实原生 ID>；读取器原始引用放 source_ref。
 session_refs: []
 coverage: "{{coverage}}"
 ---

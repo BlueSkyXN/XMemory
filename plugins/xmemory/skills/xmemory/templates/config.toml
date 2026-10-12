@@ -2,6 +2,7 @@
 format = "xmemory/v1.5"
 # 建库时替换为用户实际使用的 IANA 时区。
 timezone = "Etc/UTC"
+# 新条目用 client:<经核实的原生 ID>；仍需匹配的旧读取器引用保留。
 exclude_sessions = []
 
 # 每项来源可独立启用。paths 只填已确认的目录或文件。

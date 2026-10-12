@@ -57,7 +57,7 @@ class StatusTests(unittest.TestCase):
         fields = dict(source="claude", client="claude", source_ref="claude:jsonl:fixture",
                       source_location="/unread-external-source#byte:1", source_updated="2026-10-12T09:00:00+08:00",
                       evidence="primary", projects=["demo"], day="2026-10-12", day_basis="event",
-                      session_refs=["claude:jsonl:fixture"], coverage="complete")
+                      session_refs=["claude:fixture"], coverage="complete")
         fields.update(overrides)
         return self.write(path, "record", **fields)
 
@@ -85,13 +85,106 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(out["assessment"], "stale")
         self.assertIn("USER.md", out["newer_sources"])
 
-    def test_topic_newer_than_index_and_weekly_boundary(self):
-        self.write("projects/demo/MEMORY.md", "project-index", "2026-10-05T18:00:00+08:00")
+    def test_topic_change_is_incremental_but_old_index_is_not_a_schedule(self):
+        self.write("projects/demo/MEMORY.md", "project-index", "2026-09-01T18:00:00+08:00")
+        self.assertEqual(self.objects()["projects/demo/MEMORY.md"]["assessment"], "current")
         self.assertNotIn("review_due", self.objects()["projects/demo/MEMORY.md"]["reasons"])
-        self.write("projects/demo/MEMORY.md", "project-index", "2026-10-05T17:59:59+08:00")
-        self.assertIn("review_due", self.objects()["projects/demo/MEMORY.md"]["reasons"])
         self.write("projects/demo/topics/build.md", "topic")
         self.assertIn("projects/demo/topics/build.md", self.objects()["projects/demo/MEMORY.md"]["newer_sources"])
+
+    def test_multiday_record_discovers_only_evidenced_days(self):
+        self.record(day="2026-10-10", event_days=["2026-10-12", "2026-10-10", "2026-10-12"])
+        out = self.objects()
+        days = {p for p in out if p.startswith("daily/")}
+        self.assertEqual(days, {"daily/2026/2026-10-10.md", "daily/2026/2026-10-12.md"})
+        self.assertTrue(all(out[p]["assessment"] == "missing" for p in days))
+        for day in ("2026-10-10", "2026-10-12"):
+            self.write("daily/2026/" + day + ".md", "daily", "2026-10-12T09:00:00+08:00", day=day)
+        out = self.objects()
+        self.assertTrue(all(out[p]["assessment"] == "stale" for p in days))
+        self.assertTrue(all(out[p]["newer_sources"] == ["records/sessions/claude/r.md"] for p in days))
+
+    def test_legacy_day_and_unknown_event_time_remain_supported(self):
+        self.record(day_basis="captured")
+        out = self.objects()
+        self.assertEqual([p for p in out if p.startswith("daily/")], ["daily/2026/2026-10-12.md"])
+        self.assertNotIn("invalid_field", self.codes())
+
+    def test_corrected_date_or_project_still_invalidates_existing_citation(self):
+        self.record(updated="2026-10-12T08:00:00+08:00", day="2026-10-10")
+        citation = "[source](../../records/sessions/claude/r.md)"
+        self.write("daily/2026/2026-10-10.md", "daily", day="2026-10-10", body=citation)
+        self.write("projects/demo/AWARENESS.md", "awareness", body=citation)
+        self.record(updated="2026-10-12T12:00:00+08:00", projects=[], day="2026-10-12")
+        out = self.objects()
+        self.assertEqual(out["daily/2026/2026-10-10.md"]["assessment"], "stale")
+        self.assertEqual(out["projects/demo/AWARENESS.md"]["assessment"], "review")
+        self.assertEqual(out["daily/2026/2026-10-10.md"]["newer_sources"], ["records/sessions/claude/r.md"])
+
+    def test_invalid_event_days_preserve_unknown_scope(self):
+        self.write("daily/2026/2026-10-11.md", "daily", "2026-10-12T17:00:00+08:00", day="2026-10-11")
+        for value in ([], "2026-10-12", ["not-a-day"], ["2026-02-30"], ["2026-10-10", 12]):
+            with self.subTest(value=value):
+                self.record(event_days=value)
+                self.assertIn("invalid_field", self.codes())
+                out = self.objects()
+                self.assertEqual(out["records/sessions/claude/r.md"]["assessment"], "unknown")
+                self.assertEqual(out["daily/2026/2026-10-11.md"]["assessment"], "unknown")
+        self.record(day_basis="captured", event_days=["2026-10-12"])
+        self.assertIn("invalid_field", self.codes())
+        self.assertEqual(self.objects()["daily/2026/2026-10-11.md"]["assessment"], "unknown")
+
+    def test_partial_record_real_update_invalidates_derived_content(self):
+        self.record(updated="2026-10-12T08:00:00+08:00")
+        self.write("daily/2026/2026-10-12.md", "daily", day="2026-10-12")
+        self.write("projects/demo/MEMORY.md", "project-index")
+        self.write("projects/demo/topics/build.md", "topic", body="[source](../../../records/sessions/claude/r.md)")
+        paths = ("daily/2026/2026-10-12.md", "projects/demo/MEMORY.md", "projects/demo/topics/build.md")
+        self.assertTrue(all(self.objects()[p]["assessment"] == "current" for p in paths))
+        self.record(updated="2026-10-12T12:00:00+08:00", coverage="partial", body="已读取的新事实；后一页暂不可读。")
+        out = self.objects()
+        for path in paths:
+            self.assertEqual(out[path]["assessment"], "stale")
+            self.assertIn("partial_source", out[path]["reasons"])
+            self.assertIn("records/sessions/claude/r.md", out[path]["newer_sources"])
+
+    def test_project_partial_topic_work_keeps_index_pending(self):
+        self.write("projects/demo/MEMORY.md", "project-index", "2026-10-12T08:00:00+08:00")
+        self.record("records/sessions/claude/one.md", updated="2026-10-12T09:00:00+08:00")
+        self.record("records/sessions/claude/two.md", updated="2026-10-12T10:00:00+08:00")
+        self.write("projects/demo/topics/one.md", "topic", "2026-10-12T11:00:00+08:00",
+                   body="[source](../../../records/sessions/claude/one.md)")
+        out = self.objects()["projects/demo/MEMORY.md"]
+        self.assertEqual(out["assessment"], "stale")
+        self.assertIn("records/sessions/claude/two.md", out["newer_sources"])
+        self.assertIn("projects/demo/topics/one.md", out["newer_sources"])
+
+    def test_native_identity_matches_imported_copy_without_cross_client_conflation(self):
+        self.record()
+        self.record("records/imported/codex/copy.md", source_ref="/fixture/native-summary.md", evidence="secondary")
+        self.record("records/sessions/codex/other.md", source_ref="codex:jsonl:fixture", client="codex",
+                    session_refs=["codex:fixture"])
+        p = self.root / "config.toml"
+        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["claude:fixture"]'))
+        result = self.result()
+        excluded = {x["path"] for x in result["issues"] if x["code"] == "excluded_record"}
+        self.assertEqual(excluded, {"records/sessions/claude/r.md", "records/imported/codex/copy.md"})
+        self.assertNotIn("identity_review", {x["code"] for x in result["issues"]})
+
+    def test_legacy_reader_identity_warns_and_matches_exactly_without_inference(self):
+        legacy = "claude:jsonl:fixture"
+        self.record(session_refs=[legacy])
+        self.record("records/sessions/claude/native.md")
+        p = self.root / "config.toml"
+        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["' + legacy + '"]'))
+        result = self.result()
+        excluded = {x["path"] for x in result["issues"] if x["code"] == "excluded_record"}
+        self.assertEqual(excluded, {"records/sessions/claude/r.md"})
+        review = {x["path"] for x in result["issues"] if x["code"] == "identity_review"}
+        self.assertEqual(review, {"config.toml", "records/sessions/claude/r.md"})
+        for identity in ("zcode:sqlite:fixture", "qodercn:desktop:fixture", "claude:subagent:parent:child"):
+            self.record(session_refs=[identity])
+            self.assertIn("identity_review", self.objects()["records/sessions/claude/r.md"]["reasons"])
 
     def test_invalid_and_partial_records_do_not_look_current(self):
         self.record(coverage="partial")
@@ -151,7 +244,7 @@ class StatusTests(unittest.TestCase):
     def test_exclusions_and_backup_ignored(self):
         self.record()
         p = self.root / "config.toml"
-        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["claude:jsonl:fixture"]'))
+        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["claude:fixture"]'))
         self.write(".xmemory/backups/USER.md", "user", body="password = not-a-real-secret\n")
         result = self.result()
         self.assertIn("excluded_record", {x["code"] for x in result["issues"]})

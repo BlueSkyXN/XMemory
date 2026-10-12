@@ -2,7 +2,7 @@
 
 ## 1.5.0
 
-当前实现采用技能优先的产品定义：六类记忆对象分别更新，程序仅有只读 status。旧任务队列、整合锁、ledger 与内嵌读取器已经退役。格式为 `xmemory/v1.5`，Conversation Readers 独立可选。
+[1.5.0 已发布](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.0)，采用技能优先的产品定义：六类记忆对象分别更新，程序仅有只读 status。旧任务队列、整合锁、ledger 与内嵌读取器已经退役。格式为 `xmemory/v1.5`，Conversation Readers 独立可选。
 
 技能稿已移入正式插件，不在此处维护重复副本：
 
@@ -13,6 +13,12 @@
 - [status](../../plugins/xmemory/skills/xmemory/references/status.md)
 - [设计与已知边界](../../plugins/xmemory/docs/design.md)
 
-## 后续改进
+## 1.5.1
 
-1.5.1 将完善更新时间语义，拆开增量更新与周期整理，补齐跨日来源关联、遗忘身份与来源参考，并加入带标准答案的最小效用验证案例。版本交付与验证以相应 Git 标签、Release 和验证报告为准。
+- 正文保存总是写真实 `updated`；未完成的派生对象不覆盖正式文件，partial 记录保留显式缺口。
+- 日常增量与客户端每 7 天的完整整理分开，不增加库内状态。
+- `event_days` 支持一份跨日文件关联多个有证据的日期，仍兼容单日 `day`。
+- 用经核实的原生会话身份跨来源遗忘；旧引用继续精确匹配并提示复核，不自动猜测迁移。
+- 来源参考补全 WorkBuddy 工作区和 Qoder CN CLI，另有 [合成验证案例](../../evals/v1.5.1/README.md)。
+
+交付与验证以相应 Git 标签、Release 和 [验证报告](../validation.md) 为准。

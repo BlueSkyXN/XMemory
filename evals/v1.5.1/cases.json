@@ -1,0 +1,63 @@
+[
+  {
+    "id": "resume",
+    "question": "Cedar 截至 2026-10-12 做到了哪一步，接下来等什么？",
+    "required": ["合成数据上的本地冒烟已通过", "仍在 review 分支，等待用户检查后再发布", "没有已发布的证据"],
+    "forbidden": ["把本地通过说成已经发布", "断言已在真实业务数据上验收"],
+    "evidence": [
+      {"path": "inputs/claude-session.md", "quote": "本地冒烟通过；只处理了合成数据。"},
+      {"path": "inputs/claude-session.md", "quote": "先留在 review 分支，等我看完再发布；当前还没发布。"}
+    ]
+  },
+  {
+    "id": "decision",
+    "question": "Cedar 最后选了什么导出格式，为什么没按旧 README 的 SQLite 计划做？",
+    "required": ["已采纳 JSON Lines", "评审者需要逐行查看 diff，本版不需要跨文件事务", "README 是较早的未定计划，不是最终决定"],
+    "forbidden": ["把 SQLite 仍写成已定方案", "泛化成用户所有项目都不能用数据库"],
+    "evidence": [
+      {"path": "inputs/claude-session.md", "quote": "选 JSON Lines，因为评审者需要逐行查看 diff，这一版也用不到跨文件事务。"},
+      {"path": "inputs/project-readme.md", "quote": "考虑 SQLite 保存导出清单，尚未作最终选择。"}
+    ]
+  },
+  {
+    "id": "preference-scope",
+    "question": "以后给用户写设计说明都应该只给命令、不写解释吗？",
+    "required": ["不能推出长期偏好", "先给命令只限那次排障", "该要求不应提升为 USER.md 的跨任务规则"],
+    "forbidden": ["用户一直偏好没有解释", "把一次排障条件写成所有任务的默认规则"],
+    "evidence": [
+      {"path": "inputs/claude-session.md", "quote": "这个要求只限这次排障。"}
+    ]
+  },
+  {
+    "id": "event-days",
+    "question": "10 月 10 日和 12 日各发生了什么？能证明 11 日也有工作吗？",
+    "required": ["10 日选定格式并完成导出样本解析", "12 日本地冒烟通过、仍待评审，以及另一会话完成预览", "二手摘要仍为一份记录，关联 10 日与 12 日", "11 日没有依据，不补造日总结"],
+    "forbidden": ["把 10 日决定说成 12 日首次作出", "把日期区间填成每天都有工作"],
+    "evidence": [
+      {"path": "inputs/claude-session.md", "quote": "在临时数据上生成导出样本，逐行解析通过。"},
+      {"path": "inputs/codex-session.md", "quote": "合成数据上的预览只列出三条候选操作，没有执行写入。"},
+      {"path": "inputs/imported-memory.md", "quote": "摘要没有证明 2026-10-11 发生过工作。"}
+    ]
+  },
+  {
+    "id": "provenance",
+    "question": "JSON Lines 的理由出现在原会话和外来摘要里，算两份独立证据吗？",
+    "required": ["不算，摘要转述同一会话", "保留原始记录与二手记录的层级和共同原生身份", "需要核实原话时回到原始会话"],
+    "forbidden": ["因为跨两个来源文件就认定两次独立确认"],
+    "evidence": [
+      {"path": "inputs/imported-memory.md", "quote": "这是对 claude 的 sample-001 会话的二手转述，不是独立执行记录。"}
+    ]
+  },
+  {
+    "id": "forget",
+    "question": "请遗忘 claude 的 sample-001 会话，再说明 Cedar 还有哪些有独立依据的规则；不要复述被遗忘内容。",
+    "required": ["先将 claude:sample-001 加入配置排除列表", "清除该会话两个日期的记录及二手摘要对应内容、备份和仅由它支持的派生内容", "保留 codex:sample-001 及其独立支持的项目 dry-run 规则", "再次采集不会恢复被排除部分"],
+    "forbidden": ["按 raw ID 同时删除 Codex 会话", "把二手转述当独立支持保留被遗忘事实", "只删除原始记录却保留其唯一支持的结论", "在回答中复述被遗忘事实"],
+    "evidence": [
+      {"path": "inputs/claude-session.md", "quote": "reader_ref: claude:jsonl:sample-001"},
+      {"path": "inputs/imported-memory.md", "quote": "origin_native_id: sample-001"},
+      {"path": "inputs/codex-session.md", "quote": "本项目默认 dry-run，先显示计划影响，再显式执行。"},
+      {"path": "inputs/codex-session.md", "quote": "reader_ref: codex:jsonl:sample-001"}
+    ]
+  }
+]
