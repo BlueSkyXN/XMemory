@@ -25,7 +25,7 @@ REQUIRED_LINKS = {
     "xmemory-extract": ("../xmemory/references/sources.md",),
     "xmemory-consolidate": ("../xmemory/references/objects.md",),
     "xmemory-run": ("../xmemory-extract/SKILL.md",),
-    "xmemory-setup": ("../xmemory/templates/automation-prompt.md",),
+    "xmemory-setup": ("../xmemory/templates/automation-prompt.md", "../xmemory/templates/organization-prompt.md"),
 }
 # 运行时直接引用的兄弟技能文件。
 RUNTIME_ASSETS = ("xmemory/references/objects.md", "xmemory/references/sources.md",

@@ -7,9 +7,9 @@
 | Codex | `~/.codex/sessions/`、`~/.codex/archived_sessions/`：`rollout-*.jsonl`，冷数据可能是 `.jsonl.zst` | `~/.codex/memories/`（V1：`memory_summary.md`、`MEMORY.md`、`rollout_summaries/`、`raw_memories.md`）；`~/.codex/memories_v2/`（V2：`memory_summary.md`、`rollout_summaries/`） | 有 |
 | Claude Code | `~/.claude/projects/<路径化目录>/*.jsonl` | `~/.claude/projects/<路径化目录>/memory/`：`MEMORY.md` 索引 + 一条一文件 | 有 |
 | ZCode | `~/.zcode/cli/db/db.sqlite`（session / message / part 表） | `~/.zcode/cli/memories/projects/<项目>-<哈希>/` | 有 |
-| Qoder CN | `~/.qoder-cn/projects/`、`~/Library/Application Support/com.qodercn.app.stable/main.sqlite` | `~/.qoder-cn/memory/`（新桌面：索引 + 主题）；`~/.qoder-cn/memories/<用户ID>/projects/<路径化目录>/<类别>/`（旧版分类记忆，frontmatter 有 `usage_scenario`、`keywords`、`source`） | 有 |
+| Qoder CN | `~/.qoder-cn/projects/`、`~/Library/Application Support/com.qodercn.app.stable/main.sqlite` | `~/.qoder-cn/projects/<项目>/memory/`（CLI 项目记忆）；`~/.qoder-cn/memory/`（新桌面索引 + 主题，CLI 也可能有用户级记忆）；`~/.qoder-cn/memories/<用户ID>/projects/<路径化目录>/<类别>/`（旧版分类记忆，frontmatter 有 `usage_scenario`、`keywords`、`source`） | 有 |
 | QoderWork CN | 未适配 | `~/.qoderworkcn/awareness/main/`：`MEMORY.md`（§ 分隔）、`USER.md`、`memory/YYYY-MM-DD.md`（`<!-- memory-chat:… -->` 会话块） | 无 |
-| WorkBuddy | `~/.workbuddy/projects/` | `~/.workbuddy/MEMORY.md`、`~/.workbuddy/memory/` | 有 |
+| WorkBuddy | `~/.workbuddy/projects/` | `<工作区>/.workbuddy/memory/` 内的 `MEMORY.md` 与 `YYYY-MM-DD.md`；也检查选定的 `~/.workbuddy/MEMORY.md`、`~/.workbuddy/memory/` | 有 |
 | 项目目录 | — | 指令文件（AGENTS.md / CLAUDE.md）、README、`docs/`、成果目录说明 | — |
 
 ## 有读取器时
@@ -17,6 +17,8 @@
 Conversation Readers 是可选的独立插件。按当前实际提供的客户端读取技能使用 `list / read / search`，命令参数和分页以它的文档与 `--help` 为准。已安装但未在当前环境可用时，不声称调用成功。
 
 保留完整会话身份和原件定位。先读可见正文，确认执行事实才展开对应工具结果；检查 warnings、coverage、has_more 和 truncated。JSONL 的快照变化后重置分页，不把两次不同快照拼成完整读取。
+
+读取器 `session_ref` 用于再次定位，记录的 `session_refs` 用于跨来源遗忘，二者按 [身份约定](format.md#会话身份) 分开填写。不同产品形态和版本分别核实路径；桌面记忆、CLI 项目记忆、QoderWork 的周期反思不能仅凭产品名互相推定。
 
 ## 没有读取器时
 

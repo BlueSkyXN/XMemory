@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -40,6 +40,24 @@ def valid_day(value):
         return isinstance(value, str) and date.fromisoformat(value).isoformat() == value
     except ValueError:
         return False
+
+
+def record_days(metadata):
+    """兼容 1.5.0 单日记录；新字段只列材料实际支持的日期，不展开猜测的范围。"""
+    if "event_days" in metadata:
+        values = metadata["event_days"]
+        if not isinstance(values, list) or not values or not all(valid_day(x) for x in values):
+            return []
+        return sorted(set(values))
+    return [metadata["day"]] if valid_day(metadata.get("day")) else []
+
+
+def canonical_identity(value):
+    if not isinstance(value, str) or re.search(r"\s", value):
+        return False
+    client, sep, native = value.partition(":")
+    return bool(sep and re.fullmatch(r"[a-z][a-z0-9_-]*", client) and native
+                and not re.match(r"(?:jsonl|sqlite|desktop|subagent):", native))
 
 
 def frontmatter(text):
@@ -163,6 +181,8 @@ def report(root, now=None):
     now = now.astimezone(zone)
     output.update(timezone=cfg["timezone"], now=now.isoformat())
     excluded = set(cfg.get("exclude_sessions", []))
+    if any(not canonical_identity(ref) for ref in excluded):
+        issue("identity_review", "config.toml", field="exclude_sessions")
     for number, line in enumerate(config_text.splitlines(), 1):
         if SECRET.search(line):
             issue("suspected_secret", "config.toml", line=number)
@@ -224,6 +244,10 @@ def report(root, now=None):
                         issue("missing_field", rel, field=key)
                 if not valid_day(fm.get("day")):
                     issue("invalid_field", rel, field="day")
+                if "event_days" in fm and not record_days(fm):
+                    issue("invalid_field", rel, field="event_days")
+                if fm.get("day_basis") == "captured" and "event_days" in fm:
+                    issue("invalid_field", rel, field="event_days/day_basis")
                 if fm.get("coverage") not in {"complete", "partial"}:
                     issue("invalid_field", rel, field="coverage")
                 if fm.get("evidence") not in {"primary", "primary-summary", "secondary"}:
@@ -243,6 +267,8 @@ def report(root, now=None):
                 if not valid_day(fm.get("day")) or Path(rel).stem != fm.get("day"):
                     issue("invalid_field", rel, field="day")
             bad = len(issues) != start
+            if kind == "record" and any(not canonical_identity(ref) for ref in fm.get("session_refs", [])):
+                issue("identity_review", rel, field="session_refs")
             if kind == "record" and fm.get("coverage") == "partial":
                 issue("partial_source", rel)
             if kind == "record" and excluded.intersection(fm.get("session_refs", [])):
@@ -288,8 +314,7 @@ def report(root, now=None):
         projects = record["fm"].get("projects", [])
         if not projects:
             scopes.add("personal")
-        day = record["fm"].get("day")
-        if valid_day(day):
+        for day in record_days(record["fm"]):
             targets[f"daily/{day[:4]}/{day}.md"] = "daily"
     for scope in scopes:
         targets.setdefault(scope + "/MEMORY.md", "project-index")
@@ -302,7 +327,9 @@ def report(root, now=None):
         doc = docs.get(rel)
         inputs = []
         if kind in {"daily", "user"}:
-            inputs = records if kind == "user" else [r for r in records if r["fm"].get("day") == Path(rel).stem]
+            inputs = records if kind == "user" else [
+                r for r in records if Path(rel).stem in record_days(r["fm"]) or not record_days(r["fm"])
+                or (r["fm"].get("day_basis") == "captured" and "event_days" in r["fm"])]
         elif kind in {"project-index", "awareness"}:
             scope = rel.rsplit("/", 1)[0]
             project = scope.split("/", 1)[1] if scope.startswith("projects/") else None
@@ -314,6 +341,10 @@ def report(root, now=None):
             inputs = [d for d in docs.values() if d["kind"] in {"awareness", "project-index", "user"}]
         elif kind == "topic" and doc:
             inputs = [docs[p] for p in doc["links"] if p in docs]
+        if doc and kind != "record":
+            # 已有引用也参与复查，避免日期或项目更正后旧对象失去变化信号。
+            inputs += [docs[p] for p in doc["links"] if p in docs and p != rel]
+            inputs = list({d["path"]: d for d in inputs}.values())
         newer = [d["path"] for d in inputs if d["time"] and (not doc or not doc["time"] or d["time"] > doc["time"])]
         reasons = []
         state = "current"
@@ -329,10 +360,6 @@ def report(root, now=None):
         elif newer:
             state = "review" if kind in {"user", "awareness"} else "stale"
             reasons.append("newer_sources")
-        if kind == "project-index" and doc and doc["time"] and now - doc["time"] > timedelta(days=7):
-            if state != "unknown":
-                state = "stale"
-            reasons.append("review_due")
         if any(d["fm"].get("coverage") == "partial" for d in inputs + ([doc] if doc else [])):
             if state == "current":
                 state = "review"
