@@ -1,8 +1,40 @@
 # XMemory 验证报告
 
-当前版本：**1.3.1**（Conversation Readers 0.1.2）。最新核对日期：2026-10-11。正式文件格式仍为 `xmemory/v1`。研究 demo 不计入正式版本线。
+当前版本：**1.4.0**（文件格式 `xmemory/v1.4`；Conversation Readers 0.1.3 未改动）。最新核对日期：2026-10-12。
 
-本文保留各开发阶段的本地验证记录，下文“未提交／未发布”等表述对应各阶段的记录时点。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+本文保留各开发阶段的本地验证记录。1.3.1 及更早各节是历史记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.4.0 重做：运行时 + 单技能（2026-10-12）
+
+起因：1.3.1 首轮真实回填只读各端原生记忆（二手），89 个主题全部“待确认”；整理阶段编造了全部批次、意识和每日记忆的时间；同项目明显不如 Office Memory 与 Codex 原生记忆。重构依据和取舍记录在源码仓库 `local/` 下的重构计划（不进入公开包）。
+
+**改动**
+
+- 插件收缩为一个技能 `xmemory`，内置 Python 标准库运行时 `scripts/xmemory.py`，以及与 Conversation Readers 同源的读取运行时 `scripts/reader_runtime.py`（由 `tools/sync_conversation_readers.py` 同步）。
+- 机械工作全部由运行时完成：会话清点、项目归属（配置根最长匹配，linked worktree 归主仓库）、按本地日期切分与内容指纹、任务认领与租约、时间戳与会话 ID、git 提交、整合锁、输出校验、时间线生成。
+- 语义工作由执行技能的代理完成：`next` / `submit` 逐会话提取（固定三字段 JSON，运行时校验与脱敏），`consolidate begin` / `finish` / `abort` 单写者整合（按事件日期分批，默认每批 12 项）。
+- Codex 逐会话记忆只读导入；Office Memory 逐字转录；`forget` 留撤回标识，整合时传播删除。
+- 读取：不注入、不强制，`notice` 生成写入各客户端用户级规则文件的告知段落。
+- 删除 1.3 的五个技能、共享规范、模板、集成、示例、`tools/sync_skill_resources.py`、`tools/behavior_fixtures.py`、`tests/scenarios.json` 及其测试。
+
+**仓库检查**
+
+- `tools/check_package.py` 通过（插件 18 个文件）；`tools/build_conversation_readers.py --check` 通过；`tools/sync_conversation_readers.py` 无差异；`git diff --check` 无问题。
+- 单元测试 84/84 通过，其中运行时 18 项：初始化拒绝接管旧目录、跨午夜切分、窗口与静默期、子代理排除、提交校验与脱敏、空结果、会话变化后重新提取、分段减少后旧任务作废且不死循环、Codex 导入只读且幂等、Office Memory 逐字转录、整合越界与旧待办丢失与缺小节被拒、整合锁、放弃回滚、分批按日期从早到晚、中文项目名（git 路径不转义）、worktree 归属、忘记后不再收录、检查发现手改。
+- 中文项目名测试已确认能抓到问题：临时去掉 `core.quotePath=false` 时该测试失败。
+- `tools/build_release.py` 输出三端完整包、XMemory 技能包和 Conversation Readers 技能包；技能包含完整 `skills/xmemory/`（13 个文件，含三个脚本）。
+
+**真实数据兼容性冒烟（只读，临时目录，跑完删除）**
+
+- 在临时记忆根登记 两个试点项目，对本机 ZCode 数据库运行 `scan`（只存标题、目录与指纹，不写会话正文）：列出 1140 个会话，跳过 563 个子代理会话；7 天窗口内两个项目 65 个会话，2 个仍活跃暂不处理；生成 84 个提取任务（46 / 38），单任务正文平均约 5.5 万字符，据此把默认上限从 12 万降到 6 万并加入结束标记。
+- 本机 Codex 记忆 174 份逐会话摘要全部可解析，`raw_memories.md` 174 个线程块与之对应；冒烟中未导入。
+
+**未验证**
+
+- 真实代理执行提取与整合的质量（试点计划由 Codex 执行）。
+- Codex 在受限沙箱中能否写入 `~/.agents/memory`、技能在 ZCode / Claude Code / Codex 中的实际安装与调用。
+- 告知段落是否让 AI 在该查时主动查阅；与 Codex 原生记忆、Office Memory 的效果对比（试点评测）。
+- 多设备同步（1.4 只支持单机）。
 
 ## 1.3.1 读取插件并入市场（2026-10-11）
 

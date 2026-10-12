@@ -1,10 +1,10 @@
-# 三端插件安装与独立技能
+# 安装与首次使用
 
-当前版本 **1.3.1**：用户级集中记忆中心，分常驻层（画像、意识、主记忆）、主题与每日层、足迹层；提供读取协议、Hook 模板、定时提示词和首次回填提示词，文件格式名仍是 `xmemory/v1`；研究 demo 不计入正式版本线。
+当前版本 **1.4.0**，文件格式 `xmemory/v1.4`。安装的是技能和运行时，不是记忆数据：安装本身不建库、不读取会话、不修改客户端规则。
 
-安装的是技能方法，不是记忆数据。安装不初始化数据根、不导入历史、不更改客户端规则、不创建 Hook 或定时任务。
+运行时需要 Python 3.11+ 和 git。
 
-## 三种清单分别维护
+## 三种清单
 
 | 客户端 | 插件清单 | 市场清单与根 |
 |---|---|---|
@@ -12,83 +12,65 @@
 | Claude Code | 插件内 `.claude-plugin/plugin.json` | 仓库根 `.claude-plugin/marketplace.json`；市场根为仓库根 |
 | Codex | 插件内 `.codex-plugin/plugin.json` | 仓库根 `.agents/plugins/marketplace.json`；市场根为仓库根 |
 
-插件根另有 Agent Plugins schema 1.0.0 的通用 `plugin.json`。三个市场都列出 `plugins/xmemory/` 与 `plugins/conversation-readers/` 两个插件，各自独立安装；市场 schema 不互相冒充。读取插件只在按会话采集时需要，需要 Python 3.11+，见其 README。每个技能都自带必要的引用资源，引用相对于实际 SKILL.md 所在目录。找不到配套文件时停止相关动作，不跳过共同规则。
+三个市场都列出 XMemory 与 Conversation Readers 两个插件。XMemory 已内置会话读取运行时，不依赖 Conversation Readers；后者用于在对话中直接查阅某个会话。
 
 ## ZCode
 
-1. 打开“插件市场 → 添加 → 添加插件市场”。
-2. 选择源码仓库的 `plugins/` 绝对路径；使用分发包时，选择解压根下的 `plugins/`。
-3. 在“个人 → xmemory”找到 XMemory 1.3.1 并安装；需要按会话采集时，同一市场里再安装 Conversation Readers。
-4. 在“设置 → 插件”管理启用状态。新建任务，从插件/技能选择器选择技能。
-
-插件 ID：`xmemory@xmemory`、`conversation-readers@xmemory`（市场名 `xmemory`，2026-10-10 由开发期路径名 `dev-xmemory-8c7a38ae` 改名）。更新时刷新原市场，再执行插件更新，不重复添加同名不同目录市场；从旧市场名升级时，先移除旧市场再添加本市场，不保留两份。
+1. 打开“插件市场 → 添加 → 添加插件市场”，选择源码仓库的 `plugins/` 绝对路径（分发包选择解压根下的 `plugins/`）。
+2. 在“个人 → xmemory”安装 XMemory（插件 ID `xmemory@xmemory`）。
+3. 已添加过本市场时，刷新市场并更新插件即可，不重复添加。
 
 ## Claude Code
 
-在用户确认要安装的环境执行，下列路径必须替换为源码仓库或完整分发包解压后的真实根：
+由用户执行，路径替换为源码仓库或完整分发包解压后的根：
 
 ```bash
 claude plugin marketplace add /absolute/path/to/XMemory
 claude plugin install xmemory@xmemory-claude
-claude plugin install conversation-readers@xmemory-claude   # 需要按会话采集时
 ```
-
-市场名为 `xmemory-claude`。可先只做验证：
-
-```bash
-claude plugin validate /absolute/path/to/XMemory/plugins/xmemory --strict
-claude plugin validate /absolute/path/to/XMemory/.claude-plugin/marketplace.json --strict
-```
-
-安装后在新会话通过技能选择器或客户端实际列出的 namespaced 命令调用。不要把这里的示例当作本次已执行安装。
 
 ## Codex
-
-市场名为 `xmemory-codex`。官方文档规定项目目录清单位于 `.agents/plugins/marketplace.json`，并支持显式添加市场根。本次 CLI 在未配置来源的隔离环境中没有自动列出该市场；临时配置明确指向市场根后成功识别插件。因此不依赖隐式发现，建议按下面步骤添加市场，实际安装由用户操作。
-
-本次核对的 Codex CLI 0.162.1 提供：
 
 ```bash
 codex plugin marketplace add /absolute/path/to/XMemory
 codex plugin add xmemory@xmemory-codex
-codex plugin add conversation-readers@xmemory-codex   # 需要按会话采集时
 ```
 
-其他版本先查看实际 `codex plugin --help`；桌面端按插件目录中的市场入口安装。市场发现、插件安装和启用是不同状态，不能只看文件存在。
+其他版本先查看实际的 `codex plugin --help`。市场发现、安装和启用是不同状态。
 
-本插件没有联网工具或认证配置。市场中的 `authentication = "ON_INSTALL"` 是官方示例要求的目录策略字段，不表示 XMemory 增加了登录或外部 API 依赖。
+## 独立技能
 
-## 自包含技能包
+`XMemory-<版本>-skills.zip` 内是完整的 `skills/xmemory/` 目录（含 `scripts/`、`references/`、`templates/`）。整目录复制到客户端的用户级技能目录，例如 Codex 的 `~/.agents/skills/xmemory/`、Claude Code 的 `~/.claude/skills/xmemory/`、ZCode 的 `~/.zcode/skills/xmemory/`。同一客户端不要同时启用插件和同名独立技能。
 
-`XMemory-<版本>-skills.zip` 是五技能分发包，不是所有客户端都支持的一键导入格式。解压后完整安装 `skills/` 下的技能目录，不要只复制 SKILL.md。
+## 首次使用
 
-| 客户端 | 用户级技能目录 |
-|---|---|
-| Codex | `~/.agents/skills/<技能名>/` |
-| Claude Code | `~/.claude/skills/<技能名>/` |
-| ZCode | `~/.zcode/skills/<技能名>/` |
-| Qoder IDE / CLI | `~/.qoder/skills/<技能名>/` |
-| QoderWork | `~/.qoderwork/skills/<技能名>/` |
+以下命令中 `S` 指技能目录下的 `scripts/xmemory.py`。
 
-同一客户端选择插件或独立技能一种方式，避免重复。已有同名内容先核对，不覆盖用户改动。路径依据见 [设计来源](design-sources.md)；实际宿主发现和调用仍需验证，不能以规范兼容代替运行验收。
+```bash
+python3 "$S" init --timezone Asia/Shanghai          # 在 ~/.agents/memory 建库；已有其他内容的目录会被拒绝
+python3 "$S" project add <项目名> --path <项目根>     # 只有登记的项目会生成提取任务
+python3 "$S" import office-memory --project <项目名> --path <项目根>/.agents   # 可选
+python3 "$S" scan                                   # 默认最近 7 天，--days N 可改
+python3 "$S" import codex
+python3 "$S" status
+```
 
-## 数据与首次试用
+之后在任一客户端对代理说“运行 XMemory 管线”，代理会按技能循环 `next` → 提取 → `submit`，再对有新输入的范围做整合。回填更早的历史时，把 `config.toml` 的 `backfill_days` 调大或用 `scan --days N`，再重复这一轮。
 
-同一台机器上的客户端共用该用户的记忆根。多台机器使用同一逻辑记忆库，各机器默认位置为 `~/.agents/memory/`，通过用户选择的同步方式保持内容一致。项目只是库内 `projects/<项目名>/` 分区（项目名等于平台项目根目录名），不在工作区另建数据根或软链接。受限宿主无法访问用户目录时应报告权限边界，不偷偷回退到项目内保存。目录关系及原始需求覆盖见 [需求对照](requirements.md)。
+## 告知各客户端
 
-已明确配置其他集中根的使用者继续按实际入口读取，不自动迁移或合并；需要变更时另行指定。Office Memory 后续迁入并停用，当前安装不执行该迁移。
+```bash
+python3 "$S" notice
+```
 
-新建任务，选择“XMemory 设置”：
+把输出的段落合并进各客户端的用户级规则文件（例如 `~/.codex/AGENTS.md`、`~/.claude/CLAUDE.md`、`~/.zcode/AGENTS.md`）。合并前先读现有内容，不覆盖已有规则，不重复添加。之后由 AI 自己决定何时查阅。
 
-> 在我指定的空测试目录初始化 XMemory，时区按本机填写，登记 demo-api 项目，不读取个人来源、不修改任何客户端规则。
+## 定时运行
 
-预期只有配置（含时区）和入口。接着按 [最小闭环](../examples/walkthrough.md) 记录、整理和调取。
+XMemory 没有后台进程。需要定期运行时，把技能 `templates/automation-prompt.md` 填好客户端标识和每轮任务上限，挂到客户端自己的自动化功能上（如 Codex 自动化）。
 
-## 接入客户端、Hook、定时与首次回填
+Codex 在受限沙箱中运行时，可能无法写入 `~/.agents/memory`。可以把自动化的工作目录设为记忆根，或按 Codex 当前版本的配置授予该目录写权限；首次运行后用 `status` 和 `check` 确认确实写入。
 
-安装不会自动修改 AGENTS.md 或 CLAUDE.md，也不会创建 Hook 或定时任务。需要时由用户明确要求，按下面的顺序：
+## 从 1.x 升级
 
-1. **读取协议**：把 [读取协议](../integrations/entry.md) 合并到各客户端实际生效的全局或项目根规则文件，Agent 才会在继续工作、查历史决定时按顺序读取记忆。项目根规则文件可另加一行“XMemory 项目：<项目名>”。
-2. **首次回填**：按 [首次回填提示词](../integrations/backfill.md) 分批导入各客户端已有的记忆和历史会话：先设置并确认项目，再原生记忆、会话补缺口、整理、验收。
-3. **被动采集（可选）**：按 [Hook 模板](../integrations/hooks.md) 在会话开始、压缩前、会话结束时提醒 Agent 读取或记录。
-4. **后台运行**：按 [定时提示词](../integrations/scheduled.md) 填好范围、来源和同步命令，挂到任一客户端的定时任务上。同一时间只在一处运行；首次运行前先在测试目录手动跑一次。
+1.x 的库（`xmemory/v1`）与 1.4 不兼容，运行时不会接管它。把旧目录移走或归档后再 `init`；需要保留的 Office Memory 用 `import office-memory` 从原件重新转录。
