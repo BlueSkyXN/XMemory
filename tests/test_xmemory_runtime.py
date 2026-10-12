@@ -4,12 +4,14 @@ from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,6 +96,22 @@ class RuntimeTests(unittest.TestCase):
             if not job:
                 return digests
             digests.append(self.submit(job)[1]["digest"])
+
+    def codex_summary(self, root, tid, updated, body, started=None):
+        mem = root / "rollout_summaries"
+        mem.mkdir(parents=True, exist_ok=True)
+        name = (started or updated).strftime("%Y-%m-%dT%H-%M-%S") + f"-AbCd-task_{tid[-2:]}.md"
+        (mem / name).write_text(f"thread_id: {tid}\nupdated_at: {updated.isoformat()}\nrollout_path: /tmp/{tid}.jsonl\n"
+                                f"cwd: {self.work / 'demo'}\ngit_branch: main\n\n{body}\n", encoding="utf-8")
+        return mem / name
+
+    def codex_roots(self, *roots):
+        cfg = xm.load_config(self.root / "config.toml")
+        if roots:
+            cfg["sources"]["codex_memories"] = [str(r) for r in roots]
+        else:
+            del cfg["sources"]["codex_memories"]
+        (self.root / "config.toml").write_text(xm.dump_config(cfg), encoding="utf-8")
 
     def git_log(self):
         return subprocess.run(["git", "-C", str(self.root), "log", "--format=%s"], capture_output=True, text=True).stdout
@@ -199,6 +217,109 @@ class RuntimeTests(unittest.TestCase):
         digest = next((self.root / "sessions" / "codex").rglob("*.md")).read_text(encoding="utf-8")
         self.assertIn("origin: codex-memory", digest)
         self.assertIn("### Task 1: 演示", digest)
+
+    def test_codex_import_merges_v1_and_v2(self):
+        v1, v2 = self.base / "codex-home" / "memories", self.base / "codex-home" / "memories_v2"
+        self.codex_roots(v1, v2)
+        t1 = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=2)
+        t2 = t1 + timedelta(hours=5)
+        a, b, c = (f"019e0000-0000-7000-8000-0000000000{n}" for n in ("a1", "b2", "c3"))
+        self.codex_summary(v1, a, t1, "# A 任务（V1）\n\n- 结果：完成")
+        self.codex_summary(v1, b, t1, "# B 任务（V1 旧快照）\n\n- 结果：进行中")
+        (v1 / "raw_memories.md").write_text("# Raw\n\n" + "".join(
+            f"## Thread `{t}`\nupdated_at: {t1.isoformat()}\ncwd: {self.work / 'demo'}\n\n- {t[-2:]} 原始要点\n\n"
+            for t in (a, b)), encoding="utf-8")
+        self.codex_summary(v2, a, t1, "# A 任务（V2）\n\n- 结果：完成")
+        self.codex_summary(v2, b, t2, "# B 任务（V2 新快照）\n\n- 结果：已合并")
+        self.codex_summary(v2, c, t2, "# C 任务\n\n前半段…1234 chars truncated…后半段")
+        sources = {p: p.read_bytes() for p in (self.base / "codex-home").rglob("*") if p.is_file()}
+        out = self.run_ok("import", "codex")
+        self.assertEqual((out["threads"], out["imported"], out["summary_only"], out["truncated"]), (3, 3, 2, 1), out)
+        self.assertEqual([r["version"] for r in out["roots"]], ["v1", "v2"])
+        self.assertEqual(out["warnings"], [])
+        digests = {xm.frontmatter(p.read_text(encoding="utf-8"))["session_ref"]: p.read_text(encoding="utf-8")
+                   for p in (self.root / "sessions" / "codex").rglob("*.md")}
+        self.assertIn("codex_memory: v1", digests[f"codex:jsonl:{a}"])
+        self.assertIn("a1 原始要点", digests[f"codex:jsonl:{a}"])
+        self.assertIn("codex_memory: v2", digests[f"codex:jsonl:{b}"])
+        self.assertIn("V2 新快照", digests[f"codex:jsonl:{b}"])
+        self.assertIn("不单独保存原始记忆块", digests[f"codex:jsonl:{b}"])
+        self.assertIn("codex_truncated_chars: 1234", digests[f"codex:jsonl:{c}"])
+        self.assertEqual({p: p.read_bytes() for p in sources}, sources)
+        again = self.run_ok("import", "codex")
+        self.assertEqual((again["imported"], again["unchanged"]), (0, 3))
+        self.assertEqual(self.run_ok("status")["last_codex_import"]["summary_only"], 2)
+        # Codex 按保留上限删掉旧摘要后，已导入的副本不受影响
+        for path in (self.base / "codex-home").rglob("*task_a1.md"):
+            path.unlink()
+        self.run_ok("import", "codex")
+        self.assertTrue(any("a1 原始要点" in p.read_text(encoding="utf-8")
+                            for p in (self.root / "sessions" / "codex").rglob("*.md")))
+
+    def test_codex_import_reports_thinning(self):
+        v1, v2 = self.base / "codex-home" / "memories", self.base / "codex-home" / "memories_v2"
+        self.codex_roots(v1, v2, self.base / "missing-root")
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        self.codex_summary(v1, "019e0000-0000-7000-8000-0000000000d4", now - timedelta(days=10), "# 旧任务\n\n- 完成")
+        self.codex_summary(v2, "019e0000-0000-7000-8000-0000000000e5", now - timedelta(days=1), "# 新任务\n\n- 完成")
+        (v2 / "rollout_summaries" / "broken.md").write_text("没有文件头的摘要\n", encoding="utf-8")
+        warnings = "\n".join(self.run_ok("import", "codex")["warnings"])
+        self.assertIn("missing-root", warnings)
+        self.assertIn("认不出格式", warnings)
+        self.assertIn("没有 raw_memories.md", warnings)
+        self.assertIn("Codex V1 记忆最新只到", warnings)
+        self.assertIn("认不出格式", "\n".join(self.run_ok("status")["last_codex_import"]["warnings"]))
+
+    def test_codex_import_defaults_flag_unknown_versions(self):
+        home = self.base / "home"
+        self.codex_summary(home / ".codex" / "memories", "019e0000-0000-7000-8000-0000000000f6",
+                           datetime.now(timezone.utc) - timedelta(days=1), "# 任务\n\n- 完成")
+        (home / ".codex" / "memories_v3" / "rollout_summaries").mkdir(parents=True)
+        (home / ".codex" / "memories_v2_1.sqlite").write_text("", encoding="utf-8")
+        self.codex_roots()
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            out = self.run_ok("import", "codex")
+        self.assertEqual(out["imported"], 1)
+        self.assertEqual([w for w in out["warnings"] if "不认识" in w],
+                         ["发现本版不认识的 Codex 记忆目录 memories_v3，未导入；需要升级 XMemory"])
+
+    def test_config_parser_round_trips_and_matches_toml(self):
+        cfg = {"format": xm.FORMAT, "timezone": "Asia/Shanghai", "quiet_minutes": 60, "flag": False,
+               "clients": {"zcode": "extract", "codex": "import"},
+               "sources": {"zcode": ["/tmp/a b/zcode.db", "C:\\Users\\x\\db"], "codex_memories": "/tmp/m"},
+               "restrict": {"zcode": ["codex", "claude"]},
+               "projects": {"演示 \"项目\"\t\u007f😀": {"roots": ["/tmp/演示"], "enabled": True}, "plain": {"roots": [], "enabled": False}}}
+        text = xm.dump_config(cfg)
+        self.assertEqual(xm.TomlSubset(text).parse(), cfg)
+        hand = (
+            "# 注释\nformat = 'xmemory/v1.4'  # 行尾注释\nbackfill_days = 1_000\nneg = -3\n"
+            "[ projects . \"甲\" ]\nroots = [\n  \"/tmp/甲\",  # 第一个\n  '/tmp/乙',\n]\nenabled = true\n"
+            "[projects]\n[clients]\n\"zcode\" = \"\\u4e2d\\U0001F600\"\nempty = []\n")
+        expected = {"format": "xmemory/v1.4", "backfill_days": 1000, "neg": -3,
+                    "projects": {"甲": {"roots": ["/tmp/甲", "/tmp/乙"], "enabled": True}},
+                    "clients": {"zcode": "中😀", "empty": []}}
+        self.assertEqual(xm.TomlSubset(hand).parse(), expected)
+        try:
+            import tomllib
+        except ImportError:
+            tomllib = None
+        if tomllib:
+            self.assertEqual(tomllib.loads(text), cfg)
+            self.assertEqual(tomllib.loads(hand), expected)
+        # 合法 TOML 但超出子集：明确报错，不去猜
+        unsupported = ("a = {x = 1}", "a = 1.5", "a = 2026-10-12", "a.b = 1", 'a = """x"""', "[[t]]")
+        # 本身就不合法的 TOML
+        invalid = ("a = 1\na = 2", "[t]\n[t]", 'a = "x', "a = 1 b = 2", "a = [1 2]", 'a = "\\q"', "a = 01", "= 1")
+        for bad in unsupported + invalid:
+            with self.subTest(bad=bad):
+                with self.assertRaises(xm.XMemoryError) as ctx:
+                    xm.TomlSubset(bad).parse()
+                self.assertIn("行", str(ctx.exception))
+                if tomllib and bad in invalid:
+                    with self.assertRaises(tomllib.TOMLDecodeError):
+                        tomllib.loads(bad)
+                elif tomllib:
+                    tomllib.loads(bad)
 
     def test_consolidation_lifecycle(self):
         self.run_ok("scan")
@@ -405,6 +526,10 @@ class RuntimeTests(unittest.TestCase):
         for tid in ("019e0000-0000-7000-8000-00000000000a", "019e0000-0000-7000-8000-00000000000b"):
             (sessions / f"rollout-x-{tid}.jsonl").write_text(json.dumps(
                 {"type": "session_meta", "payload": {"id": tid, "cwd": str(self.work / "demo")}}) + "\n", encoding="utf-8")
+        child = "019e0000-0000-7000-8000-00000000000c"
+        (sessions / f"rollout-x-{child}.jsonl").write_text(json.dumps(
+            {"type": "session_meta", "payload": {"id": child, "cwd": str(self.work / "demo"),
+                                                 "source": {"subagent": {"thread_spawn": {}}}}}) + "\n", encoding="utf-8")
         cfg = (self.root / "config.toml").read_text(encoding="utf-8")
         cfg = cfg.replace("[sources]\n", f"[sources]\ncodex = [{json.dumps(str(self.base / 'codex-sessions'))}]\n")
         (self.root / "config.toml").write_text(cfg, encoding="utf-8")

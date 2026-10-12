@@ -11,11 +11,11 @@ description: "XMemory 管线的提取阶段：清点各客户端会话、只读�
 
 ```bash
 python3 "$XM" scan            # 默认最近 backfill_days 天；--days N 覆盖；--force 重新切分
-python3 "$XM" import codex    # 只读导入 Codex 已提取的逐会话记忆
+python3 "$XM" import codex    # 只读导入 Codex 已提取的逐会话记忆（V1、V2 两个记忆根）
 ```
 
 - `scan` 只为已登记、已启用项目里的会话生成任务；仍在活跃（未过静默期）的会话下次再处理；子代理会话跳过。
-- `import codex` 的结果里 `not_extracted_by_codex` 是窗口内 Codex 自己还没提取的会话数，本版不自行提取，向用户报告即可。
+- `import codex` 的结果：`not_extracted_by_codex` 是窗口内两版 Codex 记忆都没有的主会话数，本版不自行提取，向用户报告即可；`summary_only`、`truncated` 是只有摘要、被 Codex 截断的会话数；`warnings` 不为空时（根缺失、格式认不出、V1 停更、出现新版本目录）原样告诉用户。
 
 ## 2. 逐个提取
 

@@ -2,7 +2,7 @@
 
 当前版本 **1.4.0**，文件格式 `xmemory/v1.4`。安装的是技能和运行时，不是记忆数据：安装本身不建库、不读取会话、不修改客户端规则。
 
-运行时需要 Python 3.11+ 和 git。
+运行时需要 Python 3.9+ 和 git。macOS 自带的 `python3`（Xcode Command Line Tools，与 git 同一套）即可，不依赖 shell 配置里的 PATH。
 
 ## 三种清单
 
@@ -51,7 +51,7 @@ python3 "$S" init --timezone Asia/Shanghai          # 在 ~/.agents/memory 建�
 python3 "$S" project add <项目名> --path <项目根>     # 只有登记的项目会生成提取任务
 python3 "$S" import office-memory --project <项目名> --path <项目根>/.agents   # 可选
 python3 "$S" scan                                   # 默认最近 7 天，--days N 可改
-python3 "$S" import codex
+python3 "$S" import codex                           # 只读：~/.codex/memories 与 ~/.codex/memories_v2
 python3 "$S" status
 ```
 

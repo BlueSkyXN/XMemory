@@ -6,7 +6,7 @@
 - `XMemory-1.4.0-skills.zip`：XMemory 的八个技能（`skills/` 整个目录，运行时在 `skills/xmemory/scripts/`）。
 - `ConversationReaders-<版本>-skills.zip`：Conversation Readers 五个自包含技能。
 
-运行时需要 Python 3.11+ 和 git。安装不建库、不读取会话、不修改客户端规则。
+运行时需要 Python 3.9+ 和 git（macOS 自带的 `python3` 即可）。安装不建库、不读取会话、不修改客户端规则。
 
 ## ZCode
 

@@ -13,7 +13,7 @@ XMemory 是用户级的跨客户端记忆库，默认在 `~/.agents/memory/`（�
 python3 "$XM" <命令> [参数]      # XM = <技能根>/xmemory/scripts/xmemory.py
 ```
 
-`<技能根>` 是存放全部 xmemory 技能的目录（插件内为 `skills/`）。任务技能里写作 `"$SKILL_DIR/../xmemory/scripts/xmemory.py"`。运行时需要 Python 3.11+ 和 git，不联网、不调用模型、不常驻，输出 JSON。
+`<技能根>` 是存放全部 xmemory 技能的目录（插件内为 `skills/`）。任务技能里写作 `"$SKILL_DIR/../xmemory/scripts/xmemory.py"`。运行时需要 Python 3.9+（macOS 自带的 `python3` 即可）和 git，不联网、不调用模型、不常驻，输出 JSON。
 
 ## 该用哪个技能
 
@@ -36,7 +36,7 @@ python3 "$XM" <命令> [参数]      # XM = <技能根>/xmemory/scripts/xmemory.
 | `import office-memory --project P --path DIR` | 逐字转录 Office Memory | setup |
 | `notice` | 输出写入各客户端用户级规则文件的告知段落 | setup |
 | `scan [--days N] [--force]` | 清点会话，按“会话 × 本地日期”生成提取任务 | extract |
-| `import codex [--days N]` | 只读导入 Codex 逐会话记忆，并报告 Codex 尚未覆盖的会话 | extract |
+| `import codex [--days N]` | 只读导入 Codex 逐会话记忆（V1、V2 两个记忆根），报告覆盖缺口与告警 | extract |
 | `next --client C [--project P]` | 领取一个提取任务（带租约） | extract |
 | `submit JOB --client C` | 提交提取结果，运行时校验、脱敏后写入 | extract |
 | `release JOB --reason R [--skip]` | 放回或永久跳过任务 | extract |

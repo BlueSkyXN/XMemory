@@ -1,8 +1,49 @@
 # XMemory 验证报告
 
-当前版本：**1.4.0**（文件格式 `xmemory/v1.4`；Conversation Readers 0.1.3 未改动）。最新核对日期：2026-10-12。
+当前版本：**1.4.0**（文件格式 `xmemory/v1.4`；Conversation Readers 0.1.4）。最新核对日期：2026-10-12。
 
 本文保留各开发阶段的本地验证记录。1.3.1 及更早各节是历史记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.4.0 补充：Codex 两版记忆与 Python 3.9（2026-10-12）
+
+**起因**
+
+- 本机 Codex 同时在写 `~/.codex/memories`（V1）和 `~/.codex/memories_v2`（V2）。初版只读 V1：近 7 天 24 个 Codex 主会话里，有 6 个只在 V2 里有摘要，会被悄悄漏掉。V2 没有原始记忆块，摘要超过约 9000 字节会被从中间截断（本机 26 份里有 7 份）。
+- 客户端执行命令的 shell 不一定读用户的 shell 配置，`python3` 可能是 macOS 自带的 3.9.6（Xcode Command Line Tools）。初版运行时依赖 3.11 才有的 `tomllib`，在 3.9 上一导入就报错。本机历史会话里，Codex、Claude Code、ZCode 都出现过 3.9.6；Codex 里有代理直接执行 `python3` 时因缺少 `tomllib` 失败的记录。
+
+**改动**
+
+- `import codex` 默认同时读 V1 和 V2 两个根（`sources.codex_memories` 可以配成列表，仍兼容单个路径）。同一会话取较新的快照；同一快照优先有原始记忆块、未被截断的那份。会话摘要的 frontmatter 标出 `codex_memory` 与 `codex_truncated_chars`。
+- 告警：配置的根不存在、摘要格式认不出、V1 没有 `raw_memories.md`、V1 比新版本落后超过 3 天、出现本版不认识的 `memories_v*` 目录。告警和计数同时写进 `status` 的 `last_codex_import`。
+- 覆盖统计改为两版的并集，并排除子代理会话（Codex 本身不为子代理写记忆）。
+- 运行时改为 Python 3.9+：
+  - `config.toml` 改用内置的 TOML 子集解析器（注释、表头、字符串、整数、布尔、数组），超出子集的写法明确报错，所有解释器结果一致；
+  - 时间解析改用读取器的 `parse_iso`；
+  - 入口在 3.9 以下时输出明确的 JSON 错误，不再抛出栈信息。
+- 修正：`dump_config` 的表头和键名改为统一转义。此前项目名含 DEL 字符时会写出不合法的 TOML，是新测试发现的。
+- Conversation Readers 升到 0.1.4（Python 3.9 兼容与时间规整，见其验证记录）。
+- CI 增加 Python 3.9 任务，跑运行时与读取器测试。
+
+**仓库检查**
+
+- `tools/check_package.py` 通过（插件 25 个文件）；`tools/build_conversation_readers.py --check` 通过；`tools/sync_conversation_readers.py` 无差异；`git diff --check` 无问题。
+- Python 3.11 上单元测试 93/93 通过；运行时与读取器测试在系统 Python 3.9.6 上 79/79 通过。
+- 新增的测试覆盖：
+  - V1/V2 合并：较新快照优先、同一快照取 V1、截断标记、源文件不变、幂等、Codex 删除旧摘要后副本保留；
+  - 导入变薄告警：根缺失、格式认不出、没有原始记忆块、V1 停更；默认位置下发现不认识的版本目录；
+  - 配置解析器：往返一致、手写子集与 `tomllib` 结果一致、超出子集与不合法的写法都报错；
+  - 覆盖统计排除子代理；读取器时间规整。
+
+**真实数据冒烟（只读，临时目录，跑完删除）**
+
+- 环境：`env -i` 最小 PATH 下的 `/bin/sh`，`python3` 为系统自带的 3.9.6。
+- 读本机两个 Codex 记忆根：200 个文件全部能解析，合并后 180 个会话（V1 174、V2 26，其中 V2 独有 6）。V1 最新到 10-10、V2 最新到 10-11，未触发停更告警。
+- 登记 三个试点项目，按 30 天窗口导入 28 个会话：24 个来自 V1，4 个只有 V2 摘要（初版会漏掉），其中 1 个被 Codex 截断。重复导入时 28 个全部不变。窗口内这三个项目共 41 个 Codex 主会话，其中 9 个两版记忆都没有。
+
+**未验证**
+
+- CI 的 Python 3.9 任务还没在 GitHub 上运行过（分支未推送）。
+- 两版都没有的 Codex 会话是否由 XMemory 自己提取，等用户决定。
 
 ## 1.4.0 重做：一个运行时 + 八个技能（2026-10-12）
 

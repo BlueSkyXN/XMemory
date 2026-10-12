@@ -2,7 +2,7 @@
 
 机械工作（清点会话、项目归属、时间、任务认领与租约、文件写入、git 基线、校验）全部由本文件完成；
 语义工作（逐会话提取、整合）由执行技能的客户端代理完成，结果经本文件校验后才落盘。
-只用 Python 3.11+ 标准库；不联网、不调用模型、不常驻。
+只用 Python 3.9+ 标准库（客户端里的 python3 常是系统自带的 3.9）；不联网、不调用模型、不常驻。
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ import sqlite3
 import subprocess
 import sys
 import time
-import tomllib
 from types import SimpleNamespace
+from typing import NoReturn
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import reader_runtime as reader
@@ -81,7 +81,7 @@ def parse_time(value) -> datetime | None:
     if not value:
         return None
     try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        dt = reader.parse_iso(value)
     except ValueError:
         return None
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -125,7 +125,7 @@ def toml_value(value) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
+        return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
     if isinstance(value, list):
         return "[" + ", ".join(toml_value(v) for v in value) + "]"
     raise XMemoryError(f"unsupported config value: {value!r}")
@@ -139,11 +139,181 @@ def dump_config(cfg: dict) -> str:
     for table in ("clients", "sources", "restrict"):
         if cfg.get(table):
             lines += ["", f"[{table}]"]
-            lines += [f"{json.dumps(k, ensure_ascii=False)} = {toml_value(v)}" for k, v in cfg[table].items()]
+            lines += [f"{toml_value(k)} = {toml_value(v)}" for k, v in cfg[table].items()]
     for name, project in sorted(cfg.get("projects", {}).items()):
-        lines += ["", f"[projects.{json.dumps(name, ensure_ascii=False)}]"]
+        lines += ["", f"[projects.{toml_value(name)}]"]
         lines += [f"{k} = {toml_value(v)}" for k, v in project.items()]
     return "\n".join(lines) + "\n"
+
+
+class TomlSubset:
+    """只解析运行时自己写出的那部分 TOML：注释、表头（含带引号的键）、字符串、整数、布尔、数组。
+
+    不用 tomllib：它要 Python 3.11，而客户端里的 python3 常是系统自带的 3.9。所有解释器都走这一个
+    解析器，同一份配置在哪个客户端读都一样；超出子集的写法明确报错，不去猜。
+    """
+    BARE = re.compile(r"[A-Za-z0-9_-]+")
+    TOKEN = re.compile(r"[^\s,\]#]+")
+    INTEGER = re.compile(r"[+-]?(?:0|[1-9](?:_?[0-9])*)")
+    ESCAPES = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\": "\\"}
+
+    def __init__(self, text: str, name: str = "config.toml"):
+        self.s, self.i, self.name = text.replace("\r\n", "\n"), 0, name
+
+    def error(self, message: str) -> NoReturn:
+        line = self.s.count("\n", 0, self.i) + 1
+        raise XMemoryError(f"{self.name} 第 {line} 行：{message}（只支持表、字符串、整数、布尔和数组）")
+
+    def peek(self) -> str:
+        return self.s[self.i] if self.i < len(self.s) else ""
+
+    def skip(self, newlines: bool = False):
+        while self.i < len(self.s):
+            c = self.s[self.i]
+            if c in " \t" or (newlines and c == "\n"):
+                self.i += 1
+            elif c == "#":
+                end = self.s.find("\n", self.i)
+                self.i = len(self.s) if end < 0 else end
+            else:
+                return
+
+    def parse(self) -> dict:
+        root: dict = {}
+        current, defined = root, set()
+        while True:
+            self.skip(newlines=True)
+            if not self.peek():
+                return root
+            if self.peek() == "[":
+                if self.s.startswith("[[", self.i):
+                    self.error("不支持表数组 [[…]]")
+                self.i += 1
+                path = self.key_path("]")
+                if path in defined:
+                    self.error(f"表重复定义：{'.'.join(path)}")
+                defined.add(path)
+                current = root
+                for part in path:
+                    current = current.setdefault(part, {})
+                    if not isinstance(current, dict):
+                        self.error(f"{part} 已经是值，不能再当表")
+            else:
+                path = self.key_path("=")
+                if len(path) != 1:
+                    self.error("不支持点号键（a.b = …），请改用表头")
+                self.skip()
+                value = self.value()
+                if path[0] in current:
+                    self.error(f"键重复：{path[0]}")
+                current[path[0]] = value
+            self.skip()
+            if self.peek() not in ("", "\n"):
+                self.error("一行只能有一个键值或表头")
+
+    def key_path(self, terminator: str) -> tuple:
+        parts = []
+        while True:
+            self.skip()
+            if self.peek() == '"':
+                parts.append(self.basic_string())
+            elif self.peek() == "'":
+                parts.append(self.literal_string())
+            else:
+                m = self.BARE.match(self.s, self.i)
+                if not m:
+                    self.error("键名无效")
+                parts.append(m.group(0))
+                self.i = m.end()
+            self.skip()
+            if self.peek() == ".":
+                self.i += 1
+                continue
+            if self.peek() != terminator:
+                self.error(f"缺少 {terminator}")
+            self.i += 1
+            return tuple(parts)
+
+    def value(self):
+        c = self.peek()
+        if self.s.startswith(('"""', "'''"), self.i):
+            self.error("不支持多行字符串")
+        if c == '"':
+            return self.basic_string()
+        if c == "'":
+            return self.literal_string()
+        if c == "[":
+            return self.array()
+        if c == "{":
+            self.error("不支持内联表 {…}")
+        m = self.TOKEN.match(self.s, self.i)
+        token = m.group(0) if m else ""
+        if token in ("true", "false"):
+            self.i += len(token)
+            return token == "true"
+        if self.INTEGER.fullmatch(token):
+            self.i += len(token)
+            return int(token.replace("_", ""))
+        self.error(f"不支持的值：{token or c!r}")
+
+    def basic_string(self) -> str:
+        self.i += 1
+        out = []
+        while True:
+            c = self.peek()
+            if c in ("", "\n"):
+                self.error("字符串缺少结束引号")
+            self.i += 1
+            if c == '"':
+                return "".join(out)
+            if c == "\\":
+                e = self.peek()
+                self.i += 1
+                if e in self.ESCAPES:
+                    out.append(self.ESCAPES[e])
+                    continue
+                width = {"u": 4, "U": 8}.get(e)
+                digits = self.s[self.i:self.i + width] if width else ""
+                if not width or not re.fullmatch(r"[0-9A-Fa-f]{%d}" % width, digits):
+                    self.error(f"不支持的转义：\\{e}")
+                code = int(digits, 16)
+                if 0xD800 <= code <= 0xDFFF or code > 0x10FFFF:
+                    self.error(f"转义不是合法字符：\\{e}{digits}")
+                out.append(chr(code))
+                self.i += width
+            elif (c < " " and c != "\t") or c == "\x7f":
+                self.error("字符串里有控制字符")
+            else:
+                out.append(c)
+
+    def literal_string(self) -> str:
+        end, newline = self.s.find("'", self.i + 1), self.s.find("\n", self.i + 1)
+        if end < 0 or 0 <= newline < end:
+            self.error("字符串缺少结束引号")
+        text = self.s[self.i + 1:end]
+        self.i = end + 1
+        return text
+
+    def array(self) -> list:
+        self.i += 1
+        items = []
+        while True:
+            self.skip(newlines=True)
+            if self.peek() == "]":
+                self.i += 1
+                return items
+            if not self.peek():
+                self.error("数组缺少结束的 ]")
+            items.append(self.value())
+            self.skip(newlines=True)
+            if self.peek() == ",":
+                self.i += 1
+            elif self.peek() != "]":
+                self.error("数组元素之间要用逗号分隔")
+
+
+def load_config(path: Path) -> dict:
+    return TomlSubset(path.read_text(encoding="utf-8"), path.name).parse()
 
 
 class Library:
@@ -153,7 +323,7 @@ class Library:
         self.state_dir = root / ".xmemory"
         if not self.config_path.is_file():
             raise XMemoryError(f"记忆库未初始化：{root}（先运行 init）")
-        self.cfg = tomllib.loads(self.config_path.read_text(encoding="utf-8"))
+        self.cfg = load_config(self.config_path)
         if self.cfg.get("format") != FORMAT:
             raise XMemoryError(f"格式不是 {FORMAT}：{self.cfg.get('format')!r}；不接管其他格式的目录")
         try:
@@ -391,11 +561,13 @@ def cmd_status(lib: Library, args):
     pending = lib.db.execute("SELECT scope, COUNT(*) n FROM digests WHERE deleted=0 AND (consolidated_sha IS NULL "
                              "OR consolidated_sha != sha) GROUP BY scope").fetchall()
     lock = lib.db.execute("SELECT * FROM locks WHERE name='consolidate'").fetchone()
+    codex = lib.db.execute("SELECT value FROM meta WHERE key='codex_import'").fetchone()
     return {"root": str(lib.root), "format": FORMAT, "timezone": lib.cfg.get("timezone"),
             "backfill_days": lib.cfg.get("backfill_days"), "clients": {c: lib.client_mode(c) for c in CLIENTS},
             "projects": {k: v.get("enabled", False) for k, v in lib.projects.items()},
             "extraction_jobs": jobs, "unconsolidated_inputs": {r["scope"]: r["n"] for r in pending},
-            "consolidation_lock": dict(lock) if lock else None}
+            "consolidation_lock": dict(lock) if lock else None,
+            "last_codex_import": json.loads(codex["value"]) if codex else None}
 
 
 # ---------- 命令：清点与提取任务 ----------
@@ -655,46 +827,141 @@ def parse_codex_summary(path: Path) -> dict | None:
     return dict(meta, body=body.strip())
 
 
+CODEX_MEMORY_DIRS = ("memories", "memories_v2")
+CODEX_VERSION_DIR = re.compile(r"memories_v(\d+)")
+CODEX_TRUNCATED = re.compile(r"…(\d+) (?:chars|tokens) truncated…")
+CODEX_STALE_DAYS = 3
+
+
+def codex_memory_roots(lib: Library, override: str | None) -> tuple[list[Path], bool]:
+    """要读的 Codex 记忆根，以及是否是默认位置（默认位置缺某个版本的根不算异常）。"""
+    if override:
+        return [Path(override).expanduser()], False
+    configured = lib.cfg.get("sources", {}).get("codex_memories")
+    if configured:
+        return [Path(p).expanduser() for p in ([configured] if isinstance(configured, str) else configured)], False
+    return [Path.home() / ".codex" / name for name in CODEX_MEMORY_DIRS], True
+
+
+def read_codex_root(root: Path) -> tuple[dict, dict[str, dict]]:
+    """读一个 Codex 记忆根。V1 的逐会话摘要另有 raw_memories.md 原始记忆块；V2 只有摘要，超长时被 Codex 从中间截断。"""
+    m = CODEX_VERSION_DIR.fullmatch(root.name)
+    info = {"path": str(root), "version": f"v{m[1]}" if m else "v1", "exists": root.is_dir(),
+            "raw_memories": (root / "raw_memories.md").is_file(), "files": 0, "unrecognized": 0, "threads": 0,
+            "newest_updated_at": None}
+    entries: dict[str, dict] = {}
+    if not (root / "rollout_summaries").is_dir():
+        return info, entries
+    raw = parse_codex_raw((root / "raw_memories.md").read_text(encoding="utf-8")) if info["raw_memories"] else {}
+    for path in sorted((root / "rollout_summaries").glob("*.md")):
+        info["files"] += 1
+        meta = parse_codex_summary(path)
+        updated = parse_time(meta["updated_at"]) if meta else None
+        if not meta or not updated:
+            info["unrecognized"] += 1
+            continue
+        entry = dict(meta, path=path, version=info["version"], updated=updated,
+                     raw=raw.get(meta["thread_id"], {}).get("body"),
+                     truncated_chars=sum(int(n) for n in CODEX_TRUNCATED.findall(meta["body"])))
+        old = entries.get(meta["thread_id"])
+        if not old or updated > old["updated"]:
+            entries[meta["thread_id"]] = entry
+    info["threads"] = len(entries)
+    if entries:
+        info["newest_updated_at"] = iso(max(e["updated"] for e in entries.values()))
+    return info, entries
+
+
+def pick_codex_entry(candidates: list[dict]) -> dict:
+    # 同一会话在两版里都有时：快照更新的优先（会话后来又有内容）；同一快照优先有原始记忆块、未被截断的那份。
+    return max(candidates, key=lambda e: (e["updated"], e["raw"] is not None, not e["truncated_chars"]))
+
+
+def codex_raw_text(entry: dict) -> str:
+    if entry["raw"] is not None:
+        return entry["raw"]
+    cut = f"；其中约 {entry['truncated_chars']} 字符已被 Codex 截掉" if entry["truncated_chars"] else ""
+    if entry["version"] == "v1":
+        return f"（raw_memories.md 中没有该线程的原始记忆块{cut}）"
+    return f"（Codex {entry['version']} 记忆不单独保存原始记忆块，上面的会话摘要就是 Codex 写的任务史{cut}）"
+
+
+def codex_health(infos: list[dict], default: bool) -> list[str]:
+    """导入结果变薄时要说出来：根缺失、格式认不出、V1 停更、出现本版不认识的新版本目录。"""
+    warnings = []
+    for info in infos:
+        if not info["exists"]:
+            if not default:
+                warnings.append(f"配置的 Codex 记忆根不存在：{info['path']}")
+            continue
+        if info["unrecognized"]:
+            warnings.append(f"{info['path']} 有 {info['unrecognized']} 个摘要文件认不出格式，未导入；Codex 可能改了格式")
+        if info["version"] == "v1" and info["files"] and not info["raw_memories"]:
+            warnings.append(f"{info['path']} 没有 raw_memories.md，这里导入的会话只有摘要")
+    # newest_updated_at 是本文件 iso() 写出的标准格式，任何 3.9+ 都能直接解析。
+    v1 = [datetime.fromisoformat(i["newest_updated_at"]) for i in infos
+          if i["version"] == "v1" and i["newest_updated_at"]]
+    newer = [(datetime.fromisoformat(i["newest_updated_at"]), i["version"]) for i in infos
+             if i["version"] != "v1" and i["newest_updated_at"]]
+    if v1 and newer:
+        latest, version = max(newer)
+        if latest - max(v1) > timedelta(days=CODEX_STALE_DAYS):
+            warnings.append(f"Codex V1 记忆最新只到 {iso(max(v1))[:10]}，{version} 已到 {iso(latest)[:10]}：Codex 可能已改为"
+                            f"只写 {version}，之后的会话只有摘要、没有原始记忆块")
+    if default:
+        home = Path.home() / ".codex"
+        unknown = sorted(p.name for p in home.glob("memories_v*")
+                         if p.is_dir() and CODEX_VERSION_DIR.fullmatch(p.name) and p.name not in CODEX_MEMORY_DIRS)
+        if unknown:
+            warnings.append(f"发现本版不认识的 Codex 记忆目录 {'、'.join(unknown)}，未导入；需要升级 XMemory")
+    return warnings
+
+
 def cmd_import_codex(lib: Library, args):
-    base = Path(args.path or lib.cfg.get("sources", {}).get("codex_memories") or Path.home() / ".codex" / "memories")
-    summaries_dir = base / "rollout_summaries"
-    if not summaries_dir.is_dir():
-        raise XMemoryError(f"找不到 Codex 逐会话摘要目录：{summaries_dir}")
-    raw = parse_codex_raw((base / "raw_memories.md").read_text(encoding="utf-8")) if (base / "raw_memories.md").is_file() else {}
+    roots, default = codex_memory_roots(lib, args.path)
+    infos, merged = [], {}
+    for root in roots:
+        info, entries = read_codex_root(root)
+        infos.append(info)
+        for tid, entry in entries.items():
+            merged.setdefault(tid, []).append(entry)
+    if not any((Path(i["path"]) / "rollout_summaries").is_dir() for i in infos):
+        raise XMemoryError("找不到 Codex 逐会话摘要目录：" + "、".join(str(r / "rollout_summaries") for r in roots))
     window = lib.window_start(args.days)
     tombstoned = {r["ref"] for r in lib.db.execute("SELECT ref FROM tombstones")}
-    stats: dict = dict(files=0, unrecognized=0, out_of_window=0, out_of_scope=0, imported=0, unchanged=0)
+    stats: dict = dict(files=sum(i["files"] for i in infos), unrecognized=sum(i["unrecognized"] for i in infos),
+                       threads=len(merged), out_of_window=0, out_of_scope=0, imported=0, unchanged=0,
+                       summary_only=0, truncated=0)
     with lib.tx():
-        for path in sorted(summaries_dir.glob("*.md")):
-            stats["files"] += 1
-            meta = parse_codex_summary(path)
-            if not meta:
-                stats["unrecognized"] += 1
-                continue
-            tid, ref = meta["thread_id"], f"codex:jsonl:{meta['thread_id']}"
-            updated = parse_time(meta["updated_at"])
+        for tid, candidates in sorted(merged.items()):
+            entry = pick_codex_entry(candidates)
+            path, updated, ref = entry["path"], entry["updated"], f"codex:jsonl:{tid}"
             started = None
             m = re.match(r"(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})", path.name)
             if m:
                 started = datetime.fromisoformat(f"{m[1]}T{m[2]}:{m[3]}:{m[4]}+00:00")
             first = lib.local(started or updated)
             day = first.date().isoformat()
-            if not updated or lib.local(updated).date().isoformat() < window:
+            if lib.local(updated).date().isoformat() < window:
                 stats["out_of_window"] += 1
                 continue
-            project = lib.resolve_project(meta["cwd"])
+            project = lib.resolve_project(entry["cwd"])
             if ref in tombstoned or not lib.project_enabled(project):
                 stats["out_of_scope"] += 1
                 continue
+            stats["summary_only"] += entry["raw"] is None
+            stats["truncated"] += bool(entry["truncated_chars"])
             slug = safe_name(re.sub(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[A-Za-z0-9]{4}-", "", path.stem))[:60] or "codex"
             target = lib.root / "sessions" / "codex" / day[:7] / f"{day}-{slug}-{safe_name(tid)[-8:]}.md"
-            raw_block = raw.get(tid, {}).get("body", "（raw_memories.md 中没有该线程的原始记忆块）")
-            header = {"session_ref": ref, "client": "codex", "project": project, "cwd": meta["cwd"], "day": day,
+            header = {"session_ref": ref, "client": "codex", "project": project, "cwd": entry["cwd"], "day": day,
                       "part": "1/1", "event_window": f"{iso(first)} ~ {iso(lib.local(updated))}",
-                      "source": meta.get("rollout_path", ""), "origin": "codex-memory",
-                      "codex_summary_file": path.name, "imported_at": iso(lib.local(now_utc()))}
-            title = next((l.lstrip("# ").strip() for l in meta["body"].splitlines() if l.startswith("# ")), slug)
-            text = digest_text(lib, header, title, meta["body"], raw_block)
+                      "source": entry.get("rollout_path", ""), "origin": "codex-memory",
+                      "codex_memory": entry["version"], "codex_summary_file": path.name}
+            if entry["truncated_chars"]:
+                header["codex_truncated_chars"] = entry["truncated_chars"]
+            header["imported_at"] = iso(lib.local(now_utc()))
+            title = next((l.lstrip("# ").strip() for l in entry["body"].splitlines() if l.startswith("# ")), slug)
+            text = digest_text(lib, header, title, entry["body"], codex_raw_text(entry))
             rel = target.relative_to(lib.root).as_posix()
             old = lib.db.execute("SELECT path, sha FROM digests WHERE ref=? AND kind='codex' AND deleted=0", (ref,)).fetchone()
             if old and old["path"] == rel and (lib.root / rel).is_file() and \
@@ -708,26 +975,24 @@ def cmd_import_codex(lib: Library, args):
             lib.db.execute("INSERT INTO sessions(ref, client, session_id, source, cwd, project, title, updated_at, scanned_at)"
                            " VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(ref) DO UPDATE SET project=excluded.project,"
                            " updated_at=excluded.updated_at, scanned_at=excluded.scanned_at",
-                           (ref, "codex", tid, meta.get("rollout_path"), meta["cwd"], project, title, meta["updated_at"],
-                            iso(now_utc())))
+                           (ref, "codex", tid, entry.get("rollout_path"), entry["cwd"], project, title,
+                            entry["updated_at"], iso(now_utc())))
             stats["imported"] += 1
     lib.commit("import codex memories", ["sessions"])
     stats["window_start"] = window
-    stats.update(codex_coverage(lib, window, imported_threads(summaries_dir)))
+    stats["roots"] = infos
+    stats["warnings"] = codex_health(infos, default)
+    stats.update(codex_coverage(lib, window, set(merged)))
+    lib.db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('codex_import', ?)", (json.dumps({
+        "at": iso(lib.local(now_utc())), "roots": [{k: i[k] for k in ("path", "version", "threads", "newest_updated_at")}
+                                                   for i in infos if i["exists"]],
+        **{k: stats[k] for k in ("imported", "summary_only", "truncated", "not_extracted_by_codex", "warnings")}},
+        ensure_ascii=False),))
     return stats
 
 
-def imported_threads(summaries_dir: Path) -> set[str]:
-    ids = set()
-    for path in summaries_dir.glob("*.md"):
-        meta = parse_codex_summary(path)
-        if meta:
-            ids.add(meta["thread_id"])
-    return ids
-
-
 def codex_coverage(lib: Library, window: str, extracted: set[str]) -> dict:
-    """统计窗口内属于已启用项目、但 Codex 自己还没提取过的会话；只读每个文件的首行元数据。"""
+    """统计窗口内属于已启用项目、但两版 Codex 记忆都还没有的主会话；只读每个文件的首行元数据。"""
     roots = [Path(p).expanduser() for p in lib.cfg.get("sources", {}).get("codex", [])] or \
         [Path.home() / ".codex" / "sessions", Path.home() / ".codex" / "archived_sessions"]
     start = datetime.fromisoformat(window).replace(tzinfo=lib.tz).timestamp()
@@ -744,7 +1009,10 @@ def codex_coverage(lib: Library, window: str, extracted: set[str]) -> dict:
             except (OSError, ValueError):
                 continue
             payload = first.get("payload") if isinstance(first.get("payload"), dict) else {}
-            tid, cwd = payload.get("id"), payload.get("cwd")
+            tid, cwd, source = payload.get("id"), payload.get("cwd"), payload.get("source")
+            # Codex 自己不为子代理写记忆，这里也不把子代理算成缺口。
+            if isinstance(source, dict) and "subagent" in source:
+                continue
             if first.get("type") != "session_meta" or not tid or not lib.project_enabled(lib.resolve_project(cwd)):
                 continue
             in_scope += 1
@@ -752,7 +1020,8 @@ def codex_coverage(lib: Library, window: str, extracted: set[str]) -> dict:
                 missing.append(f"codex:jsonl:{tid}")
     return {"codex_sessions_in_scope": in_scope, "not_extracted_by_codex": len(missing),
             "not_extracted_examples": sorted(missing)[:10],
-            "coverage_note": "Codex 尚未提取的会话本版不自行提取（只读导入）；Codex 后台处理后再次 import 即可"}
+            "coverage_note": "两版 Codex 记忆都没有的会话，本版不自行提取（只读导入）。Codex 默认只处理近 10 天、"
+                             "闲置 6 小时以上的会话，每次启动最多 2 个（以其当前版本为准），更早的会话可能一直没有摘要"}
 
 
 OM_KIND = {"decision": "决定", "fact": "事实", "runbook": "做法", "preference": "偏好", "lesson": "经验"}
@@ -1182,7 +1451,7 @@ def cmd_session(args):
     roots = None
     root = Path(args.root).expanduser() if args.root else default_root()
     if (root / "config.toml").is_file():
-        roots = tomllib.loads((root / "config.toml").read_text(encoding="utf-8")).get("sources", {}).get(client)
+        roots = load_config(root / "config.toml").get("sources", {}).get(client)
     warnings: list[str] = []
     found = [s for s in reader.catalogue(client, reader_args(roots, args.ref), warnings) if s["session_ref"] == args.ref]
     if len(found) != 1:

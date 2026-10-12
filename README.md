@@ -49,7 +49,7 @@ XMemory 是“一个工具、多个技能”：运行时 CLI 只有一份，放�
 
 ## 开发检查与构建
 
-需要 Python 3.11+ 和 git。
+开发检查与构建需要 Python 3.11+ 和 git；技能运行时只需 Python 3.9+。
 
 ```bash
 python3 -B tools/sync_conversation_readers.py --apply   # 同步读取运行时到各读取技能与 XMemory 技能

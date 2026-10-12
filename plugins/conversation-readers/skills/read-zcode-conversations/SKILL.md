@@ -5,7 +5,7 @@ description: "查找、检索和读取 ZCode 的历史对话时使用：列出�
 
 # 读取 ZCode 对话
 
-使用本技能目录内的 [读取脚本](./scripts/read_conversations.py)，需要 Python 3.11+，无额外依赖。不安装统一 CLI，不启动后台服务。
+使用本技能目录内的 [读取脚本](./scripts/read_conversations.py)，需要 Python 3.9+，无额外依赖。不安装统一 CLI，不启动后台服务。
 
 ## 定位与读取
 

@@ -38,7 +38,7 @@ skills/
 └── xmemory-maintain/      状态、检查、忘记、处理中断
 ```
 
-运行时需要 Python 3.11+ 和 git；`scripts/reader_runtime.py` 与 Conversation Readers 同源。
+运行时需要 Python 3.9+（macOS 自带的 `python3` 即可）和 git；`scripts/reader_runtime.py` 与 Conversation Readers 同源。
 
 ## 快速开始
 

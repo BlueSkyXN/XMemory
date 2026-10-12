@@ -21,7 +21,7 @@
 
 ## 会话摘要
 
-frontmatter 全部由运行时写入：`session_ref`、`client`、`project`、`cwd`、`day`、`part`、`event_window`、`source`、`origin`（`xmemory-extract` 或 `codex-memory`），以及提取或导入的时间和执行客户端。正文有两节：`## 会话摘要`、`## 原始记忆`。
+frontmatter 全部由运行时写入：`session_ref`、`client`、`project`、`cwd`、`day`、`part`、`event_window`、`source`、`origin`（`xmemory-extract` 或 `codex-memory`），以及提取或导入的时间和执行客户端。导入的 Codex 摘要另有 `codex_memory`（`v1` 或 `v2`）和 `codex_summary_file`，被 Codex 截断时有 `codex_truncated_chars`。正文有两节：`## 会话摘要`、`## 原始记忆`。
 
 ## 项目归属
 
