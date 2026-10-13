@@ -15,4 +15,6 @@ updated: "{{updated}}"
 - 依据日期：{{observed_date}}
 - 来源：[{{record_label}}]({{record_link}})
 
-{{conclusion_conditions_and_verification}}
+{{reusable_conclusion_and_applicability}}
+
+{{exceptions_and_evidence_that_change_the_conclusion}}

@@ -40,7 +40,7 @@ python3 -B "$SKILL_DIR/scripts/read_conversations.py" read --root /absolute/path
 ## 标识与线索
 
 - 会话有两种标识：原生 ID（取记录 `sessionId`，缺失时用文件名主干，`id_origin` 区分来源）和 `session_ref`（`claude:jsonl:<id>`，list 返回、read 使用）；`source` 指回真实原件。
-- 线索不全时的定位法：只有 ID——包括从日志或界面复制的引用（含 `.<客户端>-session` 后缀的虚拟路径，磁盘上无此文件）——直接传 `--session`，脚本确定性剥壳，不做模糊匹配；只有项目根时用 `--project` 按记录 `cwd` 的路径边界匹配（存储目录把路径编码为 `-Users-…-Project` 形式，匹配按解码后的 cwd 进行）；只有目录或文件时用 `--root` 限定扫描范围。
+- 线索不全时的定位法：只有 ID——包括从日志或界面复制的引用（含 `.<客户端>-session` 后缀的虚拟路径，磁盘上无此文件）——直接传 `--session`，脚本确定性剥壳，不做模糊匹配；只有项目根时用 `--project` 按原始记录中出现的任一 `cwd` 做路径边界匹配，不依赖存储目录名或最后一个目录；只有目录或文件时用 `--root` 限定扫描范围。跨项目会话结合事件的 `project` 和正文核实归属。
 
 ## 使用结果
 

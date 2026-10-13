@@ -1,6 +1,6 @@
 # 安装与首次使用
 
-当前版本 **1.5.1**（[Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.1)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装仅提供技能和只读程序，不建库、不采集、不修改客户端配置。
+当前源码版本 **1.5.2**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装仅提供技能和只读程序，不建库、不采集、不修改客户端配置。
 
 ## 市场安装
 
@@ -42,7 +42,7 @@ python3 <插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> stat
 
 已有 1.4 库先保留，确认新目录或归档位置后重建。不要把它的 config 格式名直接改成 1.5。
 
-已有 1.5.0 库无需转换格式。新增跨日材料可补 `event_days`；旧会话身份会收到复核提示，先回查原件再映射，status 不会自动改写。
+已有 1.5.0 / 1.5.1 库无需转换格式。新增跨日材料可补 `event_days`；旧会话身份会收到复核提示，先回查原件再映射，status 不会自动改写。1.5.2 仅在 status 报告的 summary 对象增加 `upstream_updates`，不新增记忆文件字段。
 
 ## 告知与定时
 

@@ -203,12 +203,11 @@ def zstd_rows(path, warnings):
                 break
             if len(raw) > MAX_LINE:
                 warnings.append(f"oversized_record: {path}#byte:{offset}")
-                while raw and not raw.endswith(b"\n"):
-                    raw = process.stdout.readline(MAX_LINE + 1)
-                    if not raw:
-                        break
+                while raw:
                     offset += len(raw)
-                offset += len(raw)
+                    if raw.endswith(b"\n"):
+                        break
+                    raw = process.stdout.readline(MAX_LINE + 1)
                 continue
             try:
                 item = json.loads(raw)
@@ -355,6 +354,16 @@ def native_session_id(client, row):
     return row.get("sessionId")
 
 
+def json_project(client, row):
+    """只取原生 cwd；Codex 的轮次上下文位于 payload。"""
+    value = row.get("cwd")
+    if client == "codex" and row.get("type") in ("session_meta", "turn_context"):
+        payload = row.get("payload")
+        if not value and isinstance(payload, dict):
+            value = payload.get("cwd")
+    return value if isinstance(value, str) and value else None
+
+
 def json_summary(client, path, warnings):
     if client == "zcode":
         raise ReaderError("unsupported_source: ZCode 使用已核实的 SQLite 对话表")
@@ -362,7 +371,7 @@ def json_summary(client, path, warnings):
     match = re.search(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$", stem)
     sid = match[0] if match else stem
     result = summary(client, "jsonl", sid, path, title=None, title_origin=None,
-                     project=None, parent_session_id=None, created_at=None, updated_at=None,
+                     project=None, projects=[], parent_session_id=None, created_at=None, updated_at=None,
                      archived="archived_sessions" in path.parts, id_origin="filename")
     recognized, identities = False, set()
     parse_warnings = []
@@ -380,15 +389,17 @@ def json_summary(client, path, warnings):
         if client == "codex" and typ == "session_meta":
             recognized = True
             result["session_id"] = str(payload.get("id") or payload.get("session_id") or sid)
-            result["project"] = payload.get("cwd")
             result["created_at"] = iso(payload.get("timestamp") or row.get("timestamp"))
             result["id_origin"] = "session_meta"
         elif client != "codex" and row.get("sessionId"):
             recognized = True
             result["session_id"] = str(row["sessionId"])
             result["id_origin"] = "sessionId"
-        if row.get("cwd"):
-            result["project"] = row["cwd"]
+        project = json_project(client, row)
+        if project:
+            result["project"] = project
+            if project not in result["projects"]:
+                result["projects"].append(project)
         if row.get("agentId"):
             result["agent_id"] = row["agentId"]
         if typ in ("ai-title", "custom-title"):
@@ -543,7 +554,8 @@ def catalogue(client, args, warnings):
                             s.update(title=row[0], title_origin="native_index")
             except (sqlite3.Error, ReaderError):
                 warnings.append("title_index_unavailable")
-    result = [s for s in result if project_matches(s.get("project"), args.project)
+    result = [s for s in result if any(project_matches(project, args.project)
+                                     for project in (s.get("projects") or [s.get("project")]))
               and (args.action != "list" or not s.get("metadata_complete", True) or (
                   (not args.since or not s.get("updated_at") or epoch(s["updated_at"]) >= args.since)
                   and (not args.until or not s.get("created_at") or epoch(s["created_at"]) <= args.until)))]
@@ -570,10 +582,11 @@ def sqlite_one(client, path, requested):
 
 
 def event(s, locator, role, text, *, kind="message", native_id=None, parent_id=None,
-          record_id=None, call_id=None, name=None, stamp=None, turn_id=None, native_session_id=None):
+          record_id=None, call_id=None, name=None, stamp=None, turn_id=None, native_session_id=None,
+          project=None):
     # 在截断和计算偏移之前遮蔽完整正文及元数据，切片后不再改变文本长度。
     result = scrub(dict(session_ref=s["session_ref"], session_id=s["session_id"],
-                native_session_id=native_session_id,
+                native_session_id=native_session_id, project=project,
                 message_id=native_id, record_id=record_id, parent_id=parent_id, turn_id=turn_id,
                 role=role, kind=kind, timestamp=iso(stamp), call_id=call_id, tool_name=name,
                 source_ref=f'{s["source"]}#{locator}',
@@ -618,6 +631,7 @@ def blocks(s, content, locator, base, include_tools, warnings):
 
 
 def json_events(s, warnings, include_tools):
+    context_project = None
     for offset, o in json_rows(Path(s["source"]), warnings):
         typ = o.get("type")
         p = o.get("payload") if isinstance(o.get("payload"), dict) else {}
@@ -628,18 +642,21 @@ def json_events(s, warnings, include_tools):
         if native and str(native) != s["session_id"]:
             warnings.append(f"session_identity_changed: {s['source']}#{loc}; 停止读取该来源")
             return
+        project = json_project(s["client"], o)
         if s["client"] == "codex":
+            if project:
+                context_project = project
             # event_msg 是重复投影；只读 response_item，避免一条回复显示两次。
             if typ == "compacted":
                 text = p.get("message")
                 if isinstance(text, str):
-                    yield event(s, loc, "context", text, kind="summary", stamp=o.get("timestamp"), native_session_id=native)
+                    yield event(s, loc, "context", text, kind="summary", stamp=o.get("timestamp"), native_session_id=native, project=context_project)
             if typ != "response_item":
                 continue
             kind, role = p.get("type"), p.get("role")
             if not isinstance(kind, str):
                 continue
-            base = dict(role=role, native_id=p.get("id"), stamp=o.get("timestamp"), native_session_id=native)
+            base = dict(role=role, native_id=p.get("id"), stamp=o.get("timestamp"), native_session_id=native, project=context_project)
             if kind == "message" and role in ("user", "assistant") and p.get("channel") != "analysis":
                 yield from blocks(s, p.get("content"), loc, base, include_tools, warnings)
             elif include_tools and kind in {"function_call", "custom_tool_call"}:
@@ -647,12 +664,12 @@ def json_events(s, warnings, include_tools):
                     continue
                 yield event(s, loc, "assistant", tool_text(p.get("arguments", p.get("input", ""))),
                             kind="tool_call", native_id=p.get("id"), call_id=p.get("call_id"),
-                            name=p.get("name"), stamp=o.get("timestamp"), native_session_id=native)
+                            name=p.get("name"), stamp=o.get("timestamp"), native_session_id=native, project=context_project)
             elif include_tools and kind in {"function_call_output", "custom_tool_call_output"}:
                 if not valid_id(p, "call_id", f'{s["source"]}#{loc}', warnings):
                     continue
                 yield event(s, loc, "tool", tool_text(p.get("output", "")), kind="tool_result",
-                            native_id=p.get("id"), call_id=p.get("call_id"), stamp=o.get("timestamp"), native_session_id=native)
+                            native_id=p.get("id"), call_id=p.get("call_id"), stamp=o.get("timestamp"), native_session_id=native, project=context_project)
         elif s["client"] in {"claude", "qodercn"}:
             if typ not in {"user", "assistant"} or o.get("isMeta"):
                 continue
@@ -666,9 +683,9 @@ def json_events(s, warnings, include_tools):
             yield from blocks(s, m.get("content"), loc,
                               dict(role=typ, native_id=m.get("id") or o.get("uuid"),
                                    record_id=o.get("uuid"), parent_id=o.get("parentUuid"),
-                                   stamp=o.get("timestamp"), native_session_id=native), include_tools, warnings)
+                                   stamp=o.get("timestamp"), native_session_id=native, project=project), include_tools, warnings)
         elif s["client"] == "workbuddy":
-            base = dict(native_id=o.get("id"), parent_id=o.get("parentId"), stamp=o.get("timestamp"), native_session_id=native)
+            base = dict(native_id=o.get("id"), parent_id=o.get("parentId"), stamp=o.get("timestamp"), native_session_id=native, project=project)
             if typ == "message" and o.get("role") in ("user", "assistant"):
                 yield from blocks(s, o.get("content"), loc, dict(base, role=o["role"]), include_tools, warnings)
             elif include_tools and typ in {"function_call", "function_call_result"}:
@@ -854,7 +871,7 @@ def normalize_session(client, value):
     """客户端界面复制的会话引用是 <工作区>/<ID>.<客户端>-session 虚拟路径，磁盘上不存在；
     按文件名确定性剥壳（客户端必须匹配），不做模糊匹配。ZCode 原生 ID 带 sess_ 前缀，
     裸 UUID 同样确定性补全。"""
-    if not value or ":" in value:
+    if not value or (":" in value and not re.match(r"^[A-Za-z]:[\\/]", value)):
         return value
     name = str(value).replace("\\", "/").rsplit("/", 1)[-1]
     if UI_REFERENCE.fullmatch(name):
