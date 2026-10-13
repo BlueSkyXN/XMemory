@@ -21,6 +21,6 @@ python3 <本插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> s
 
 1.5.2 补齐明确更正的即时同步与查阅路径；全局摘要会提示画像和项目入口尚未处理的新来源。文件更新时间不当作吸收水位，查阅保持只读。
 
-库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.2**（待发布），发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.2**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 许可证：GNU GPL v3。

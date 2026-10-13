@@ -1,6 +1,6 @@
 # XMemory 验证报告
 
-当前源码版本：**1.5.2，待发布**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.5）。最新核对日期：2026-10-13。已发布版本见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+当前源码版本：**1.5.2**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.5）。最新核对日期：2026-10-13。发布状态与正式附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，下文保留开发阶段的验证记录及当时构建哈希。
 
 本文保留各开发阶段的验证记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时；后续完成情况以相应版本的收尾记录为准。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 

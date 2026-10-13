@@ -1,6 +1,6 @@
 # XMemory 1.5.2 安装包
 
-本文对应 1.5.2（待发布）。下列包可由当前源码构建；已发布的安装包与校验文件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+本文对应 1.5.2。下列包可由当前源码构建；正式安装包与校验文件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 | 包 | 内容 |
 |---|---|
