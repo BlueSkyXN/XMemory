@@ -4,6 +4,8 @@
 
 ## 返回信息
 
+- JSONL 会话的 `projects` 列出原件中实际出现的全部 `cwd`，`project` 保留最后一个已知目录。`--project` 按任一目录的路径边界选择会话，read/search 仍返回所选会话中符合其他条件的内容，不自动丢掉其他项目片段。SQLite 来源仍按原生会话目录匹配。
+- 事件的 `project` 是该条 JSONL 记录的 `cwd`；Codex 使用之前最近的 `session_meta` / `turn_context` 项目上下文。未知时为 null，不用会话最后的目录补造；SQLite 事件没有逐条目录时也为 null。项目归属还须结合正文核实，尤其是跨项目会话和压缩摘要。
 - `session_id` 表示文件或数据库会话条目的身份；JSONL 元数据缺失时，列表中的 `id_origin: filename` 表示只能从文件名定位，不能声称已验证原生身份。逐条记录的原生身份另由 `native_session_id` 保留，原记录没有该字段时为 null，不用文件身份补造。
 - 本版 JSONL 支持一个文件对应一个原生会话身份；发现多个原生 ID 时，以 `mixed_session_ids` 明确拒绝该文件，不把全部正文归给第一个或最后一个 ID。已支持的子代理文件仍保留 `parent_session_id`、完整 `session_ref`、原生消息和父消息 ID；未适配的混合继承／恢复组合不静默合并。
 - `session_ref` 带客户端及来源类型；同一个 ID 的桌面库、JSONL、子代理或迁移副本不会自动合并。出现歧义时用列表给出的完整引用和 `--root` 选择原件。

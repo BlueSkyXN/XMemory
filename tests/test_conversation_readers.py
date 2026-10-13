@@ -111,6 +111,47 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual([x["call_id"] for x in tools[-2:]], ["call1", "call1"])
         self.assertEqual(self.read("codex", p, "search", "--query", "HIDDEN", "--include-tools")["items"], [])
 
+    def test_jsonl_project_switch_keeps_earlier_project_and_event_context(self):
+        first = self.claude(text="第一个项目的决定")
+        second = dict(self.claude(text="第二个项目的决定"), uuid="u2", cwd="/work/other")
+        unknown = dict(self.claude(text="没有项目元数据"), uuid="u3")
+        unknown.pop("cwd")
+        p = self.write("switched.jsonl", [first, second, unknown])
+        before = (p.read_bytes(), p.stat().st_mtime_ns)
+        for client in ("claude", "qodercn"):
+            with self.subTest(client=client):
+                listed = self.read(client, p, "list", "--project", "/work/demo")["items"]
+                self.assertEqual(len(listed), 1)
+                self.assertEqual(listed[0]["project"], "/work/other")
+                self.assertEqual(listed[0]["projects"], ["/work/demo", "/work/other"])
+                self.assertEqual(self.read(client, p, "list", "--project", "/work/dem")["items"], [])
+                # --project 仍选择会话；不静默删去同一会话的其他项目正文。
+                events = self.read(client, p, "read", "--session", "session-demo", "--project", "/work/demo")["items"]
+                self.assertEqual([e["project"] for e in events], ["/work/demo", "/work/other", None])
+                self.assertEqual(len(events), 3)
+                matches = self.read(client, p, "search", "--project", "/work/demo", "--query", "第一个")["items"]
+                self.assertEqual([e["text"] for e in matches], ["第一个项目的决定"])
+        self.assertEqual(before, (p.read_bytes(), p.stat().st_mtime_ns))
+
+    def test_codex_project_context_follows_turns_not_last_directory(self):
+        message = lambda text: {"type": "response_item", "payload": {"type": "message", "role": "user", "content": text}}
+        p = self.write("turns.jsonl", [
+            message("尚无项目"),
+            {"type": "session_meta", "payload": {"id": "turn-demo", "cwd": "/work/demo"}},
+            message("初始项目"),
+            {"type": "turn_context", "payload": {"cwd": "/work/other"}},
+            message("切换项目"),
+            {"type": "response_item", "payload": {"type": "function_call", "call_id": "c1", "name": "check", "arguments": "{}"}},
+            {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c1", "output": "done"}},
+            {"type": "turn_context", "payload": {"cwd": "/work/demo/subdir"}},
+            {"type": "compacted", "payload": {"message": "压缩摘要"}},
+        ])
+        listed = self.read("codex", p, "list", "--project", "/work/other")["items"]
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["projects"], ["/work/demo", "/work/other", "/work/demo/subdir"])
+        events = self.read("codex", p, "read", "--session", "turn-demo", "--include-tools")["items"]
+        self.assertEqual([e["project"] for e in events], [None, "/work/demo", "/work/other", "/work/other", "/work/other", "/work/demo/subdir"])
+
     def test_claude_blocks_parents_duplicates_and_meta(self):
         a = {"type": "assistant", "sessionId": "session-demo", "uuid": "record-a", "parentUuid": "u1",
              "message": {"id": "a1", "content": [{"type": "thinking", "thinking": "HIDDEN"},
