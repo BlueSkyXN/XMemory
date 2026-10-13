@@ -6,29 +6,40 @@
 
 | 客户端 | 市场根 | XMemory 插件 ID |
 |---|---|---|
-| ZCode | 源码或完整包的 `plugins/` | `xmemory@xmemory` |
-| Claude Code | 源码或完整包根 | `xmemory@xmemory-claude` |
-| Codex | 源码或完整包根 | `xmemory@xmemory-codex` |
+| ZCode | 源码或完整包的 `plugins/` | `xmemory@xmemory-marketplace` |
+| Claude Code | 源码或完整包根 | `xmemory@xmemory-marketplace` |
+| Codex | 源码或完整包根 | `xmemory@xmemory-marketplace` |
 
-三个市场同时列出 Conversation Readers，可单独安装。XMemory 不内嵌读取器，没有强制插件依赖。
+三个客户端统一使用市场名 `xmemory-marketplace`；清单格式和市场根仍按各客户端要求保留。市场同时列出 `conversation-readers@xmemory-marketplace`，可单独安装。XMemory 不内嵌读取器，没有强制插件依赖。
+
+以下新名称适用于当前源码。已发布的 v1.5.3 包仍使用旧名称，不能仅凭插件版本判断市场名称；以所用包内清单的 `name` 为准。
 
 Claude Code：
 
 ```bash
 claude plugin marketplace add /absolute/path/to/XMemory
-claude plugin install xmemory@xmemory-claude
+claude plugin install xmemory@xmemory-marketplace
 ```
 
 Codex：
 
 ```bash
 codex plugin marketplace add /absolute/path/to/XMemory
-codex plugin add xmemory@xmemory-codex
+codex plugin add xmemory@xmemory-marketplace
 ```
 
 ZCode 在插件市场添加 `plugins/` 的实际绝对路径。已添加同名市场时更新已有安装。不同 CLI 版本先看实际 help。
 
 独立技能包把 `skills/` 下八个目录一起放进客户端的技能目录，保留相对位置；同一客户端避免同时启用插件与同名独立技能。
+
+## 旧市场名迁移
+
+旧名称分别为 ZCode 的 `xmemory`、Claude Code 的 `xmemory-claude`、Codex 的 `xmemory-codex`。市场名属于插件 ID，改名不会自动迁移已安装插件。
+
+1. 记录旧插件的启用状态、配置、插件数据目录和实际记忆根；保留记忆库及客户端原生记忆规则。
+2. 使用客户端支持的卸载方式移除旧 ID，保留需要的数据；先检查实际 CLI 的 help，不能假定卸载会保留插件数据。ZCode 支持 `plugins uninstall <旧插件 ID> --keep-data --force`。
+3. 移除旧市场注册，再按上表的市场根添加新市场，只安装此前使用的插件。恢复原来的启用状态；有按旧 ID 保存的配置或数据时，按客户端支持的方式迁移，不能只改市场清单或缓存目录名。
+4. 确认只剩新市场及新插件 ID，在新会话验证技能。市场改名不要求重建、转换或删除 XMemory 记忆库。
 
 ## 首次使用
 

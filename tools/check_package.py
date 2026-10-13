@@ -162,7 +162,7 @@ def check_markets(root: Path = ROOT) -> list[str]:
             errors.append(f"Missing {host} marketplace")
             continue
         catalog = json.loads(path.read_text(encoding="utf-8"))
-        if catalog.get("name") != ("xmemory" if host == "zcode" else f"xmemory-{host}"):
+        if catalog.get("name") != "xmemory-marketplace":
             errors.append(f"Unexpected {host} marketplace identity")
         if host == "claude" and catalog.get("owner", {}).get("name") != "BlueSkyXN":
             errors.append("Missing Claude marketplace owner")

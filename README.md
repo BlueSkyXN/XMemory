@@ -28,7 +28,7 @@ python3 <插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> stat
 | 程序与分发包测试 | `tests/` |
 | 有依据的记忆问答、遗忘、增量更正与来源适配验证案例 | `evals/v1.5.1/`、`evals/v1.5.2/`、`evals/source-adaptation/` |
 
-三个客户端的市场同时列出两个插件，可分别安装：ZCode 市场根为 `plugins/`，Claude Code 与 Codex 市场根为仓库根。完整市场包、XMemory 独立技能包及 Conversation Readers 技能包见 [安装包说明](docs/release-install.md)。
+三个客户端统一使用市场名 `xmemory-marketplace`，同时列出两个插件，可分别安装：ZCode 市场根为 `plugins/`，Claude Code 与 Codex 市场根为仓库根。市场名称统一已在当前源码中完成，已发布的 v1.5.3 包仍使用旧名；旧安装迁移见 [安装与首次使用](plugins/xmemory/docs/install.md#旧市场名迁移)。完整市场包、XMemory 独立技能包及 Conversation Readers 技能包见 [安装包说明](docs/release-install.md)。
 
 ## 开发检查
 

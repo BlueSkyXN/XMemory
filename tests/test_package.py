@@ -150,6 +150,30 @@ class PackageTests(unittest.TestCase):
                 for relative in ("plugins/marketplace.json", ".claude-plugin/marketplace.json",
                                  ".agents/plugins/marketplace.json", *manifests):
                     self.assertIn(f"{archive_path.stem}/{relative}", archive.namelist())
+                for relative in ("plugins/marketplace.json", ".claude-plugin/marketplace.json",
+                                 ".agents/plugins/marketplace.json"):
+                    catalog = json.loads(archive.read(f"{archive_path.stem}/{relative}"))
+                    self.assertEqual(catalog["name"], "xmemory-marketplace")
+
+    def test_marketplace_identity_is_shared_across_hosts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            copy_repo(root)
+            for host, relative, old_name in (
+                ("zcode", "plugins/marketplace.json", "xmemory"),
+                ("claude", ".claude-plugin/marketplace.json", "xmemory-claude"),
+                ("codex", ".agents/plugins/marketplace.json", "xmemory-codex"),
+            ):
+                with self.subTest(host=host):
+                    path = root / relative
+                    original = path.read_text(encoding="utf-8")
+                    data = json.loads(original)
+                    self.assertEqual(data["name"], "xmemory-marketplace")
+                    data["name"] = old_name
+                    path.write_text(json.dumps(data), encoding="utf-8")
+                    self.assertIn(f"Unexpected {host} marketplace identity", check(root))
+                    path.write_text(original, encoding="utf-8")
+            self.assertEqual(check(root), [])
 
     def test_every_marketplace_lists_both_plugins(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,5 +1,5 @@
 {
-  "name": "xmemory-codex",
+  "name": "xmemory-marketplace",
   "interface": { "displayName": "XMemory" },
   "plugins": [
     {

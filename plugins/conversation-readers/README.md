@@ -16,7 +16,7 @@
 
 需要 **Python 3.9+**（macOS 自带的 `python3` 即可），只用标准库。脚本位于每个 Skill 的 `scripts/read_conversations.py`，无需安装统一 CLI、修改 PATH、配置 MCP 或启动服务。
 
-本插件与 XMemory 列在同一套三端市场中，各自独立安装：ZCode 为 `conversation-readers@xmemory`，Claude Code 为 `conversation-readers@xmemory-claude`，Codex 为 `conversation-readers@xmemory-codex`。插件带 Agent Plugins、Codex、Claude Code 和 ZCode 四份清单。XMemory 采集按会话读取时使用本插件，但两者没有安装依赖；本插件也可单独用于审阅或工作接续。
+本插件与 XMemory 列在同一套三端市场中，各自独立安装。当前源码在 ZCode、Claude Code 和 Codex 中统一使用 `conversation-readers@xmemory-marketplace`；已发布 v1.5.3 完整包仍使用各客户端的旧市场名，以包内清单为准。旧市场安装需通过客户端迁移注册与安装，保留数据和启用状态，不能只改缓存目录名。插件带 Agent Plugins、Codex、Claude Code 和 ZCode 四份清单。XMemory 采集按会话读取时使用本插件，但两者没有安装依赖；本插件也可单独用于审阅或工作接续。
 
 不用插件时，按目标客户端的技能安装方式复制完整技能目录（技能包为 `ConversationReaders-<版本>-skills.zip`），保留 `scripts/` 和 `references/`；不要只复制 `SKILL.md`。同名技能已存在时先核对，不覆盖。安装和新会话自然触发属于另外的宿主验收，本仓库不会自动执行；清单存在不等于已经安装。
 
