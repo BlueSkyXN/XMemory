@@ -138,6 +138,7 @@ class ReaderTests(unittest.TestCase):
         p = self.write("turns.jsonl", [
             message("尚无项目"),
             {"type": "session_meta", "payload": {"id": "turn-demo", "cwd": "/work/demo"}},
+            {"type": {}, "cwd": []},
             message("初始项目"),
             {"type": "turn_context", "payload": {"cwd": "/work/other"}},
             message("切换项目"),

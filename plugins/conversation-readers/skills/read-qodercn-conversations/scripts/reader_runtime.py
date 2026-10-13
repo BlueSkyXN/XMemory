@@ -357,7 +357,7 @@ def native_session_id(client, row):
 def json_project(client, row):
     """只取原生 cwd；Codex 的轮次上下文位于 payload。"""
     value = row.get("cwd")
-    if client == "codex" and row.get("type") in {"session_meta", "turn_context"}:
+    if client == "codex" and row.get("type") in ("session_meta", "turn_context"):
         payload = row.get("payload")
         if not value and isinstance(payload, dict):
             value = payload.get("cwd")
