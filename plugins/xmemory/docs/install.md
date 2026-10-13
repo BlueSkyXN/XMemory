@@ -1,6 +1,6 @@
 # 安装与首次使用
 
-当前源码版本 **1.5.2**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装仅提供技能和只读程序，不建库、不采集、不修改客户端配置。
+当前源码版本 **1.5.3**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装仅提供技能和只读程序，不建库、不采集、不修改客户端配置。
 
 ## 市场安装
 
@@ -34,6 +34,8 @@ ZCode 在插件市场添加 `plugins/` 的实际绝对路径。已添加同名�
 
 让代理按 [设置技能](../skills/xmemory-setup/SKILL.md) 选择新的空目录、实际时区、来源和项目，并从模板创建配置。来源默认关闭；可以只启用项目文件，也可以使用可选读取器。
 
+保留客户端原生记忆的入口、读取和维护机制，与 XMemory 同时使用。这里的来源开关仅控制导入 XMemory 的材料；原生记忆无需先导入便可按客户端协议使用。隔离实验中的关闭记忆参数不属于安装或日常运行要求。
+
 ```bash
 python3 <插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> status
 ```
@@ -43,6 +45,8 @@ python3 <插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> stat
 已有 1.4 库先保留，确认新目录或归档位置后重建。不要把它的 config 格式名直接改成 1.5。
 
 已有 1.5.0 / 1.5.1 库无需转换格式。新增跨日材料可补 `event_days`；旧会话身份会收到复核提示，先回查原件再映射，status 不会自动改写。1.5.2 仅在 status 报告的 summary 对象增加 `upstream_updates`，不新增记忆文件字段。
+
+1.5.3 继续使用相同格式，升级技能即可。已有客户端告知使用旧模板时，按用户要求合并新版告知，保留原生记忆规则；库内 `exclude_sessions` 也用于过滤联合召回中的已知原生副本，不代表原生副本已删除。
 
 ## 告知与定时
 

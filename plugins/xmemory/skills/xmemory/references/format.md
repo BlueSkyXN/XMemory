@@ -35,7 +35,7 @@
 |---|---|
 | `format` | 固定 `xmemory/v1.5` |
 | `timezone` | 实际使用的 IANA 时区；模板 UTC 只是可解析的示例 |
-| `exclude_sessions` | 要遗忘的完整会话身份列表，使用下文的 `client:<原生 ID>`，不用标题或 ID 后缀 |
+| `exclude_sessions` | 本库采集及联合查阅都须排除的完整会话身份列表，使用下文的 `client:<原生 ID>`，不用标题或 ID 后缀；不表示已删除原生副本 |
 | `[sources.<名称>]` | 每个可选择来源的 `enabled`、`kind`、`client` 和 `paths` |
 | `sources.*.kind` | `sessions`、`memory` 或 `files`；当场笔记不需要外部来源配置 |
 | `[projects.<项目名>].roots` | 项目实际路径及已确认的 worktree/别名路径 |
@@ -76,13 +76,15 @@ updated: "2026-10-12T18:00:00+08:00"
 | `source_ref` | 读取器返回的完整引用；文件材料填完整原文件定位；无会话标识的当场笔记填 `current-conversation` 并说明缺口 |
 | `source_location` | 原件路径及可用的行号、字节或数据库定位，照抄实际结果；源文件 ID 与原生会话 ID 不混用 |
 | `source_updated` | 本次实际读取到的来源更新时间，注明依据；未知填空，不能用采集时间代替 |
-| `evidence` | `primary` 原始对话/项目文件/当场笔记；`primary-summary` Codex 逐会话提炼；`secondary` 其他记忆汇总 |
+| `evidence` | `primary` 原始对话/项目文件/当场笔记；`primary-summary` 有可信单会话身份与明确范围的模型提炼；`secondary` 主题记忆、跨会话汇总或无法核实单会话范围的摘要 |
 | `projects` | 已核实的项目名数组；无项目内容为空数组 |
 | `day` | 本记录归入的本地日期 `YYYY-MM-DD` |
 | `day_basis` | `event` 表示原始事件日期；日期未知、按采集日归档时填 `captured` 并在正文说明 |
 | `event_days` | 可选的非空日期数组，列出来源实际支持的事件日期；省略时沿用 `day`，不能按起止日期补造中间日期 |
 | `session_refs` | 经核实的 `client:<原生 ID>` 列表，用于遗忘匹配；文件没有会话身份就留空 |
 | `coverage` | 对本记录声明范围的读取覆盖：`complete` 或 `partial`；partial 在正文写出缺页、截断或不可读位置 |
+
+`evidence` 描述材料形成方式，不按客户端品牌给可信度排序，也不保证里面每个断言为真。Codex 逐会话摘要通常属于 `primary-summary`，ZCode 主题带 origin 会话标记仍可能经过多会话编辑。用户原话可证明其偏好或决定；助手自述和模型摘要不能单独证明测试、发布或部署已经成功。字段取值保持兼容，不为改标签批量重写旧库；实际复查相关记录时按来源范围澄清。
 
 会话记录的范围是一天；覆盖完整不表示整个多日会话都已处理。跨期来源文件仍生成一份记录，`day` 取已知起始日，`event_days` 列出有依据的各日（例如 `["2026-10-10", "2026-10-12"]`），正文按日期区分事实。同一记录可以关联多个日总结，不另外拆成多份来源记录。
 

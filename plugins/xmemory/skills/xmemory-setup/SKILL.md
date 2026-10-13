@@ -17,7 +17,7 @@ description: "设置 XMemory 的记忆根、时区、来源选择和项目映射
 
 ## 告知与调度
 
-- 按 [告知模板](../xmemory/templates/agents-notice.md) 填实际记忆根。只有用户要求集成到客户端时才合并到相应规则文件，保留其他内容；不自动注入记忆正文。
+- 按 [告知模板](../xmemory/templates/agents-notice.md) 填实际记忆根。只有用户要求集成到客户端时才合并到相应规则文件，保留原生记忆规则及其他内容，明确两套记忆共同使用；不自动注入记忆正文。读回确认没有把原生记忆入口改成只读 XMemory，也没有加入关闭原生记忆的设置或实验参数。
 - 按 [定时提示词](../xmemory/templates/automation-prompt.md) 填日常增量范围；完整整理单独用 [周期整理提示词](../xmemory/templates/organization-prompt.md)，由客户端每 7 天触发。XMemory 不创建后台服务或保存上次整理时间；用户已要求创建客户端定时任务时，可用该客户端的能力完成。
 - Conversation Readers 可另装；设置 XMemory 不代表授权安装或启用读取器。
 

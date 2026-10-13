@@ -1,4 +1,4 @@
-# XMemory 1.5.2
+# XMemory 1.5.3
 
 以技能维护跨客户端 Markdown 记忆。六类对象分别更新，唯一程序是只读 `status`；定时由客户端负责，Conversation Readers 另装、可选。
 
@@ -21,6 +21,8 @@ python3 <本插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> s
 
 1.5.2 补齐明确更正的即时同步与查阅路径；全局摘要会提示画像和项目入口尚未处理的新来源。文件更新时间不当作吸收水位，查阅保持只读。
 
-库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.2**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+1.5.3 补充 Codex/ZCode 来源适配，明确原生记忆与 XMemory 共同使用。联合查阅应用 `exclude_sessions`，已知来自被排除会话的原生副本也不参与回答或重新写回；原生库的物理删除仍由客户端处理。
+
+库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.3**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 许可证：GNU GPL v3。
