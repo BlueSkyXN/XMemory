@@ -1,8 +1,8 @@
 # XMemory 1.5.4 安装包
 
-当前源码为 XMemory 1.5.4 与 Conversation Readers 0.1.6，文件格式仍为 `xmemory/v1.5`。本版尚未发布；下列为当前源码构建的发布候选包，正式发布后以 [Releases](https://github.com/BlueSkyXN/XMemory/releases) 的附件与校验文件为准。
+本版包含 XMemory 1.5.4 与 Conversation Readers 0.1.6，文件格式仍为 `xmemory/v1.5`。安装包与校验文件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
-市场名称统一为 `xmemory-marketplace` 的改动目前仅在源码中，尚未发布；以下命令用于当前源码构建的包。已发布的 v1.5.3 包仍使用 ZCode `xmemory`、Claude Code `xmemory-claude`、Codex `xmemory-codex`，以包内市场清单的 `name` 为准。
+本版三个客户端的市场名称统一为 `xmemory-marketplace`，以下命令适用于本版安装包。旧 v1.5.3 包仍使用 ZCode `xmemory`、Claude Code `xmemory-claude`、Codex `xmemory-codex`，以包内市场清单的 `name` 为准。
 
 | 包 | 内容 |
 |---|---|

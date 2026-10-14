@@ -25,6 +25,6 @@ python3 <本插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> s
 
 1.5.4 将 Skysight 活动直接按天写入日总结，按记录重建时保留活动，并在日常更新中独立检查覆盖缺口。项目归属要求具体依据，未定内容使用可选标记；status 增加未定归属与会话文件名身份提示。格式保持 `xmemory/v1.5`，旧库无需转换；1.5.3 的 status 可读但不理解未定归属语义。
 
-库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.4（待发布）**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.4**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 许可证：GNU GPL v3。

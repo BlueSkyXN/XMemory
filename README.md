@@ -4,7 +4,7 @@
 
 与客户端原生记忆共同使用：客户端继续按自身机制读取和维护记忆，XMemory 补充跨客户端信息。两套记忆按问题取用、核对来源和更正，接入 XMemory 不替换或关闭原生记忆。
 
-当前源码版本 **1.5.4（待发布）**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），文件格式 `xmemory/v1.5`。程序只有只读 `status`，不再维护任务队列、整合锁、ledger 或内嵌读取器；记忆库不依赖 git。Conversation Readers 0.1.6（待发布）是同一市场中的另一个可选插件。
+当前源码版本 **1.5.4**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），文件格式 `xmemory/v1.5`。程序只有只读 `status`，不再维护任务队列、整合锁、ledger 或内嵌读取器；记忆库不依赖 git。Conversation Readers 0.1.6 是同一市场中的另一个可选插件。
 
 1.5.4 补充 Skysight 按天直接写日总结、活动保留与覆盖检查，明确项目归属依据及未定标记，并检查会话记录文件名与身份是否一致。读取器补全 Codex 代理消息、搜索调用和线程信息。改动与兼容边界见 [1.5.4 版本说明](docs/v1.5/README.md)。
 

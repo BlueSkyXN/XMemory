@@ -1,6 +1,6 @@
 # XMemory 1.5 版本线
 
-当前源码为 XMemory 1.5.4 与 Conversation Readers 0.1.6，均待发布；下面保留此前版本说明，并列出本版改动。
+当前源码为 XMemory 1.5.4 与 Conversation Readers 0.1.6；发布状态及附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。下面保留此前版本说明，并列出本版改动。
 
 ## 1.5.0
 
@@ -40,7 +40,7 @@
 - 联合查阅先检查 `exclude_sessions`，已知被遗忘会话的原生副本不用于回答或写回；保留其他会话的独立依据，原生副本的删除范围另行说明。
 - 来源适配与双库行为场景见 [评测说明](../../evals/source-adaptation/README.md)。文件格式、只读 status 与 Conversation Readers 0.1.5 保持兼容。
 
-## 1.5.4（待发布）
+## 1.5.4
 
 - 项目以实际目录为单位，客户端配置目录与同名源码仓库分别登记。归属优先看工作目录与实际读写路径，内容推断须说明依据；账号名、签名或产品名本身不足以挂项目。无法判定时用可选的 `project_status: "unresolved"`，不归入 personal。
 - Skysight 单独登记为 memory 类来源，直接按天整理进日总结，不生成记录，不进入项目主题、意识或画像。合并重叠窗口，保留二手性质、来源定位、覆盖时段、归属依据与缺口；按记录重建日总结时保留既有活动。活动要点与定位分项列出，文本字段自带所需标点。
