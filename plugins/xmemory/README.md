@@ -1,4 +1,4 @@
-# XMemory 1.5.3
+# XMemory 1.5.4
 
 以技能维护跨客户端 Markdown 记忆。六类对象分别更新，唯一程序是只读 `status`；定时由客户端负责，Conversation Readers 另装、可选。
 
@@ -23,6 +23,8 @@ python3 <本插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> s
 
 1.5.3 补充 Codex/ZCode 来源适配，明确原生记忆与 XMemory 共同使用。联合查阅应用 `exclude_sessions`，已知来自被排除会话的原生副本也不参与回答或重新写回；原生库的物理删除仍由客户端处理。
 
-库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.3**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+1.5.4 将 Skysight 活动直接按天写入日总结，按记录重建时保留活动，并在日常更新中独立检查覆盖缺口。项目归属要求具体依据，未定内容使用可选标记；status 增加未定归属与会话文件名身份提示。格式保持 `xmemory/v1.5`，旧库无需转换；1.5.3 的 status 可读但不理解未定归属语义。
+
+库内状态报告不证明外部来源已经同步，结构检查不证明语义正确。当前源码为 **1.5.4（待发布）**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 许可证：GNU GPL v3。

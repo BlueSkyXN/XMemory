@@ -26,7 +26,7 @@ def check(plugin=PLUGIN):
         data = json.loads((plugin / rel).read_text(encoding="utf-8"))
         if any(data.get(k) != manifest.get(k) for k in ["name", "version", "description"]) or data.get("skills") != "./skills":
             errors.append(f"Manifest mismatch: {rel}")
-    if {p.name for p in (plugin / "skills").iterdir()} != set(SKILLS.values()):
+    if {p.name for p in (plugin / "skills").iterdir() if p.name != ".DS_Store"} != set(SKILLS.values()):
         errors.append("Expected five client reader skills")
     for client, name in SKILLS.items():
         folder = plugin / "skills" / name
@@ -40,6 +40,8 @@ def check(plugin=PLUGIN):
         if f'main("{client}")' not in wrapper:
             errors.append(f"Wrong client wrapper: {name}")
     for path in sorted(plugin.rglob("*")):
+        if ".DS_Store" in path.relative_to(plugin).parts:
+            continue
         if path.is_symlink():
             errors.append(f"Symlink: {path.relative_to(plugin)}")
         if not path.is_file():
@@ -75,7 +77,8 @@ def build(output, portable=False, plugin=PLUGIN):
     version = json.loads((plugin / "plugin.json").read_text(encoding="utf-8"))["version"]
     label = f"ConversationReaders-{version}" + ("-skills" if portable else "")
     paths = sorted(plugin.rglob("*")) if not portable else [*sorted((plugin / "skills").rglob("*")), plugin / "LICENSE", plugin / "README.md"]
-    files = {p.relative_to(plugin).as_posix(): p.read_bytes() for p in paths if p.is_file()}
+    files = {p.relative_to(plugin).as_posix(): p.read_bytes() for p in paths
+             if p.is_file() and ".DS_Store" not in p.relative_to(plugin).parts}
     if portable:
         # 技能包不含插件层验证文档；README 中的本地链接需有对应文件。
         files["docs/validation.md"] = (plugin / "docs/validation.md").read_bytes()

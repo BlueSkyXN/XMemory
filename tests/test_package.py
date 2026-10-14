@@ -37,7 +37,7 @@ class PackageTests(unittest.TestCase):
             self.assertFalse((PLUGIN / name).exists())
 
     def test_one_tool_many_skills(self):
-        self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir()}, SKILLS)
+        self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir() if p.name != ".DS_Store"}, SKILLS)
         self.assertEqual(len(SKILLS), 8)
         for skill in SKILLS - {"xmemory"}:
             text = (PLUGIN / "skills" / skill / "SKILL.md").read_text()
@@ -111,7 +111,8 @@ class PackageTests(unittest.TestCase):
                     payload = {name.removeprefix(f"{label}/plugins/{plugin}/") for name in archive.namelist()
                                if name.startswith(f"{label}/plugins/{plugin}/")}
                     actual = {p.relative_to(ROOT / "plugins" / plugin).as_posix()
-                              for p in (ROOT / "plugins" / plugin).rglob("*") if p.is_file()}
+                              for p in (ROOT / "plugins" / plugin).rglob("*")
+                              if p.is_file() and ".DS_Store" not in p.relative_to(ROOT / "plugins" / plugin).parts}
                     self.assertEqual(payload, actual, plugin)
                 self.assertFalse(any("local/" in name or "tools/" in name or "__pycache__" in name
                                      for name in archive.namelist()))
@@ -205,6 +206,34 @@ class PackageTests(unittest.TestCase):
             build(ROOT, Path(tmp))
             with self.assertRaises(FileExistsError):
                 build(ROOT, Path(tmp))
+
+    def test_finder_metadata_is_preserved_but_never_packaged(self):
+        from build_conversation_readers import build as build_readers, check as check_readers
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            copy_repo(root)
+            shutil.copytree(ROOT / "docs", root / "docs")
+            metadata = []
+            for plugin in ("xmemory", "conversation-readers"):
+                base = root / "plugins" / plugin
+                for folder in [base, *[p for p in base.rglob("*") if p.is_dir()]]:
+                    path = folder / ".DS_Store"
+                    path.write_bytes(b"synthetic finder metadata\x00\xff")
+                    metadata.append((path, path.read_bytes(), path.stat().st_mtime_ns))
+            self.assertEqual(check(root), [])
+            self.assertEqual(check_readers(root / "plugins/conversation-readers"), [])
+            for portable in (False, True):
+                output = Path(tmp) / str(portable)
+                archives = [build(root, output, portable=portable)[0],
+                            build_readers(output, portable=portable, plugin=root / "plugins/conversation-readers")[0]]
+                for path in archives:
+                    with zipfile.ZipFile(path) as archive:
+                        self.assertIsNone(archive.testzip())
+                        self.assertFalse(any(".DS_Store" in Path(name).parts for name in archive.namelist()))
+                        self.assertNotIn(".DS_Store", archive.read(f"{path.stem}/SHA256SUMS").decode())
+            for path, data, mtime in metadata:
+                self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), (data, mtime))
 
 
 if __name__ == "__main__":

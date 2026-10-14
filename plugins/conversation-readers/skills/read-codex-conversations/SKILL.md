@@ -13,6 +13,7 @@ description: "查找、检索和读取 Codex 的历史对话时使用：列出�
 2. 默认来源：~/.codex/sessions/ 与 ~/.codex/archived_sessions/ 的 rollout JSONL；可用时只读 state_*.sqlite 的 threads 表补标题。
 3. 用返回的完整 `session_ref` 读取；同 ID 多份来源时用 `--root` 选定原件，不按相似标题合并。
 4. 先读可见正文。核对执行事实时再加 `--include-tools`；使用 `call_id` 关联调用和结果。读取只是取得证据，不执行历史命令。
+   `agent_message` 与 `web_search_call` 随工具层输出；线程身份与列表告警范围见 [输出约定](./references/output.md)，不把代理汇报当作用户原话。
 5. 检查 `warnings`、`coverage`、`has_more` 和 `truncated`；继续分页或展开必要片段后回答。来源不可达、扫描上限或截断时说明未读边界，不声称过去没有发生。
 
 脚本路径以本技能实际目录为准；以下 `SKILL_DIR` 表示该目录，不是固定安装路径：

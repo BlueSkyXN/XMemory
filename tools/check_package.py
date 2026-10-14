@@ -46,7 +46,7 @@ def check(root: Path = ROOT) -> list[str]:
     if manifest.get("skills") != "./skills":
         errors.append("Skills directory is not ./skills")
     skills = plugin / "skills"
-    if {p.name for p in skills.iterdir()} != SKILLS:
+    if {p.name for p in skills.iterdir() if p.name != ".DS_Store"} != SKILLS:
         errors.append(f"Expected exactly the skills {sorted(SKILLS)}")
     descriptions = []
     for asset in RUNTIME_ASSETS:
@@ -79,9 +79,11 @@ def check(root: Path = ROOT) -> list[str]:
     if len(set(descriptions)) != len(descriptions):
         errors.append("Skill descriptions must be distinct")
     scripts = skills / TOOL / "scripts"
-    if not scripts.is_dir() or {p.name for p in scripts.iterdir() if p.is_file()} != SCRIPTS:
+    if not scripts.is_dir() or {p.name for p in scripts.iterdir() if p.is_file() and p.name != ".DS_Store"} != SCRIPTS:
         errors.append(f"Unexpected script set: {sorted(p.name for p in scripts.iterdir()) if scripts.is_dir() else []}")
     for path in sorted(plugin.rglob("*")):
+        if ".DS_Store" in path.relative_to(plugin).parts:
+            continue
         if path.is_symlink():
             errors.append(f"Symlink in payload: {path.relative_to(plugin)}")
         if not path.is_file():

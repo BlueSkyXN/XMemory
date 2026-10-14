@@ -70,6 +70,48 @@ class StatusTests(unittest.TestCase):
     def codes(self):
         return {x["code"] for x in self.result()["issues"]}
 
+    def test_unresolved_project_is_not_a_personal_candidate(self):
+        path = "records/imported/claude/unresolved.md"
+        self.record(path, projects=[], project_status="unresolved")
+        before = snapshot(self.root)
+        result = self.result()
+        self.assertEqual(snapshot(self.root), before)
+        self.assertEqual([x for x in result["issues"] if x["code"] == "unresolved_project"],
+                         [{"code": "unresolved_project", "path": path}])
+        self.assertNotIn("personal/AWARENESS.md", self.objects(result))
+        self.assertIn("daily/2026/2026-10-12.md", self.objects(result))
+        self.assertIn(path, self.objects(result)["USER.md"]["newer_sources"])
+        self.write("personal/AWARENESS.md", "awareness", "2026-10-11T10:00:00+08:00")
+        self.write("personal/MEMORY.md", "project-index", "2026-10-11T10:00:00+08:00")
+        for kind in ("AWARENESS", "MEMORY"):
+            self.assertEqual(self.objects()[f"personal/{kind}.md"]["newer_sources"], [])
+        self.record("records/imported/claude/personal.md", projects=[])
+        self.assertEqual(self.objects()["personal/AWARENESS.md"]["newer_sources"],
+                         ["records/imported/claude/personal.md"])
+
+    def test_project_status_only_accepts_unresolved_with_empty_projects(self):
+        for value, projects in (("resolved", []), ("", []), ([], []), ("unresolved", ["demo"])):
+            with self.subTest(value=value, projects=projects):
+                self.record("records/imported/claude/test.md", projects=projects, project_status=value)
+                self.assertTrue(any(x["code"] == "invalid_field" and x.get("field") == "project_status"
+                                    for x in self.result()["issues"]))
+
+    def test_session_filename_matches_full_identity_suffix(self):
+        cases = [
+            ("records/sessions/claude/20261012-good-12345678.md", ["claude:session-12345678"], False),
+            ("records/sessions/claude/20261012-good-12345678.md", ["claude:other-87654321", "claude:session-12345678"], False),
+            ("records/sessions/claude/20261012-bad-87654321.md", ["claude:session-12345678"], True),
+            ("records/sessions/claude/20261012-short-1234.md", ["claude:session-1234"], True),
+            ("records/sessions/claude/unknown.md", [], False),
+            ("records/imported/claude/summary.md", ["claude:session-12345678"], False),
+        ]
+        for path, refs, expected in cases:
+            with self.subTest(path=path, refs=refs):
+                self.record(path, session_refs=refs)
+                found = [x for x in self.result()["issues"] if x["path"] == path and
+                         x["code"] == "identity_review" and x.get("field") == "filename"]
+                self.assertEqual(bool(found), expected)
+
     def test_unlinked_record_and_missing_outputs_are_discovered(self):
         self.record()
         self.write("projects/demo/MEMORY.md", "project-index", "2026-10-11T10:00:00+08:00")
@@ -206,7 +248,8 @@ class StatusTests(unittest.TestCase):
         result = self.result()
         excluded = {x["path"] for x in result["issues"] if x["code"] == "excluded_record"}
         self.assertEqual(excluded, {"records/sessions/claude/r.md", "records/imported/codex/copy.md"})
-        self.assertNotIn("identity_review", {x["code"] for x in result["issues"]})
+        # 本例核对完整身份与跨客户端排除；旧夹具文件名另由 filename 提示覆盖。
+        self.assertNotIn("identity_review", {x["code"] for x in result["issues"] if x.get("field") != "filename"})
 
     def test_legacy_reader_identity_warns_and_matches_exactly_without_inference(self):
         legacy = "claude:jsonl:fixture"
@@ -217,7 +260,7 @@ class StatusTests(unittest.TestCase):
         result = self.result()
         excluded = {x["path"] for x in result["issues"] if x["code"] == "excluded_record"}
         self.assertEqual(excluded, {"records/sessions/claude/r.md"})
-        review = {x["path"] for x in result["issues"] if x["code"] == "identity_review"}
+        review = {x["path"] for x in result["issues"] if x["code"] == "identity_review" and x.get("field") != "filename"}
         self.assertEqual(review, {"config.toml", "records/sessions/claude/r.md"})
         for identity in ("zcode:sqlite:fixture", "qodercn:desktop:fixture", "claude:subagent:parent:child"):
             self.record(session_refs=[identity])

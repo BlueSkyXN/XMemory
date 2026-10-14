@@ -6,6 +6,8 @@
 
 response_item 的 user/assistant 消息和 function/custom tool 调用；event_msg 是重复投影，不重复显示。明确标记压缩摘要，不输出 reasoning 或 analysis。
 
+0.1.6 增加 `response_item/agent_message` 与 `web_search_call`：前者保留作者、接收方、消息 ID 和文本，后者保留搜索词与 status；均只在 `--include-tools` 时输出。会话列表与事件增加 `thread_source`、`parent_session_id`（原生 `parent_thread_id`）、`agent_path`，缺失时为 null；不改变会话 `variant` 或 `session_ref`，不因线程类型自动排除来源。
+
 支持 `list`、`search`、`read`。`--root` 可指定单个 rollout JSONL 或包含它的目录；state_*.sqlite 不能作为 `--root`，指定 `--root` 时也不用它补标题。默认来源不存在时明确报告。可迁移到其他系统，但不同系统的路径需由用户明确指定，本版未宣称完成所有操作系统和客户端版本验收。
 
 ## 项目根与存储位置

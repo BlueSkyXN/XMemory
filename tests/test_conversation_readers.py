@@ -166,6 +166,136 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(items[-1]["role"], "tool")
         self.assertNotIn("HIDDEN", json.dumps(items))
 
+    def test_codex_agent_messages_and_search_calls_require_tools(self):
+        rows = [
+            {"type": "session_meta", "payload": {"id": "child-demo", "cwd": "/work/demo",
+                "thread_source": "subagent", "parent_thread_id": "parent-demo", "agent_path": "/root/check"}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:00:00Z", "payload": {
+                "type": "message", "role": "user", "content": "用户可见正文"}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:01:00Z", "payload": {
+                "type": "agent_message", "id": "report-1", "author": "/root/check", "recipient": "/root",
+                "content": [{"type": "input_text", "text": "检查结果\npassword=fixture-secret\n"},
+                            {"type": "encrypted_content", "encrypted_content": "ENCRYPTED-NOT-VISIBLE"},
+                            {"type": "thinking", "thinking": "HIDDEN"},
+                            {"type": "text", "text": "下一步复查"}]}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:02:00Z", "payload": {
+                "type": "web_search_call", "id": "search-1", "status": "completed",
+                "action": {"type": "search", "query": "检查结果参考 password=fixture-search-secret"}}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:03:00Z", "payload": {
+                "type": "web_search_call", "id": "search-pending", "status": "in_progress"}},
+        ]
+        p = self.write("codex-tools.jsonl", rows)
+        before = (p.read_bytes(), p.stat().st_mtime_ns)
+        default = self.read("codex", p, "read", "--session", "child-demo")
+        self.assertEqual([x["text"] for x in default["items"]], ["用户可见正文"])
+        self.assertEqual(default["warnings"], [])
+        full = self.read("codex", p, "read", "--session", "child-demo", "--include-tools")
+        self.assertEqual([x["kind"] for x in full["items"]], ["message", "agent_message", "tool_call", "tool_call"])
+        message, search, pending = full["items"][1:]
+        self.assertEqual((message["author"], message["recipient"], message["message_id"]),
+                         ("/root/check", "/root", "report-1"))
+        self.assertEqual(message["role"], "assistant")
+        self.assertIn("下一步复查", message["text"])
+        self.assertEqual((search["tool_name"], search["status"], search["message_id"]),
+                         ("web_search", "completed", "search-1"))
+        self.assertIsNone(search["call_id"])
+        self.assertEqual((pending["text"], pending["status"]), ("", "in_progress"))
+        for item in full["items"]:
+            self.assertEqual((item["thread_source"], item["parent_session_id"], item["agent_path"]),
+                             ("subagent", "parent-demo", "/root/check"))
+        self.assertNotIn("fixture-secret", json.dumps(full))
+        self.assertNotIn("fixture-search-secret", json.dumps(full))
+        self.assertNotIn("HIDDEN", json.dumps(full))
+        self.assertNotIn("ENCRYPTED-NOT-VISIBLE", json.dumps(full))
+        self.assertEqual((p.read_bytes(), p.stat().st_mtime_ns), before)
+        # 经过真实 CLI 入口，而不只调用底层生成器。
+        script = ROOT / "plugins/conversation-readers/skills/read-codex-conversations/scripts/read_conversations.py"
+        run = subprocess.run([sys.executable, "-B", str(script), "read", "--root", str(p),
+                              "--session", "child-demo"], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual([x["kind"] for x in json.loads(run.stdout)["items"]], ["message"])
+
+    def test_codex_new_tool_events_search_pagination_and_expansion(self):
+        p = self.write("agent-pages.jsonl", [
+            {"type": "session_meta", "payload": {"id": "pages"}},
+            *[{"type": "response_item", "timestamp": f"2026-10-12T08:0{i}:00Z", "payload": {
+                "type": "agent_message", "id": f"r{i}", "author": "/root/check", "recipient": "/root",
+                "content": [{"type": "text", "text": "报告" + str(i) + "正文" * 40}]}} for i in range(3)],
+        ])
+        self.assertEqual(self.read("codex", p, "search", "--query", "报告")["items"], [])
+        first = self.read("codex", p, "search", "--query", "报告", "--include-tools", "--limit", "1")
+        self.assertTrue(first["has_more"])
+        second = self.read("codex", p, "search", "--query", "报告", "--include-tools", "--limit", "1",
+                           "--offset", str(first["next_offset"]))
+        self.assertEqual([first["items"][0]["message_id"], second["items"][0]["message_id"]], ["r0", "r1"])
+        chosen = self.read("codex", p, "read", "--session", "pages", "--include-tools",
+                           "--since", "2026-10-12T08:01:00Z", "--until", "2026-10-12T08:01:00Z")
+        self.assertEqual([x["message_id"] for x in chosen["items"]], ["r1"])
+        ref = first["items"][0]["record_ref"]
+        part = self.read("codex", p, "read", "--session", "pages", "--include-tools", "--record", ref,
+                         "--max-chars", "32")["items"][0]
+        rest = self.read("codex", p, "read", "--session", "pages", "--include-tools", "--record", ref,
+                         "--text-offset", str(part["next_text_offset"]))["items"][0]
+        self.assertEqual(part["text"] + rest["text"], first["items"][0]["text"])
+        self.assertEqual(self.read("codex", p, "read", "--session", "pages", "--record", ref)["items"], [])
+
+    def test_codex_thread_metadata_is_additive_and_optional(self):
+        for thread_type in ("user", "subagent", "automation", "guardian_review", None):
+            with self.subTest(thread_type=thread_type):
+                metadata = {"id": "native-thread"}
+                if thread_type is not None:
+                    metadata.update(thread_source=thread_type, parent_thread_id="parent", agent_path="/root/task")
+                p = self.write("thread.jsonl", [{"type": "session_meta", "payload": metadata}])
+                row = self.read("codex", p, "list")["items"][0]
+                self.assertEqual(row["variant"], "jsonl")
+                self.assertEqual(row["session_ref"], "codex:jsonl:native-thread")
+                self.assertEqual(row["thread_source"], thread_type)
+                self.assertEqual(row["parent_session_id"], "parent" if thread_type else None)
+                self.assertEqual(row["agent_path"], "/root/task" if thread_type else None)
+
+    def test_codex_new_event_invalid_shapes_remain_warnings(self):
+        for payload in (
+            {"type": "agent_message", "content": [{"type": "text", "text": 42}]},
+            {"type": "agent_message", "content": "text", "author": []},
+            {"type": "web_search_call", "action": []},
+            {"type": "web_search_call", "action": {"query": {"unknown": "shape"}}},
+        ):
+            with self.subTest(payload=payload):
+                p = self.write("invalid-extra.jsonl", [{"type": "session_meta", "payload": {"id": "invalid"}},
+                              {"type": "response_item", "payload": payload}])
+                for flags in ([], ["--include-tools"]):
+                    result = self.read("codex", p, "read", "--session", "invalid", *flags)
+                    self.assertEqual(result["items"], [])
+                    self.assertTrue(any(w.startswith("unsupported_body:") for w in result["warnings"]))
+                    self.assertFalse(result["coverage"]["scan_complete"])
+
+    def test_list_warnings_follow_time_project_query_and_page(self):
+        for sid, stamp, project, bad in (("good", "2026-10-14", "/work/good", False),
+                                         ("bad", "2026-10-13", "/work/bad", True),
+                                         ("old", "2026-08-01", "/work/old", True)):
+            self.write(sid + ".jsonl", [
+                {"type": "session_meta", "timestamp": stamp, "payload": {"id": sid, "cwd": project}},
+                {"type": "response_item", "timestamp": stamp, "payload": {
+                    "type": "unknown" if bad else "message", "role": "user", "content": "正文"}},
+            ])
+        for flags in (["--query", "good"], ["--project", "/work/good"],
+                      ["--since", "2026-10-14"], ["--since", "2026-10-01", "--limit", "1"]):
+            with self.subTest(flags=flags):
+                out = self.read("codex", self.root, "list", *flags)
+                self.assertEqual([s["session_id"] for s in out["items"]], ["good"])
+                self.assertEqual(out["warnings"], [])
+                self.assertEqual(out["warnings_outside_filter"], 2)
+        out = self.read("codex", self.root, "list", "--since", "2026-10-01", "--offset", "1", "--limit", "1")
+        self.assertEqual([s["session_id"] for s in out["items"]], ["bad"])
+        self.assertEqual(len(out["warnings"]), 1)
+        self.assertIn("bad.jsonl", out["warnings"][0])
+        self.assertEqual(out["warnings_outside_filter"], 1)
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.write("unreadable.jsonl", [{"type": "unknown"}])
+        out = self.read("codex", self.root, "list", "--query", "good")
+        self.assertTrue(any(w.startswith("source_error:") for w in out["warnings"]))
+        self.assertFalse(out["coverage"]["metadata_complete"])
+
     def test_workbuddy_distinct_format(self):
         p = self.write("wb.jsonl", [
             {"type": "message", "id": "u1", "sessionId": "wb", "role": "user", "content": [{"type": "input_text", "text": "检查部署"}]},

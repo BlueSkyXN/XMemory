@@ -27,7 +27,7 @@ def build(root: Path, output: Path, portable: bool = False) -> tuple[Path, str]:
     files["INSTALL.md"] = (root / "docs" / "release-install.md").read_bytes()
     if portable:
         for path in sorted((plugin / "skills").rglob("*")):
-            if path.is_file():
+            if path.is_file() and ".DS_Store" not in path.relative_to(plugin).parts:
                 files[path.relative_to(plugin).as_posix()] = path.read_bytes()
         files["LICENSE"] = (plugin / "LICENSE").read_bytes()
     else:
@@ -37,7 +37,7 @@ def build(root: Path, output: Path, portable: bool = False) -> tuple[Path, str]:
         for name in PLUGINS:
             base = root / "plugins" / name
             for path in sorted(base.rglob("*")):
-                if path.is_file():
+                if path.is_file() and ".DS_Store" not in path.relative_to(base).parts:
                     files[f"plugins/{name}/{path.relative_to(base).as_posix()}"] = path.read_bytes()
     hashes = "".join(f"{hashlib.sha256(value).hexdigest()}  {name}\n" for name, value in sorted(files.items()))
     files["SHA256SUMS"] = hashes.encode("utf-8")

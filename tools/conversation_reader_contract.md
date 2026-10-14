@@ -4,6 +4,10 @@
 
 ## 返回信息
 
+0.1.6 为加法更新：Codex 列表与读取事件新增 `thread_source`、`parent_session_id`（来自 `session_meta.payload.parent_thread_id`）、`agent_path`，未保存时为 null。保留原生 `thread_source`，不据此改变 `variant`、`session_ref` 或替采集方筛掉自动化、子代理线程；旧的目录型子代理身份规则仍保留。
+
+Codex `response_item/agent_message` 以 `kind: agent_message`、`role: assistant` 输出，保留 `author`、`recipient`、`message_id`、`record_id` 与文本；属于工具层，只在 `--include-tools` 时显示、检索或精确展开，不当作用户原话；只取可见文本，忽略同信封中的 `encrypted_content` 及隐藏推理块，无可见文本时不生成空代理消息。`web_search_call` 输出 `kind: tool_call`、`tool_name: web_search`、原生消息 ID 和 `status`，文本取 `action.query`；原件未保存 action/query 时文本为空，不补造搜索词或 call_id。二者均检查结构并沿用脱敏、分页及来源定位，未知形状仍报告缺口；默认可见正文不变。
+
 - JSONL 会话的 `projects` 列出原件中实际出现的全部 `cwd`，`project` 保留最后一个已知目录。`--project` 按任一目录的路径边界选择会话，read/search 仍返回所选会话中符合其他条件的内容，不自动丢掉其他项目片段。SQLite 来源仍按原生会话目录匹配。
 - 事件的 `project` 是该条 JSONL 记录的 `cwd`；Codex 使用之前最近的 `session_meta` / `turn_context` 项目上下文。未知时为 null，不用会话最后的目录补造；SQLite 事件没有逐条目录时也为 null。项目归属还须结合正文核实，尤其是跨项目会话和压缩摘要。
 - `session_id` 表示文件或数据库会话条目的身份；JSONL 元数据缺失时，列表中的 `id_origin: filename` 表示只能从文件名定位，不能声称已验证原生身份。逐条记录的原生身份另由 `native_session_id` 保留，原记录没有该字段时为 null，不用文件身份补造。
@@ -28,6 +32,8 @@
 先检查记录结构，再按工具、角色、时间和关键词筛选。`coverage.content_status` 区分：`matches`（有结果）、`no_match`（支持的内容无关键词命中）、`filtered_out`（被读取条件或偏移排除）、`metadata_only`（只有元事件或没有可见正文）、`unsupported`（来源或正文格式不支持）、`partial`（存在解析或来源缺口）；`list` 为 `not_requested`，没有读取正文结果。
 
 JSONL 列表条目的 `metadata_scan: full_stream`、`metadata_complete` 和 `body_format` 分别说明元数据检查方式、完整性及正文形状。全局 `coverage.metadata_complete` 与 `completed_body_sessions`、`examined_events` 分开报告。`scan_complete` 同时要求来源／元数据无缺口、选定正文遍历完成且没有下一页；有未返回的长文本仍需检查各条 `truncated`，该字段不表示全文已输出。错投客户端、部分未知正文和无关键词命中不能混为一类。
+
+0.1.6 的 `list.warnings` 只包含当前页返回会话的告警与全局告警；`warnings_outside_filter` 是已扫描、但因时间、项目、关键词、身份或分页未返回的会话告警条数，不是受影响会话数。列表的 `metadata_complete` 按当前页与全局缺口判断，`checked_sessions` 仍表示目录筛选后的候选数量；`has_more` 表示还有页面。缺少可靠元数据、来源不可读或扫描受限等无法安全归属的告警仍保留为全局缺口，不因无法出现在结果中而隐藏。read/search 的告警边界保持原样，不能用目录告警计数冒充窗口内正文丢失数。
 
 ## 活文件与格式边界
 

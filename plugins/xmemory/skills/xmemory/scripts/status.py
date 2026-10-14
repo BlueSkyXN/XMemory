@@ -259,6 +259,8 @@ def report(root, now=None):
                 for project in fm.get("projects", []):
                     if project not in cfg.get("projects", {}):
                         issue("invalid_field", rel, field="projects")
+                if "project_status" in fm and (fm["project_status"] != "unresolved" or fm["projects"]):
+                    issue("invalid_field", rel, field="project_status")
                 if timestamp(fm.get("source_updated")) is None:
                     issue("invalid_time", rel, field="source_updated")
                 elif timestamp(fm["source_updated"]) > now:
@@ -269,6 +271,13 @@ def report(root, now=None):
             bad = len(issues) != start
             if kind == "record" and any(not canonical_identity(ref) for ref in fm.get("session_refs", [])):
                 issue("identity_review", rel, field="session_refs")
+            if kind == "record" and fm.get("project_status") == "unresolved":
+                issue("unresolved_project", rel)
+            if kind == "record" and Path(rel).parts[:2] == ("records", "sessions") and fm.get("session_refs"):
+                suffix = Path(rel).stem.rsplit("-", 1)[-1]
+                identities = [ref.split(":", 1)[1] for ref in fm["session_refs"] if canonical_identity(ref)]
+                if len(suffix) != 8 or not any(suffix == identity[-8:] for identity in identities):
+                    issue("identity_review", rel, field="filename")
             if kind == "record" and fm.get("coverage") == "partial":
                 issue("partial_source", rel)
             if kind == "record" and excluded.intersection(fm.get("session_refs", [])):
@@ -312,7 +321,7 @@ def report(root, now=None):
     scopes = {"projects/" + name for name in cfg.get("projects", {})}
     for record in records:
         projects = record["fm"].get("projects", [])
-        if not projects:
+        if not projects and record["fm"].get("project_status") != "unresolved":
             scopes.add("personal")
         for day in record_days(record["fm"]):
             targets[f"daily/{day[:4]}/{day}.md"] = "daily"
@@ -334,7 +343,8 @@ def report(root, now=None):
             scope = rel.rsplit("/", 1)[0]
             project = scope.split("/", 1)[1] if scope.startswith("projects/") else None
             inputs = [r for r in records if (project in r["fm"].get("projects", []) if project else
-                                              not r["fm"].get("projects", []))]
+                                              not r["fm"].get("projects", []) and
+                                              r["fm"].get("project_status") != "unresolved")]
             if kind == "project-index":
                 inputs += [d for p, d in docs.items() if p.startswith(scope + "/topics/")]
         elif kind == "summary":
