@@ -1,8 +1,22 @@
 # XMemory 验证报告
 
-当前源码版本：**1.5.4（待发布）**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.6，待发布）。最新核对日期：2026-10-14。发布状态与正式附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，下文保留开发阶段的验证记录及当时构建哈希。
+当前源码版本：**1.5.4**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.6）。最新核对日期：2026-10-14。发布状态与正式附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，下文保留开发阶段的验证记录及当时构建哈希。
 
 本文保留各开发阶段的验证记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时；后续完成情况以相应版本的收尾记录为准。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
+
+## 1.5.4 发布收尾（2026-10-14）
+
+功能实现已通过 [PR #17](https://github.com/BlueSkyXN/XMemory/pull/17) 合并，PR 与主线 CI 均成功。发布收尾仅调整八份文档的当前交付说明，去掉安装包中的“尚未发布”等准备阶段文字，不修改程序、技能规则、版本号或历史验证正文。
+
+文档收尾后，15 项包装测试、副本同步与包检查通过；三个安装包重新构建，ZIP 完整性、内外 SHA-256、载荷与源码一致性、重复构建一致性及解压后的包检查均通过。最终附件哈希如下；后面的“发布准备”节保留此前候选包的历史哈希，校验正式下载时使用本节或 Release 附带的 `.zip.sha256`。
+
+| 附件 | SHA-256 |
+|---|---|
+| `XMemory-1.5.4.zip` | `50f76bd75407e7bdf7f42f9a6a51edd179a320e622e742c791de5833a853c496` |
+| `XMemory-1.5.4-skills.zip` | `c61fa28f6f3b8b30207cf668309ffa76330bbc03b0aeff92fa35cf430d1d89e2` |
+| `ConversationReaders-0.1.6-skills.zip` | `c05bc6dd553ead48a37d926382c3e19563066479be67d1606a5c88b8b5e00960` |
+
+发布状态以 [v1.5.4 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.5.4) 为准。构建包通过 Release 附件分发，不提交进 Git。客户端安装、自然触发、实际增量写入及无人值守质量的边界与此前记录相同，不因发布而视为已验收。
 
 ## 1.5.4 发布准备（2026-10-14，尚未发布）
 
