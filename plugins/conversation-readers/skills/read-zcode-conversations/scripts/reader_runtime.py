@@ -275,7 +275,7 @@ def summary(client, variant, sid, path, **kw):
                 session_ref=f"{client}:{variant}:{sid}", source=str(path), **kw)
 
 
-def content_supported(content):
+def content_supported(content, ignored_types=()):
     if isinstance(content, str):
         return True
     if not isinstance(content, list):
@@ -290,7 +290,7 @@ def content_supported(content):
             if not isinstance(block.get("text"), str):
                 return False
         elif typ not in {"tool_use", "tool_result", "image", "input_image", "file", "document",
-                         "thinking", "reasoning", "redacted_thinking"}:
+                         "thinking", "reasoning", "redacted_thinking"} and typ not in ignored_types:
             return False
     return True
 
@@ -320,6 +320,16 @@ def json_record_kind(client, row):
                 return "metadata"
             if kind == "message":
                 return "body" if p.get("role") in ("user", "assistant") and content_supported(p.get("content")) else "unsupported"
+            if kind == "agent_message":
+                valid = content_supported(p.get("content"), {"encrypted_content"}) and all(
+                    p.get(key) is None or isinstance(p[key], str) for key in ("id", "author", "recipient"))
+                return "body" if valid else "unsupported"
+            if kind == "web_search_call":
+                action = p.get("action")
+                valid = (action is None or (isinstance(action, dict) and
+                         (action.get("query") is None or isinstance(action["query"], str))))
+                valid = valid and all(p.get(key) is None or isinstance(p[key], str) for key in ("id", "status"))
+                return "body" if valid else "unsupported"
             if kind in {"function_call", "custom_tool_call", "function_call_output", "custom_tool_call_output"}:
                 return "body"
             return "unsupported"
@@ -373,6 +383,8 @@ def json_summary(client, path, warnings):
     result = summary(client, "jsonl", sid, path, title=None, title_origin=None,
                      project=None, projects=[], parent_session_id=None, created_at=None, updated_at=None,
                      archived="archived_sessions" in path.parts, id_origin="filename")
+    if client == "codex":
+        result.update(thread_source=None, agent_path=None)
     recognized, identities = False, set()
     parse_warnings = []
     counts = {"body": 0, "metadata": 0, "unsupported": 0}
@@ -391,6 +403,13 @@ def json_summary(client, path, warnings):
             result["session_id"] = str(payload.get("id") or payload.get("session_id") or sid)
             result["created_at"] = iso(payload.get("timestamp") or row.get("timestamp"))
             result["id_origin"] = "session_meta"
+            for key, source_key in (("thread_source", "thread_source"), ("parent_session_id", "parent_thread_id"),
+                                    ("agent_path", "agent_path")):
+                value = payload.get(source_key)
+                if value is not None and not isinstance(value, str):
+                    parse_warnings.append(f"invalid_shape: {path}#byte:{offset}/{source_key}; 预期字符串或 null")
+                    value = None
+                result[key] = value
         elif client != "codex" and row.get("sessionId"):
             recognized = True
             result["session_id"] = str(row["sessionId"])
@@ -428,7 +447,8 @@ def json_summary(client, path, warnings):
     result["session_ref"] = f'{client}:jsonl:{result["session_id"]}'
     if "subagents" in path.parts:
         result["variant"] = "subagent"
-        result["parent_session_id"] = result["session_id"]
+        if client != "codex":
+            result["parent_session_id"] = result["session_id"]
         result["session_ref"] = f'{client}:subagent:{result["session_id"]}:{path.stem}'
     return result
 
@@ -483,7 +503,7 @@ def match_start(text, folded_query):
     return -1
 
 
-def catalogue(client, args, warnings):
+def catalogue(client, args, warnings, source_warnings=None):
     roots = [Path(p).expanduser().resolve() for p in args.root] if args.root else defaults(client)
     files, dbs, compressed = set(), set(), set()
     for root in roots:
@@ -529,10 +549,18 @@ def catalogue(client, args, warnings):
         warnings.append("session_scan_limit: JSONL 仍有未检查的会话；缩小 --root 或增大 --max-sessions")
     result = []
     for p in ordered[:args.max_sessions]:
+        local_warnings = []
         try:
-            result.append(json_summary(client, p, warnings))
+            result.append(json_summary(client, p, local_warnings))
         except (OSError, ValueError, ReaderError) as exc:
+            # 无法取得会话元数据的错误仍是全局缺口，不能当作筛选范围外而隐藏。
+            warnings.extend(local_warnings)
             warnings.append(f"source_error: {p}: {exc}")
+        else:
+            if source_warnings is None:
+                warnings.extend(local_warnings)
+            else:
+                source_warnings[str(p)] = local_warnings
     for p in sorted(dbs):
         try:
             if args.session:
@@ -591,6 +619,8 @@ def event(s, locator, role, text, *, kind="message", native_id=None, parent_id=N
                 role=role, kind=kind, timestamp=iso(stamp), call_id=call_id, tool_name=name,
                 source_ref=f'{s["source"]}#{locator}',
                 record_ref=f'{s["session_ref"]}@{locator}'))
+    if s["client"] == "codex":
+        result.update(scrub({key: s.get(key) for key in ("thread_source", "parent_session_id", "agent_path")}))
     # 工具内容已按结构遮蔽并序列化，不能再用文本规则处理其 JSON 转义。
     result["text"] = text if kind in {"tool_call", "tool_result"} else redact(text)
     return result
@@ -659,6 +689,28 @@ def json_events(s, warnings, include_tools):
             base = dict(role=role, native_id=p.get("id"), stamp=o.get("timestamp"), native_session_id=native, project=context_project)
             if kind == "message" and role in ("user", "assistant") and p.get("channel") != "analysis":
                 yield from blocks(s, p.get("content"), loc, base, include_tools, warnings)
+            elif kind in {"agent_message", "web_search_call"}:
+                if json_record_kind("codex", o) != "body":
+                    warnings.append(f"unsupported_body: {s['source']}#{loc}; 不符合 codex 正文格式")
+                    continue
+                if not include_tools:
+                    continue
+                if kind == "agent_message":
+                    # 实际信封可同时保存 input_text 与 encrypted_content；只取可见文本。
+                    text = visible_text(p["content"])
+                    if not text:
+                        continue
+                    item = event(s, loc, "assistant", text, kind="agent_message",
+                                 native_id=p.get("id"), record_id=p.get("id"), stamp=o.get("timestamp"),
+                                 native_session_id=native, project=context_project)
+                    item.update(scrub({key: p.get(key) for key in ("author", "recipient")}))
+                else:
+                    item = event(s, loc, "assistant", redact((p.get("action") or {}).get("query") or ""),
+                                 kind="tool_call", name="web_search", native_id=p.get("id"),
+                                 record_id=p.get("id"), stamp=o.get("timestamp"),
+                                 native_session_id=native, project=context_project)
+                    item["status"] = scrub(p.get("status"))
+                yield item
             elif include_tools and kind in {"function_call", "custom_tool_call"}:
                 if not valid_id(p, "call_id", f'{s["source"]}#{loc}', warnings):
                     continue
@@ -887,9 +939,8 @@ def normalize_session(client, value):
 def run(client, args):
     args.session = normalize_session(client, args.session)
     warnings = []
-    sessions = catalogue(client, args, warnings)
-    metadata_complete = all(s.get("metadata_complete", True) for s in sessions) and not any(
-        not warning.startswith("unsupported_body:") for warning in warnings)
+    source_warnings = {} if args.action == "list" else None
+    sessions = catalogue(client, args, warnings, source_warnings)
     if args.session:
         sessions = [s for s in sessions if args.session in {s["session_id"], s["session_ref"]}]
         if not sessions:
@@ -910,6 +961,11 @@ def run(client, args):
         candidates = [s for s in sessions if not query or query in str(s.get("title") or "").casefold() or query in s["session_id"].casefold()]
         data = candidates[args.offset:args.offset + args.limit]
         has_more = len(candidates) > args.offset + args.limit
+        returned_sources = {s["source"] for s in data}
+        warnings_outside_filter = sum(len(items) for source, items in source_warnings.items()
+                                      if source not in returned_sources)
+        for source in sorted(returned_sources):
+            warnings.extend(source_warnings.get(source, []))
     else:
         for s in sessions:
             path = Path(s["source"])
@@ -920,7 +976,7 @@ def run(client, args):
             # 先解析形状，再按工具、角色、时间、查询条件筛选，不能隐藏解析缺口。
             for e in read_events(s, warnings, True):
                 examined += 1
-                if not args.include_tools and e["kind"] in {"tool_call", "tool_result"}:
+                if not args.include_tools and e["kind"] in {"tool_call", "tool_result", "agent_message"}:
                     continue
                 if args.role and e["role"] != args.role:
                     continue
@@ -954,6 +1010,8 @@ def run(client, args):
             if has_more:
                 break
             completed_sessions += 1
+    metadata_complete = all(s.get("metadata_complete", True) for s in (data if args.action == "list" else sessions)) and not any(
+        not warning.startswith("unsupported_body:") for warning in warnings)
     body_formats = {s.get("body_format") for s in sessions}
     if args.action == "list":
         content_status = "not_requested"
@@ -989,6 +1047,8 @@ def run(client, args):
                 warnings=list(dict.fromkeys(warnings))))
     # 正文已在 event() 中完整遮蔽；不再次处理切片，以免改变分页偏移。
     result["items"] = scrub(data) if args.action == "list" else data
+    if args.action == "list":
+        result["warnings_outside_filter"] = warnings_outside_filter
     return result
 
 

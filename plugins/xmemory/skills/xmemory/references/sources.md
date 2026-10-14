@@ -6,7 +6,7 @@
 
 | 客户端 | 原始对话 | 自己的记忆 | 读取器 |
 |---|---|---|---|
-| Codex | `~/.codex/sessions/`、`~/.codex/archived_sessions/`：`rollout-*.jsonl`，冷数据可能是 `.jsonl.zst` | `~/.codex/memories/`（V1：`memory_summary.md`、`MEMORY.md`、`rollout_summaries/`、`raw_memories.md`）；`~/.codex/memories_v2/`（V2：`memory_summary.md`、`rollout_summaries/`） | 有 |
+| Codex | `~/.codex/sessions/`、`~/.codex/archived_sessions/`：`rollout-*.jsonl`，冷数据可能是 `.jsonl.zst` | `~/.codex/memories/`（V1：`memory_summary.md`、`MEMORY.md`、`rollout_summaries/`、`raw_memories.md`、`extensions/`）；`~/.codex/memories_v2/`（V2：`memory_summary.md`、`rollout_summaries/`） | 有 |
 | Claude Code | `~/.claude/projects/<路径化目录>/*.jsonl` | `~/.claude/projects/<路径化目录>/memory/`：`MEMORY.md` 索引 + 一条一文件 | 有 |
 | ZCode | `~/.zcode/cli/db/db.sqlite`（session / message / part 表） | `~/.zcode/cli/memories/projects/<slug>-<hash>/memory/`：`MEMORY.md` 索引 + 主题正文；slug 也可能是 `project`，不能据目录名认定项目 | 有 |
 | Qoder CN | `~/.qoder-cn/projects/`、`~/Library/Application Support/com.qodercn.app.stable/main.sqlite` | `~/.qoder-cn/projects/<项目>/memory/`（CLI 项目记忆）；`~/.qoder-cn/memory/`（新桌面索引 + 主题，CLI 也可能有用户级记忆）；`~/.qoder-cn/memories/<用户ID>/projects/<路径化目录>/<类别>/`（旧版分类记忆，frontmatter 有 `usage_scenario`、`keywords`、`source`） | 有 |
@@ -40,7 +40,7 @@ Conversation Readers 是可选的独立插件。按当前实际提供的客户�
 
 ## 别家记忆
 
-- 一份来源文件对应一份记录，标明 [材料类型](format.md#记录字段)。入口索引主要帮助找正文；索引中有独立信息时保留该部分及范围，不把索引描述、正文和原会话重复算作独立证据。
+- 一份来源文件通常对应一份记录，标明 [材料类型](format.md#记录字段)。Codex 扩展说明不生成记录，Skysight 作为单独的 memory 来源直接写日总结，见 [Codex 适配](sources-codex.md)。入口索引主要帮助找正文；索引中有独立信息时保留该部分及范围，不把索引描述、正文和原会话重复算作独立证据。
 - 已有准确的经验可以保留其关键表达、适用条件、命令与例外，重点整理重复、时效、归属及更正；不要为重新概括而丢失这些信息。指令文件或 Skill 已是权威操作说明时保留指针与必要例外，不再抄整份流程。
 - 大型汇总先看结构并定位相关章节；有逐会话材料或主题正文时按目的展开。没有更细的替代来源、或汇总含独有经验时，按标题、主题或日期分段读取选定范围，不因文件大或属于二手材料直接跳过。只读了部分就标明缺口；不把递归全读当作默认方案。
 - 二手画像或结论无法恢复原始会话身份时，只能注明二手来源文件，不编造会话来源。它不能提供与原始会话独立的第二份证据。
