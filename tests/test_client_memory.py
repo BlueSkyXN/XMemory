@@ -1,6 +1,6 @@
 """合成客户端目录上的记忆、项目、只读边界测试；不使用个人材料。"""
 import argparse
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -31,7 +31,7 @@ class MemoryFixture(unittest.TestCase):
     def put(self, path, text):
         path = self.home / path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding='utf-8')
+        path.write_bytes(text.encode('utf-8'))
         return path
 
     def jsonl(self, path, rows):
@@ -56,7 +56,7 @@ class MemoryFixture(unittest.TestCase):
     def zdb(self, rows):
         path = self.home / '.zcode/cli/db/db.sqlite'
         path.parent.mkdir(parents=True)
-        with sqlite3.connect(path) as con:
+        with closing(sqlite3.connect(path)) as con, con:
             con.execute('CREATE TABLE session(id TEXT,directory TEXT,workspace_id TEXT,time_created INTEGER,time_updated INTEGER)')
             con.executemany('INSERT INTO session VALUES(?,?,?,1,2)', rows)
 
@@ -289,7 +289,7 @@ class MemoryTests(MemoryFixture):
         self.assertEqual(self.run_memory('workbuddy', 'read', '--path', backup, '--include-backups')['items'][0]['text'], 'Old backup')
 
     def test_qodercn_three_layouts_migration_and_changed_detection(self):
-        project = self.project.parent / '中文.v1'
+        project = '/fixture/中文.v1'
         folder = self.session('qodercn', project)
         target = self.put(folder / 'topic.md', '---\nmetadata:\n  type: project\n---\nMigrated')
         self.put('.qoder-cn/memory/MEMORY.md', '[Daily](qoderwork-daily-demo.md)')
@@ -298,7 +298,7 @@ class MemoryTests(MemoryFixture):
         self.put('.qoder-cn/memories/user/projects/Qoder-Chats/task_flow/old.md', 'Unmapped')
         db = self.home / 'Library/Application Support/com.qodercn.app.stable/memoryMigration.sqlite'
         db.parent.mkdir(parents=True)
-        with sqlite3.connect(db) as con:
+        with closing(sqlite3.connect(db)) as con, con:
             con.execute('CREATE TABLE memory_import_target_files(target_file TEXT,content_sha256 TEXT,imported_at INTEGER)')
             con.execute('INSERT INTO memory_import_target_files VALUES(?,?,?)', (str(target), hashlib.sha256(target.read_bytes()).hexdigest(), 1790000000000))
         ctx = self.ctx('qodercn')
@@ -308,7 +308,7 @@ class MemoryTests(MemoryFixture):
         self.assertTrue(marked['migrated']['unchanged'])
         legacy = [s for s in stores if s['layout'] == 'qodercn-legacy']
         self.assertEqual({s['status'] for s in legacy}, {'ok', 'orphan'})
-        old = next(e for e in entries if e['role'] == 'topic' and '/task_flow/' in e['path'])
+        old = next(e for e in entries if e['role'] == 'topic' and 'task_flow' in Path(e['path']).parts)
         self.assertEqual(old['frontmatter']['category'], 'task_flow')
         target.write_text(target.read_text() + '\nChanged')
         changed = self.run_memory('qodercn', 'list', '--store', target.parent)['items'][0]
@@ -319,12 +319,29 @@ class MemoryTests(MemoryFixture):
         self.put(folder / 'topic.md', 'Synthetic text')
         before = self.snapshot()
         script = ROOT / 'plugins/client-readers/skills/read-claude/scripts/read.py'
-        env = dict(os.environ, HOME=str(self.home))
+        env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home))
         for command in (['memory', 'locate'], ['projects'], ['doctor']):
             proc = subprocess.run([sys.executable, '-B', str(script), *command], env=env, capture_output=True, text=True)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(json.loads(proc.stdout)['client'], 'claude')
         self.assertEqual(self.snapshot(), before)
+
+    def test_cli_outputs_utf8_when_redirected_from_legacy_encoding(self):
+        folder = self.session('claude')
+        path = self.put(folder / 'topic.md', '中文正文')
+        source = self.jsonl(folder.parent / 'session.jsonl', [
+            {'type': 'user', 'sessionId': 'fixture-session', 'cwd': str(self.project),
+             'message': {'content': '中文正文'}}])
+        script = ROOT / 'plugins/client-readers/skills/read-claude/scripts/read.py'
+        env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home),
+                   PYTHONUTF8='0', PYTHONIOENCODING='cp1252')
+        for command in (['memory', 'read', '--path', str(path)],
+                        ['sessions', 'read', '--root', str(source), '--session', 'fixture-session']):
+            proc = subprocess.run([sys.executable, '-B', str(script), *command], env=env, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr.decode('utf-8'))
+            text = proc.stdout.decode('utf-8')
+            self.assertIn('中文正文', text)
+            self.assertEqual(json.loads(text)['client'], 'claude')
 
     def test_project_alias_filter_finds_memory_and_read_rejects_outside_hardlink(self):
         alias = self.project.parent / 'Alias'
@@ -560,7 +577,7 @@ class ProjectTests(MemoryFixture):
         child = self.project / 'Child'
         child.mkdir()
         alone = self.project.parent / 'Alone'
-        volume = Path('/Volumes/fixture-volume')
+        volume = Path(self.home.anchor) if os.name == 'nt' else Path('/Volumes/fixture-volume')
         self.session('claude', '/', later=[self.home, self.project, child, alone, volume, volume / 'Only'])
         out = projects.run(self.ctx('claude'), argparse.Namespace(since=None, offset=0, limit=200))
         rows = {r['path']: r for r in out['items']}
@@ -779,7 +796,7 @@ class MemorySecondFixTests(MemoryFixture):
         self.assertFalse(desk_out['coverage']['scan_complete'])
         db = self.home / 'Library/Application Support/com.qodercn.app.stable/main.sqlite'
         db.parent.mkdir(parents=True)
-        with sqlite3.connect(db) as con:
+        with closing(sqlite3.connect(db)) as con, con:
             con.execute('CREATE TABLE unsupported(id TEXT)')
         desk_out = self.run_memory('qodercn', 'read', '--path', desktop)
         self.assertTrue(any('session_metadata_unreadable: ' + str(db) == w for w in desk_out['warnings']))

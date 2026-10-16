@@ -40,6 +40,9 @@ def parser(client):
 
 
 def main(client, argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     if sys.version_info < (3, 9):
         print(json.dumps({'error': 'python_requires_3_9', 'client': client}))
         return 2

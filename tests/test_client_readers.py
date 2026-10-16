@@ -1,5 +1,6 @@
 """虚构原始记录上的行为测试；不读取个人历史，也不启动模型。"""
 from datetime import datetime, timezone
+from contextlib import closing
 from pathlib import Path
 import hashlib
 import json
@@ -25,7 +26,7 @@ class ReaderTests(unittest.TestCase):
     def write(self, filename, rows):
         p = self.root / filename
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+        p.write_bytes("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows).encode('utf-8'))
         return p
 
     def read(self, client, path, *args):
@@ -38,7 +39,7 @@ class ReaderTests(unittest.TestCase):
 
     def qoder_db(self, sid="session-demo"):
         p = self.root / "main.sqlite"
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("CREATE TABLE chat_sessions(session_id TEXT PRIMARY KEY, title TEXT, cwd TEXT, created_at TEXT, updated_at TEXT, deleted_at TEXT)")
             c.execute("CREATE TABLE chat_session_messages(session_id TEXT, message_id TEXT, sequence INTEGER, payload_json TEXT, created_at INTEGER)")
             c.execute("INSERT INTO chat_sessions VALUES(?,?,?,?,?,NULL)", (sid, "测试对话", "/work/demo", "2026-10-01", "2026-10-02"))
@@ -410,7 +411,7 @@ class ReaderTests(unittest.TestCase):
             {"id": "p2", "type": "thinking", "text": "HIDDEN"},
             {"id": "p3", "type": "tool", "tool": {"id": "c1", "name": "test", "input": {}, "response": "ok"}}],
             "tools": [{"id": "c1", "name": "test", "input": {}, "response": "ok"}]}
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", "m1", 1, json.dumps(payload), 1))
         before = p.read_bytes()
         items = self.read("qodercn", p, "read", "--session", "session-demo", "--include-tools")["items"]
@@ -431,7 +432,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_zcode_order_tools_and_synthetic_exclusion(self):
         p = self.root / "db.sqlite"
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
             c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, sequence INTEGER, data TEXT)")
             c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, sequence INTEGER, data TEXT)")
@@ -462,7 +463,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_schema_mismatch_reported(self):
         p = self.root / "unknown.sqlite"
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("CREATE TABLE other(id TEXT)")
         out = self.read("zcode", p, "list")
         self.assertFalse(out["coverage"]["scan_complete"])
@@ -654,7 +655,7 @@ class ReaderTests(unittest.TestCase):
                    {"role": "assistant", "parts": [{"type": []}, {"type": "tool", "tool": None},
                                                       {"type": "text", "text": []}]}]
         rows = [{"role": "user", "text": "正常前文"}, *invalid, {"role": "assistant", "text": "正常后文"}]
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             for i, payload in enumerate(rows):
                 c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", f"m{i}", i, json.dumps(payload), i))
         script = ROOT / "plugins/client-readers/skills" / SKILLS["qodercn"] / "scripts/read.py"
@@ -669,7 +670,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_xr005_zcode_invalid_nested_shapes_preserve_good_parts(self):
         p = self.root / "zcode.sqlite"
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
             c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
             c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
@@ -863,7 +864,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_xr005_qodercn_tool_ids_in_both_read_modes(self):
         p = self.qoder_db()
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             for i, payload in enumerate([{"role": "user", "text": "前文"}, {}, {"role": "assistant", "text": "后文"}]):
                 c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)",
                           ("session-demo", f"m{i}", i, json.dumps(payload), i))
@@ -879,7 +880,7 @@ class ReaderTests(unittest.TestCase):
                     payload["parts"].insert(1, {"id": "tool-part", "type": "tool", "tool": tool})
                 else:
                     payload["tools"] = [tool]
-                with sqlite3.connect(p) as c:
+                with closing(sqlite3.connect(p)) as c, c:
                     c.execute("UPDATE chat_session_messages SET payload_json=? WHERE message_id='m1'", (json.dumps(payload),))
                 for include_tools in (False, True):
                     with self.subTest(projection=projection, identity=label, include_tools=include_tools):
@@ -904,7 +905,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_xr005_zcode_tool_ids_in_both_read_modes(self):
         p = self.root / "zcode-ids.sqlite"
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
             c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
             c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
@@ -920,7 +921,7 @@ class ReaderTests(unittest.TestCase):
         cases += [(type(value).__name__, {"callID": value}, False) for value in ([], {}, 1, False)]
         for label, identity, valid in cases:
             payload = dict(identity, type="tool", tool="Read", state={"input": {}, "output": "RESULT"})
-            with sqlite3.connect(p) as c:
+            with closing(sqlite3.connect(p)) as c, c:
                 c.execute("UPDATE part SET data=? WHERE id='p2'", (json.dumps(payload),))
             for include_tools in (False, True):
                 with self.subTest(identity=label, include_tools=include_tools):
@@ -943,7 +944,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_xr005_qodercn_locator_and_turn_ids(self):
         p = self.qoder_db()
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             for i, text in enumerate(("前文", "异常记录", "后文")):
                 c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)",
                           ("session-demo", f"m{i}", i, json.dumps({"role": "assistant", "text": text}), i))
@@ -952,7 +953,7 @@ class ReaderTests(unittest.TestCase):
                 payload = {"role": "assistant", "parts": [{"type": "text", "text": "正常块"},
                                                           {"type": "text", "text": "异常块"}]}
                 (payload["parts"][1] if field == "id" else payload)[field] = value
-                with sqlite3.connect(p) as c:
+                with closing(sqlite3.connect(p)) as c, c:
                     c.execute("UPDATE chat_session_messages SET payload_json=? WHERE message_id='m1'", (json.dumps(payload),))
                 for include_tools in (False, True):
                     with self.subTest(field=field, value=value, include_tools=include_tools):
@@ -966,7 +967,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_xr005_zcode_parent_id_is_checked_before_parts(self):
         p = self.root / "zcode-parent.sqlite"
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
             c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
             c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
@@ -976,7 +977,7 @@ class ReaderTests(unittest.TestCase):
                 c.execute("INSERT INTO part VALUES(?,?,?,?,?)", (f"p{i}", f"m{i}", "session-demo", i,
                           json.dumps({"type": "text", "text": text})))
         for value in ([], {}):
-            with sqlite3.connect(p) as c:
+            with closing(sqlite3.connect(p)) as c, c:
                 c.execute("UPDATE message SET data=? WHERE id='m1'", (json.dumps({"role": "assistant", "parentID": value}),))
             for include_tools in (False, True):
                 with self.subTest(value=value, include_tools=include_tools):
@@ -995,7 +996,7 @@ class ReaderTests(unittest.TestCase):
                  {"id": "t3", "type": "text", "text": "第三段"}]
         payload = {"role": "assistant", "parts": parts, "text": "重复文字投影",
                    "tools": [part["tool"] for part in parts if part["type"] == "tool"]}
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", "m1", 1, json.dumps(payload), 1))
         args = ("read", "--session", "session-demo", "--include-tools")
         full = self.read("qodercn", p, *args)
@@ -1016,7 +1017,7 @@ class ReaderTests(unittest.TestCase):
                     {"type": "tool", "tool": {"id": "c1", "input": {}, "response": "结果一"}}]},
                 {"role": "assistant", "parts": [{"type": "text", "text": "正文"}],
                  "tools": [{"id": "c2", "input": {}, "response": "回退结果"}]}]
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             for i, payload in enumerate(rows):
                 c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", f"m{i}", i, json.dumps(payload), i))
         out = self.read("qodercn", p, "read", "--session", "session-demo", "--include-tools")
@@ -1038,7 +1039,7 @@ class ReaderTests(unittest.TestCase):
 
     def zcode_db(self, sid):
         p = self.root / "db.sqlite"
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
             c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
             c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
@@ -1067,7 +1068,7 @@ class ReaderTests(unittest.TestCase):
         # 静默跳过，不产生 unsupported_body 警告（实测 0.1.2 曾对每条报警刷屏）。
         sid = "sess_lifecycle-demo"
         p = self.zcode_db(sid)
-        with sqlite3.connect(p) as c:
+        with closing(sqlite3.connect(p)) as c, c:
             lifecycle = [
                 {"type": "step-start"},
                 {"type": "step-finish", "reason": "tool-calls", "cost": 0, "tokens": {"total": 28183}},
