@@ -5,7 +5,7 @@
 ```bash
 python3 -B evals/v1.5.4/make_fixture.py <新的实验目录> \
   --skills plugins/xmemory/skills \
-  --reader plugins/conversation-readers/skills/read-codex-conversations
+  --reader plugins/client-readers/skills/read-codex
 ```
 
 每个子目录是独立执行环境，内含 prompt.md、memory、输入和待测技能。分别交给无历史上下文的 GLM-5.3 / high；**不要给执行者本页或根目录的 evaluation-manifest.json**。使用虚构 HOME、独立最小 Codex 配置，关闭宿主记忆、插件、Apps、MCP、联网工具和其他代理。保留模型参数、输入快照、脱敏执行日志、原始产物和最终回答，凭据不进入夹具或提交内容。recall 用只读沙箱，其余只允许修改 memory 内的 Markdown。

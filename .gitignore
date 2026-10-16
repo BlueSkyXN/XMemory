@@ -42,4 +42,4 @@ venv/
 !/.agents/plugins/marketplace.json
 # 覆盖全局忽略规则中的 .zcode*/，ZCode 插件清单必须随仓库提交
 !/plugins/xmemory/.zcode-plugin/
-!/plugins/conversation-readers/.zcode-plugin/
+!/plugins/client-readers/.zcode-plugin/

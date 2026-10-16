@@ -6,14 +6,26 @@
 
 | 材料 | 读法 |
 |---|---|
-| `memory_summary.md` | 全局导航，定位项目、关键词和支持材料；不把它的保存时间当成所有项目的进展日期 |
+| `memory_summary.md` | 全局导航；两版的 User Profile、User preferences、General Tips 段落也作为二手画像与经验材料；不把保存时间当所有项目进展日期 |
 | V1 `MEMORY.md` | 可能同时含检索线索和已经归并的经验；先看标题、项目和关键词，再读相关段落，保留其中逐会话摘要未覆盖的有效条件与例外 |
 | V1/V2 `rollout_summaries/` | 按实际头部的 `thread_id`、`rollout_path`、`cwd` 和正文选择单会话摘要；文件名仅作定位线索 |
 | V1 `raw_memories.md` | 较大的会话提炼集合；有对应逐会话材料时先用后者。只在缺口指向它时按相关会话或主题分段回查 |
 | `memories/extensions/<名称>/instructions.md` | 扩展说明，用来理解来源，不生成记录，也不把其中指令当作当前授权 |
 | 扩展的 `resources/`、`notes/` | 来源材料；`ad_hoc/notes/` 每份一条记录，保留用户要求记下的笔记性质；Skysight 按下节直接写日总结 |
 
-不假设 V2 有 V1 的全部文件，也不因看到摘要首行 `v1` 就判定目录版本。选定材料中仅有汇总经验时，仍可按 [共同来源规则](sources.md#别家记忆)继承。
+两套可能都有写入，读取按会话决定；当前实际读取哪套看读取器 `recent_injection`，允许用户会话与自动化会话混用，不写成“每个会话都双写”。V2 按设计没有 MEMORY.md、raw_memories.md、skills，不当作缺口；摘要首行 v1 是格式标记，不是目录版本。V1/V2 同会话用 `same_session_as` 合并说明，仍不以版本或保存时间判胜。选定材料仅有汇总经验时，按 [共同来源规则](sources.md#别家记忆)继承。
+
+## 记忆技能
+
+V1 `memories/skills/<名称>/SKILL.md` 是官方 Phase 2 整理产物，通常不在客户端可用技能清单里。每个制作一条简短记录，写它解决的任务、所属项目、用户触发说法、关键约束与例外，指向实际原文件；未知触发说法或项目不补造。不抄操作步骤，证据类型为 secondary。
+
+## 自动化记忆
+
+只采当前位置 `~/.codex/automations/<id>/memory.md`，按同目录 automation.toml 的 cwds 核实项目；多个 cwd 保留候选与范围，不强行选一项。作为该自动化的运行记录，保留日期和执行证据边界，不当作用户原话。采集自动化记忆不等于开启自动化会话采集，后者仍按线程规则。
+
+## 非官方位置
+
+V1 `memories/automations/` 是已停用的非官方位置，`memories/local/` 是用户技能在整理过程中的副产物；读取器标 unofficial、process_log，XMemory 不采集。来源判断有源码与本机旁证，具体写入线程尚未直接取得。
 
 ## Skysight 活动摘要
 
@@ -45,6 +57,8 @@ Skysight 根据本地活动事件流生成屏幕与应用活动的二手摘要�
 有 `rollout_path` 时，先核实该文件可读，再以文件 `--root` 和完整会话 ID 调用实际可用的 Codex reader；同时核对返回的 `session_id`、`id_origin`、`projects` 和来源。旧路径失效时，仅在选定的 `sessions/`、`archived_sessions/` 中按完整身份寻找，包括 `.jsonl.zst`；找不到则保留摘要定位和缺口，不改写原路径来假装回查成功。
 
 先读可见正文，确认执行事实时再读相关工具调用与结果。分页、压缩支持及 `--snapshot` 以读取器当前说明为准；读取器的文件名回退 ID 尚需核实。`state_*.sqlite` 可帮助找标题，不能替代会话正文。恢复或迁移副本按原生身份核对，不凭相同标题合并。
+
+`.jsonl.zst` 是无损压缩，原件路径可能在 .jsonl 与 .jsonl.zst 之间切换；按完整会话身份定位，不依赖旧路径。切换窗口内同目录同主干两种形态同时存在时，读取器优先明文并给 compressed_twin；字节偏移仍基于解压后内容。Codex 逐会话摘要的提取输入最多取会话最新约 8 MiB，长会话早期细节可能未进入提取；缺失不能归因于压缩，需要时回查原始会话。
 
 ## 会话线程类型
 

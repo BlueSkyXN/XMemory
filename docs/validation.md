@@ -1,6 +1,59 @@
 # XMemory 验证报告
 
-当前源码版本：**1.5.4**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.6）。最新核对日期：2026-10-14。发布状态与正式附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，下文保留开发阶段的验证记录及当时构建哈希。
+## 1.6.0 发布验证（2026-10-16）
+
+源码版本为 XMemory **1.6.0**、Client Readers **0.2.0**，文件格式仍为 `xmemory/v1.5`。本版包括五端原生记忆读取、项目候选、来源关系与角色选择，以及原读取器改名后的安装迁移。发布附件和状态以 [Releases](https://github.com/BlueSkyXN/XMemory/releases) 为准。
+
+| 检查层 | 本版结果 |
+|---|---|
+| 本地程序测试 | Python 3.11 全套 **181/181**；Python 3.9 status/readers/memory/runtime 四组 **166/166**，均无跳过。 |
+| CI | [PR #19](https://github.com/BlueSkyXN/XMemory/pull/19) 的 Linux 3.11 检查与构建、Linux 3.9、Windows 3.11、真实 zstandard 四个任务通过。 |
+| 包装 | 包清单与链接检查、五份运行代码及契约副本一致性检查通过；分发包由当前版本清单生成，附包内 SHA256SUMS 和包外 `.zip.sha256`。 |
+| 缺失 zstd | 真实数据的无后端模拟中，4,854 个压缩会话汇总为两个根目录告警；projects 输出从 1,723,976 降为 14,621 字节，locate 从 1,712,906 降为 3,551 字节，未读总数及覆盖缺口保留。 |
+| Claude 路径别名 | 15 个有文件的 store，原路径与大小写变体的 list/read 共 30 组输出一致；list 覆盖 55 个文件条目，read 每 store 抽一个文件。 |
+| 模型行为 | 下述 W10 五个独立合成场景全部符合预设判据。 |
+
+Windows 首轮 CI 暴露了非 UTF-8 输出、测试夹具换行和未关闭 SQLite 连接等问题；后续规范化文件行尾、显式关闭测试连接、统一读取器输出为 UTF-8，并修复来源路径与筛选路径的规范化不对称。测试临时目录使用规范路径，原断言的身份、归属、偏移与覆盖目标保留，没有跳过 Windows 任务。Codex recent_injection 读取中途出现 OSError/ValueError 时记录 session_metadata_unreadable 并继续，这项容错变化保留在本版。
+
+### W10 隔离行为评测
+
+[五个合成场景及判据](../evals/v1.6.0/README.md)在执行前固定。每个场景均使用一个全新的 Codex CLI Exec，请求 GLM-5.3/high；执行者只取得各自输入与待测技能，未取得评分说明，不继承其他场景上下文。主线程阅读实际文件和回答评分，五组各运行一次，没有手工修补产物或以重跑替换失败结果。
+
+| 场景 | 实际结果 |
+|---|---|
+| ZCode 非规范来源 | 三个 topic 均处理；保留 JSON Lines 更新决定及 SQLite 旧经过，以正文路径归属非规范来源。只有 near/hash 线索的清理窗口保持未定。 |
+| Claude 撞名目录 | 保留 30 分钟回滚窗口，projects 为空、project_status 为 unresolved，未任选候选或归为 personal。 |
+| Codex V1/V2 | 两份同会话摘要合为一个记录和一个日总结事件，保留两条来源、三样本计数及 V2 独有的 E_CURSOR_STALE 条件；未升级为已核实执行结果。 |
+| Qoder CN 迁移 | 核对相同 SHA256 与迁移 unchanged，合为一个 secondary 记录和一个日总结事件；保留先核对清单、后小样本的顺序及全批次未验收边界。 |
+| 建库候选 | 实际调用 projects，列出会话数、记忆数、宽根与父子关系，提出候选后请求确认；目标库保持为空，没有提前登记项目或启用来源。 |
+
+五组输入、原生资料和用户连接配置前后核对一致；执行器关闭宿主记忆、插件、Apps、MCP、联网工具和其他代理。运行日志及产物保存在本机私有评测目录。所有待测 XMemory 技能与发布源码逐字节相同；评测期间的 Windows 路径修复另用冻结读取器与最终读取器逐命令对照，验证合成输入上的完整输出一致。
+
+这些结果覆盖本次合成任务。真实客户端升级、自然触发、定时调度和 R6 回填另行执行。Claude 超长目录规则与进一步扫描性能优化仍按既定范围延期；parent 使用主路径及 aliases 的字符串祖先关系。
+
+## 1.6.0 本地实施与读回（2026-10-15，历史过程）
+
+本节仅记录 W1–W9（含 W2b）的本地实现与程序检查。读取器改名为 Client Readers 0.2.0；XMemory 清单仍为 1.5.4，status 程序与 `xmemory/v1.5` 格式不变。未执行 W10 模型评测、W11 发布收尾或客户端安装。
+
+- 改动前 107 项测试通过。W1 阶段仍为 107 项通过，原读取器 267 条断言不变；42 个函数/类的 AST 搬迁前后一致，114 次 API 与 242 次 CLI 合成夹具对照逐字节相同，没有忽略时间字段。Python 3.9 的原运行时 92 项通过后才继续后续工作包。
+- 最终全套 143 项通过，相比基线新增 36 项；Python 3.9 的原 92 项和新增 36 项均通过。相同的 14 项 zstd 测试分别在 Python 3.9、3.11、3.15 通过，实际后端分别为已有 zstd 命令、backports.zstd、标准库 compression.zstd。zstandard、外部定位与能力缺失路径使用 mock。
+- 新增 memory locate/list/read/search、projects、doctor；会话保留原引用与历史 schema，增加 runtime。仅两项会话修正：Codex 压缩双份窗口优先明文，zstd 按已有能力回退。记忆按角色、归属依据、重复与迁移关联返回，脚本不写客户端。
+- 本机只读对照按当时探测数字逐项比较。WorkBuddy 的完整 cwd 扫描比探测脚本的首个 cwd 采样多发现一种别名；按 inode 对齐后工作区与文件数一致。frontmatter 超出限定子集时仍报告解析告警，未知文件保留 unknown，不能把数量一致当成全部元数据已解析。
+- XMemory 技能补充按角色采集、Codex V1/V2 与自动化来源、ZCode 正向映射；保留无读取器时的手工退路。程序检查与本机对照不证明自然触发、模型整理质量、长期运行或真实客户端接入结果。
+
+读回修正补充：记忆告警按当前页范围返回，范围外告警单独计数；locate 增加布局与状态汇总；frontmatter 支持普通标量续写、块式列表和任意键下一层映射，不支持的键以 `frontmatter_partial` 标出。压缩双份提示按会话范围显示并排除在覆盖率缺口之外；补齐多 cwd 自动化筛选、CRLF 偏移、通用 slug 的 near、WorkBuddy 用户根去重及 `broad_root`。仅 Codex memory locate 扫描会话头部；zstandard 仅在接受跨 frame 参数时启用，缺失建议中的安装命令只作为文字。
+
+修正后 Python 3.11 全套 **163/163**，相对 143 新增 20 项；Python 3.9 运行时四组 **148/148**；zstd 相关 **19 项**分别在 3.9、3.11、3.15 通过，无跳过。原 61 项读取器测试及 267 条断言不变；会话逐函数差异仍限于 catalogue、run、zstd_rows 与新增提示判定 helper。五端只读对照的 frontmatter_partial 文件数均为 0；Qoder CN 仍有 629 个 store，默认 40 项分页最大 22,415 字节，单文件小切片输出 1,164 字节；Codex 同类读取约 0.19 秒。Claude 的 9 条原有记录解析告警仍保留。zstandard 的参数支持与回退仅经 mock 检查；Windows/Linux 实机、W10 和 W11 仍未执行。
+
+第二轮读回修正：会话扫描告警先按来源文件记录，记忆命令按客户端规则归到 store、文件或全局，projects 按来源涉及的 cwd 分配。Claude 记忆命令只扫描有 memory/ 的目录，指定文件或 store 时只扫描目标目录；18 个本机 store 的 list --store 与 list --project 条目逐字段相同。单文件小切片读取 0.085 秒，locate 1.65 秒、0 条告警、scan_complete=true；原 9 条告警保留在 projects。projects 新增筛选分页前计算的 parent/children，setup 说明按 parent 分组。zstandard 探测的异常一律回退；search 中途读取失败的文件只报全局告警，不作为结果返回。
+
+本轮 Python 3.11 全套 **177/177**，相对 163 新增 14 项；Python 3.9 四组 **162/162**；三种解释器的 zstd 相关测试各 **21/21**，均无跳过。两个独立 frame 拼接的固定夹具已分别通过已有外部 zstd、backports.zstd、compression.zstd 的记录及字节偏移检查。sessions.py、common.py、原读取器测试文件保持上一轮字节；会话逐函数对照结果相同。Qoder CN 仍为 629 个 store，单文件 1,164 字节、最大默认页 22,415 字节。新增 Windows 与独立 zstandard CI 任务，沿用固定 action SHA；安装只在该可选后端 CI 任务中执行，实际 zstandard 测试放在本机 discover 不收集的 ci_zstandard_backend 模块。CI 未运行，需 push 并开 PR 后由 GitHub 执行；本机未安装依赖，未预先为 Windows 增加跳过标记。
+
+以下原有文字保留各版本当时的状态，不表示本轮已经发布。
+
+---
+
+以下为 **1.5.4** 的历史记录（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.6），核对日期为 2026-10-14。正式附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，下文保留开发阶段的验证记录及当时构建哈希。
 
 本文保留各开发阶段的验证记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时；后续完成情况以相应版本的收尾记录为准。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。
 
@@ -715,7 +768,7 @@ PR #4 合并（`af74c4a`）后，按实际接入计划的第一步执行隔离�
 
 ### 修订与回归
 
-- 六项读取器问题均补入回归：完整遮蔽及稳定字符偏移、原生会话身份、正文格式与覆盖说明、长 JSONL 标题和时间漏查、SQLite JSON 形状异常、Qoder parts 交错顺序。读取器详情见 [扩展验证记录](../plugins/conversation-readers/docs/validation.md)。
+- 六项读取器问题均补入回归：完整遮蔽及稳定字符偏移、原生会话身份、正文格式与覆盖说明、长 JSONL 标题和时间漏查、SQLite JSON 形状异常、Qoder parts 交错顺序。读取器详情见 [扩展验证记录](../plugins/client-readers/docs/validation.md)。
 - 自动入口统一调用完整 `xmemory-recall`，未整理更正的关系、冲突和生效条件使用同一套更正规则；历史回顾按 `event_at`，覆盖晚记录和未整理事件，未知发生时间保持未知。
 - 五个读取技能的正文分页、含工具分页及精确展开示例分开，使用返回的偏移并保持筛选条件一致。
 - 跨设备表述统一为“同一逻辑记忆库”；定时整理按允许修改的内容界定，保留旧未完成项与待确认建议的去向。
@@ -736,7 +789,7 @@ PR #4 合并（`af74c4a`）后，按实际接入计划的第一步执行隔离�
 
 ### 本轮范围
 
-只读测试使用虚构 JSONL／SQLite 和临时目录。真实客户端安装、新会话接续、定时运行、跨设备同步及历史增长后的调用次数、耗时和遗漏率，按 [试用与行为验收](../plugins/xmemory/docs/acceptance.md) 后续观察。未迁移真实记忆、接入客户端规则或创建 Release。
+只读测试使用虚构 JSONL／SQLite 和临时目录。真实客户端安装、新会话接续、定时运行、跨设备同步及历史增长后的调用次数、耗时和遗漏率，按 [试用与行为验收](https://github.com/BlueSkyXN/XMemory/blob/4a9ff925bfbc94267c1b8886af4e31d364351ce2/plugins/xmemory/docs/acceptance.md) 后续观察。未迁移真实记忆、接入客户端规则或创建 Release。
 
 ## 1.1.0 本地修订 r2：失败恢复与未处理事件（历史记录）
 

@@ -107,7 +107,7 @@ class PackageTests(unittest.TestCase):
                 for line in archive.read(f"{label}/SHA256SUMS").decode().splitlines():
                     digest, name = line.split("  ", 1)
                     self.assertEqual(hashlib.sha256(archive.read(f"{label}/{name}")).hexdigest(), digest)
-                for plugin in ("xmemory", "conversation-readers"):
+                for plugin in ("xmemory", "client-readers"):
                     payload = {name.removeprefix(f"{label}/plugins/{plugin}/") for name in archive.namelist()
                                if name.startswith(f"{label}/plugins/{plugin}/")}
                     actual = {p.relative_to(ROOT / "plugins" / plugin).as_posix()
@@ -145,7 +145,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             archive_path, _ = build(ROOT, Path(tmp))
             with zipfile.ZipFile(archive_path) as archive:
-                manifests = [f"plugins/{plugin}/{name}" for plugin in ("xmemory", "conversation-readers")
+                manifests = [f"plugins/{plugin}/{name}" for plugin in ("xmemory", "client-readers")
                              for name in ("plugin.json", ".zcode-plugin/plugin.json", ".claude-plugin/plugin.json",
                                           ".codex-plugin/plugin.json")]
                 for relative in ("plugins/marketplace.json", ".claude-plugin/marketplace.json",
@@ -187,7 +187,7 @@ class PackageTests(unittest.TestCase):
                     path = root / relative
                     original = path.read_text(encoding="utf-8")
                     data = json.loads(original)
-                    data["plugins"] = [e for e in data["plugins"] if e["name"] != "conversation-readers"]
+                    data["plugins"] = [e for e in data["plugins"] if e["name"] != "client-readers"]
                     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
                     self.assertTrue(any("must list" in error for error in check(root)))
                     path.write_text(original, encoding="utf-8")
@@ -208,25 +208,25 @@ class PackageTests(unittest.TestCase):
                 build(ROOT, Path(tmp))
 
     def test_finder_metadata_is_preserved_but_never_packaged(self):
-        from build_conversation_readers import build as build_readers, check as check_readers
+        from build_client_readers import build as build_readers, check as check_readers
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
             root.mkdir()
             copy_repo(root)
             shutil.copytree(ROOT / "docs", root / "docs")
             metadata = []
-            for plugin in ("xmemory", "conversation-readers"):
+            for plugin in ("xmemory", "client-readers"):
                 base = root / "plugins" / plugin
                 for folder in [base, *[p for p in base.rglob("*") if p.is_dir()]]:
                     path = folder / ".DS_Store"
                     path.write_bytes(b"synthetic finder metadata\x00\xff")
                     metadata.append((path, path.read_bytes(), path.stat().st_mtime_ns))
             self.assertEqual(check(root), [])
-            self.assertEqual(check_readers(root / "plugins/conversation-readers"), [])
+            self.assertEqual(check_readers(root / "plugins/client-readers"), [])
             for portable in (False, True):
                 output = Path(tmp) / str(portable)
                 archives = [build(root, output, portable=portable)[0],
-                            build_readers(output, portable=portable, plugin=root / "plugins/conversation-readers")[0]]
+                            build_readers(output, portable=portable, plugin=root / "plugins/client-readers")[0]]
                 for path in archives:
                     with zipfile.ZipFile(path) as archive:
                         self.assertIsNone(archive.testzip())

@@ -6,7 +6,9 @@
 
 常见目录为 `~/.zcode/cli/memories/projects/<slug>-<hash>/memory/`。先读实际 `MEMORY.md`，再按链接或主题读正文。索引摘要可能陈旧；正文中的日期、范围和更正仍需检查。`[[主题名]]` 这类引用需在选定目录中确认实际目标，不能凭写法补造文件。
 
-目录键可能来自工作区身份，也可能来自路径；slug 可能是 `project`。不要从 slug/hash 反推唯一项目根，也不要仅按项目同名合并两个目录。结合配置的项目根、正文以及关联会话的 `directory` 核实映射；仍不明确的材料保留待核实说明，不静默归到 personal。
+用会话数据库的 `directory`、`workspace_id` 正向计算后比对，不从 hash 反推项目：workspace_id 去空白后非空时 key=identity、slug=`project`；否则 key=字面绝对路径（不跟随 symlink，Windows 转小写），slug 为 basename 小写、`[^a-z0-9._-]+` 换 `-`、去首尾 `-`、截断 48 字符，空则 `project`。hash 为 SHA256 前 16 位；中文 basename 也可能走 project 兜底，不代表 identity 分支。本机尚无 identity 真实样本。
+
+读取器的孤儿及 near 是定位线索。结合正文和疑似正规目录确认属于同一项目后，作为独立来源采集并注明非规范路径，保留不同内容；不凭 hash 或 near 自动归属、不修改 ZCode 原件。仍不明确时保留未定标记，不归到 personal。不同路径或同名项目也不能自动合并。
 
 ## 原生元数据怎样使用
 

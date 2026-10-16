@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import zipfile
 
-from build_conversation_readers import build as build_readers, check as check_readers
+from build_client_readers import build as build_readers, check as check_readers
 from check_package import PLUGINS, ROOT, check
 
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
@@ -16,8 +16,8 @@ FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 def build(root: Path, output: Path, portable: bool = False) -> tuple[Path, str]:
     """Full archive: the three host marketplaces with every listed plugin; portable: the XMemory skill directory."""
-    readers = root / "plugins" / "conversation-readers"
-    errors = check(root) + [f"conversation-readers: {item}" for item in check_readers(readers)]
+    readers = root / "plugins" / "client-readers"
+    errors = check(root) + [f"client-readers: {item}" for item in check_readers(readers)]
     if errors:
         raise ValueError("Package checks failed: " + "; ".join(errors))
     plugin = root / "plugins" / "xmemory"
