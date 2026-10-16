@@ -1,17 +1,17 @@
 # 来源参考与探索
 
-下表承接 2026-10-12 产品评估中已核实的默认位置。它是查找线索，不保证未来版本仍使用相同位置，也不代表当前用户已经选择这些来源。
+下表按 2026-10-15 的本机核查更新默认位置。它是查找线索，不保证未来版本仍使用相同位置，也不代表当前用户已经选择这些来源。
 
 本页说明向 XMemory 采集材料时的读法。当前客户端仍按自身协议直接使用和维护原生记忆，不受 XMemory 来源启用状态限制；两套记忆的共同使用规则见 [技能入口](../SKILL.md#共同规则)。
 
 | 客户端 | 原始对话 | 自己的记忆 | 读取器 |
 |---|---|---|---|
-| Codex | `~/.codex/sessions/`、`~/.codex/archived_sessions/`：`rollout-*.jsonl`，冷数据可能是 `.jsonl.zst` | `~/.codex/memories/`（V1：`memory_summary.md`、`MEMORY.md`、`rollout_summaries/`、`raw_memories.md`、`extensions/`）；`~/.codex/memories_v2/`（V2：`memory_summary.md`、`rollout_summaries/`） | 有 |
+| Codex | `~/.codex/sessions/`、`~/.codex/archived_sessions/`：`rollout-*.jsonl`，冷数据可能是 `.jsonl.zst` | V1 `~/.codex/memories/`：索引、汇总、逐会话摘要、原始提炼、扩展、记忆技能；V2 `~/.codex/memories_v2/`：索引、逐会话摘要、扩展；当前自动化记忆 `~/.codex/automations/<id>/memory.md` | 有 |
 | Claude Code | `~/.claude/projects/<路径化目录>/*.jsonl` | `~/.claude/projects/<路径化目录>/memory/`：`MEMORY.md` 索引 + 一条一文件 | 有 |
 | ZCode | `~/.zcode/cli/db/db.sqlite`（session / message / part 表） | `~/.zcode/cli/memories/projects/<slug>-<hash>/memory/`：`MEMORY.md` 索引 + 主题正文；slug 也可能是 `project`，不能据目录名认定项目 | 有 |
 | Qoder CN | `~/.qoder-cn/projects/`、`~/Library/Application Support/com.qodercn.app.stable/main.sqlite` | `~/.qoder-cn/projects/<项目>/memory/`（CLI 项目记忆）；`~/.qoder-cn/memory/`（新桌面索引 + 主题，CLI 也可能有用户级记忆）；`~/.qoder-cn/memories/<用户ID>/projects/<路径化目录>/<类别>/`（旧版分类记忆，frontmatter 有 `usage_scenario`、`keywords`、`source`） | 有 |
 | QoderWork CN | 未适配 | `~/.qoderworkcn/awareness/main/`：`MEMORY.md`（§ 分隔）、`USER.md`、`memory/YYYY-MM-DD.md`（`<!-- memory-chat:… -->` 会话块） | 无 |
-| WorkBuddy | `~/.workbuddy/projects/` | `<工作区>/.workbuddy/memory/` 内的 `MEMORY.md` 与 `YYYY-MM-DD.md`；也检查选定的 `~/.workbuddy/MEMORY.md`、`~/.workbuddy/memory/` | 有 |
+| WorkBuddy | `~/.workbuddy/projects/` | 工作区 `.workbuddy/memory/`，用户级 `~/.workbuddy/MEMORY.md`、`~/.workbuddy/memory/`，人设 `~/.workbuddy/user-*/` | 有 |
 | 项目目录 | — | 指令文件（AGENTS.md / CLAUDE.md）、README、`docs/`、成果目录说明 | — |
 
 ## 按来源选择读法
@@ -24,11 +24,29 @@
 
 ## 有读取器时
 
-Conversation Readers 是可选的独立插件。按当前实际提供的客户端读取技能使用 `list / read / search`，命令参数和分页以它的文档与 `--help` 为准。已安装但未在当前环境可用时，不声称调用成功。
+Client Readers 是可选的独立插件。原生记忆先 `memory locate`、再 `memory list`，按角色选择 `memory read/search`；会话用 `sessions list/read/search`，候选项目总览用 `projects`。命令参数和分页以实际技能文档及 `--help` 为准，旧读取器无记忆命令时使用下文手工退路。已安装但当前环境不可用时，不声称调用成功。
+
+用用户自己的 `python3`；明确指定 `CLIENT_READERS_PYTHON` 时由调用方使用，不进入项目虚拟环境、不因缺能力换解释器或安装东西。能力缺失时运行 `doctor`，把缺口与可选做法转告用户。
 
 保留完整会话身份和原件定位。先读可见正文，确认执行事实才展开对应工具结果；检查 warnings、coverage、has_more 和 truncated。JSONL 的快照变化后重置分页，不把两次不同快照拼成完整读取。
 
 读取器 `session_ref` 用于再次定位，记录的 `session_refs` 用于跨来源遗忘，二者按 [身份约定](format.md#会话身份) 分开填写。不同产品形态和版本分别核实路径；桌面记忆、CLI 项目记忆、QoderWork 的周期反思不能仅凭产品名互相推定。
+
+## 按角色采集
+
+| 角色或状态 | 采集规则 |
+|---|---|
+| `topic`、`consolidated`、`session_summary`、`daily`、`note`、`profile`、`automation` | 按既有材料规则制作记录；保留二手性质、事件日期与项目依据 |
+| `skill` | 每个一条简短记录：任务、项目、用户触发说法、约束与例外、原文件指针；不抄操作步骤，evidence=secondary |
+| `raw_extract` | 只在缺口指向时按 outline 分段读 |
+| `index` | 用于导航；Codex memory_summary 的画像、偏好、经验段落可作为二手材料 |
+| `instructions` | 只留指针，不生成内容记录 |
+| `persona`、`backup`、`process_log` 或 store `status=unofficial` | 默认不采集 |
+| `activity` | 按 Skysight 规则直接写日总结，不生成中间记录 |
+
+`duplicate_of`、`same_session_as`、`migrated` 提示同源或转述关系；保留出处，不重复计证，不由 hash 相同或版本较新推定项目归属和正确性。未知角色先核对，不静默归为普通主题。
+
+Claude Code 用全部 cwd 正向比对编码，中文目录撞名时归属未定。WorkBuddy 按会话 cwd 发现工作区，inode 别名去重；USER.md 可作二手画像，人设 IDENTITY.md/SOUL.md 不采集，人设 MEMORY.md 按重复处理。Qoder CN 有 CLI、桌面、旧版分类三种布局，两套目录编码不同；迁移前后材料不当作两份独立证据，旧分类冻结与否看实际文件时间，不能仅凭文件名对应。
 
 ## 没有读取器时
 

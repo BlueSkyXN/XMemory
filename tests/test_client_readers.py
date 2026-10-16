@@ -1,0 +1,1135 @@
+"""虚构原始记录上的行为测试；不读取个人历史，也不启动模型。"""
+from datetime import datetime, timezone
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+import client_readers.sessions as reader
+from sync_client_readers import SKILLS, sync
+
+
+class ReaderTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def write(self, filename, rows):
+        p = self.root / filename
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+        return p
+
+    def read(self, client, path, *args):
+        parsed = reader.parser(client).parse_args([*args, "--root", str(path)])
+        return reader.run(client, parsed)
+
+    def claude(self, sid="session-demo", text="用户决定保留回滚检查", **extra):
+        return dict(type="user", sessionId=sid, uuid="u1", timestamp="2026-10-01T08:00:00Z",
+                    cwd="/work/demo", message={"role": "user", "content": text}, **extra)
+
+    def qoder_db(self, sid="session-demo"):
+        p = self.root / "main.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE chat_sessions(session_id TEXT PRIMARY KEY, title TEXT, cwd TEXT, created_at TEXT, updated_at TEXT, deleted_at TEXT)")
+            c.execute("CREATE TABLE chat_session_messages(session_id TEXT, message_id TEXT, sequence INTEGER, payload_json TEXT, created_at INTEGER)")
+            c.execute("INSERT INTO chat_sessions VALUES(?,?,?,?,?,NULL)", (sid, "测试对话", "/work/demo", "2026-10-01", "2026-10-02"))
+        return p
+
+    def test_five_scripts_run_independently(self):
+        self.assertEqual(sync(), [])
+        for client, skill in SKILLS.items():
+            script = ROOT / "plugins/client-readers/skills" / skill / "scripts/read.py"
+            run = subprocess.run([sys.executable, "-B", str(script), "sessions", "list", "--root", str(self.root / "absent")],
+                                 cwd=self.root, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            out = json.loads(run.stdout)
+            self.assertEqual(out["client"], client)
+            self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertFalse(list(self.root.rglob("__pycache__")))
+
+    def test_archive_can_be_checked_after_extraction(self):
+        import zipfile
+        from build_client_readers import build, check
+        archive, _ = build(self.root / "package")
+        with zipfile.ZipFile(archive) as z:
+            self.assertIsNone(z.testzip())
+            z.extractall(self.root / "extract")
+        extracted = self.root / "extract" / archive.stem
+        self.assertTrue((extracted / "SHA256SUMS").is_file())
+        self.assertEqual(check(extracted), [])
+        with self.assertRaises(FileExistsError):
+            build(self.root / "package")
+
+    def test_private_absolute_paths_are_rejected(self):
+        from build_client_readers import check
+        plugin = self.root / "client-readers"
+        shutil.copytree(ROOT / "plugins/client-readers", plugin)
+        path = plugin / "README.md"
+        original = path.read_text()
+        self.assertEqual(check(plugin), [])
+        # 仅使用虚构目录，覆盖原始路径和 JSON 转义形式。
+        windows = "\\".join(("C:", "Users", "fixture-user", "notes.md"))
+        paths = ["/".join(("", base, "fixture-user", "notes.md"))
+                 for base in ("Users", "Volumes", "home")]
+        paths += [windows, json.dumps(windows), windows.replace("\\", "/"),
+                  windows.replace("Users", "users")]
+        for private_path in paths:
+            with self.subTest(path=private_path):
+                path.write_text(original + "\n" + private_path + "\n")
+                self.assertIn("Private path: README.md", check(plugin))
+
+    def test_native_id_title_and_scope(self):
+        p = self.write("alias.jsonl", [self.claude(), {"type": "ai-title", "sessionId": "session-demo", "aiTitle": "回滚方案"}])
+        out = self.read("claude", p, "list", "--project", "/work/demo", "--query", "回滚")
+        self.assertEqual(out["items"][0]["session_id"], "session-demo")
+        self.assertEqual(out["items"][0]["title"], "回滚方案")
+        self.assertEqual(self.read("claude", p, "list", "--project", "/work/dem")["items"], [])
+
+    def test_codex_projection_and_reasoning_exclusion(self):
+        p = self.write("rollout.jsonl", [
+            {"type": "session_meta", "payload": {"id": "codex-demo", "cwd": "/work/demo"}},
+            {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user", "content": [{"type": "input_text", "text": "部署核对"}]}},
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "部署核对"}},
+            {"type": "response_item", "payload": {"type": "reasoning", "summary": "HIDDEN"}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant", "channel": "analysis", "content": [{"type": "output_text", "text": "HIDDEN"}]}},
+            {"type": "response_item", "payload": {"type": "message", "id": "a1", "role": "assistant", "content": [{"type": "output_text", "text": "尚未部署"}]}},
+            {"type": "response_item", "payload": {"type": "function_call", "call_id": "call1", "name": "test", "arguments": "{}"}},
+            {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "call1", "output": "通过"}},
+        ])
+        items = self.read("codex", p, "read", "--session", "codex-demo")["items"]
+        self.assertEqual([x["text"] for x in items], ["部署核对", "尚未部署"])
+        tools = self.read("codex", p, "read", "--session", "codex-demo", "--include-tools")["items"]
+        self.assertEqual([x["call_id"] for x in tools[-2:]], ["call1", "call1"])
+        self.assertEqual(self.read("codex", p, "search", "--query", "HIDDEN", "--include-tools")["items"], [])
+
+    def test_jsonl_project_switch_keeps_earlier_project_and_event_context(self):
+        first = self.claude(text="第一个项目的决定")
+        second = dict(self.claude(text="第二个项目的决定"), uuid="u2", cwd="/work/other")
+        unknown = dict(self.claude(text="没有项目元数据"), uuid="u3")
+        unknown.pop("cwd")
+        p = self.write("switched.jsonl", [first, second, unknown])
+        before = (p.read_bytes(), p.stat().st_mtime_ns)
+        for client in ("claude", "qodercn"):
+            with self.subTest(client=client):
+                listed = self.read(client, p, "list", "--project", "/work/demo")["items"]
+                self.assertEqual(len(listed), 1)
+                self.assertEqual(listed[0]["project"], "/work/other")
+                self.assertEqual(listed[0]["projects"], ["/work/demo", "/work/other"])
+                self.assertEqual(self.read(client, p, "list", "--project", "/work/dem")["items"], [])
+                # --project 仍选择会话；不静默删去同一会话的其他项目正文。
+                events = self.read(client, p, "read", "--session", "session-demo", "--project", "/work/demo")["items"]
+                self.assertEqual([e["project"] for e in events], ["/work/demo", "/work/other", None])
+                self.assertEqual(len(events), 3)
+                matches = self.read(client, p, "search", "--project", "/work/demo", "--query", "第一个")["items"]
+                self.assertEqual([e["text"] for e in matches], ["第一个项目的决定"])
+        self.assertEqual(before, (p.read_bytes(), p.stat().st_mtime_ns))
+
+    def test_codex_project_context_follows_turns_not_last_directory(self):
+        message = lambda text: {"type": "response_item", "payload": {"type": "message", "role": "user", "content": text}}
+        p = self.write("turns.jsonl", [
+            message("尚无项目"),
+            {"type": "session_meta", "payload": {"id": "turn-demo", "cwd": "/work/demo"}},
+            {"type": {}, "cwd": []},
+            message("初始项目"),
+            {"type": "turn_context", "payload": {"cwd": "/work/other"}},
+            message("切换项目"),
+            {"type": "response_item", "payload": {"type": "function_call", "call_id": "c1", "name": "check", "arguments": "{}"}},
+            {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c1", "output": "done"}},
+            {"type": "turn_context", "payload": {"cwd": "/work/demo/subdir"}},
+            {"type": "compacted", "payload": {"message": "压缩摘要"}},
+        ])
+        listed = self.read("codex", p, "list", "--project", "/work/other")["items"]
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["projects"], ["/work/demo", "/work/other", "/work/demo/subdir"])
+        events = self.read("codex", p, "read", "--session", "turn-demo", "--include-tools")["items"]
+        self.assertEqual([e["project"] for e in events], [None, "/work/demo", "/work/other", "/work/other", "/work/other", "/work/demo/subdir"])
+
+    def test_claude_blocks_parents_duplicates_and_meta(self):
+        a = {"type": "assistant", "sessionId": "session-demo", "uuid": "record-a", "parentUuid": "u1",
+             "message": {"id": "a1", "content": [{"type": "thinking", "thinking": "HIDDEN"},
+                          {"type": "text", "text": "计划"}, {"type": "text", "text": "计划"},
+                          {"type": "tool_use", "id": "call1", "name": "Read", "input": {"path": "/work/demo"}}]}}
+        p = self.write("session-demo.jsonl", [self.claude(), a, a, self.claude(text="INTERNAL", isMeta=True),
+                     {"type": "user", "sessionId": "session-demo", "uuid": "result", "message": {"content": [{"type": "tool_result", "tool_use_id": "call1", "content": "文件内容"}]}}])
+        items = self.read("claude", p, "read", "--session", "session-demo", "--include-tools")["items"]
+        self.assertEqual([x["text"] for x in items if x["kind"] == "message"], ["用户决定保留回滚检查", "计划", "计划"])
+        self.assertEqual(items[1]["parent_id"], "u1")
+        self.assertEqual(items[-1]["role"], "tool")
+        self.assertNotIn("HIDDEN", json.dumps(items))
+
+    def test_codex_agent_messages_and_search_calls_require_tools(self):
+        rows = [
+            {"type": "session_meta", "payload": {"id": "child-demo", "cwd": "/work/demo",
+                "thread_source": "subagent", "parent_thread_id": "parent-demo", "agent_path": "/root/check"}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:00:00Z", "payload": {
+                "type": "message", "role": "user", "content": "用户可见正文"}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:01:00Z", "payload": {
+                "type": "agent_message", "id": "report-1", "author": "/root/check", "recipient": "/root",
+                "content": [{"type": "input_text", "text": "检查结果\npassword=fixture-secret\n"},
+                            {"type": "encrypted_content", "encrypted_content": "ENCRYPTED-NOT-VISIBLE"},
+                            {"type": "thinking", "thinking": "HIDDEN"},
+                            {"type": "text", "text": "下一步复查"}]}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:02:00Z", "payload": {
+                "type": "web_search_call", "id": "search-1", "status": "completed",
+                "action": {"type": "search", "query": "检查结果参考 password=fixture-search-secret"}}},
+            {"type": "response_item", "timestamp": "2026-10-12T08:03:00Z", "payload": {
+                "type": "web_search_call", "id": "search-pending", "status": "in_progress"}},
+        ]
+        p = self.write("codex-tools.jsonl", rows)
+        before = (p.read_bytes(), p.stat().st_mtime_ns)
+        default = self.read("codex", p, "read", "--session", "child-demo")
+        self.assertEqual([x["text"] for x in default["items"]], ["用户可见正文"])
+        self.assertEqual(default["warnings"], [])
+        full = self.read("codex", p, "read", "--session", "child-demo", "--include-tools")
+        self.assertEqual([x["kind"] for x in full["items"]], ["message", "agent_message", "tool_call", "tool_call"])
+        message, search, pending = full["items"][1:]
+        self.assertEqual((message["author"], message["recipient"], message["message_id"]),
+                         ("/root/check", "/root", "report-1"))
+        self.assertEqual(message["role"], "assistant")
+        self.assertIn("下一步复查", message["text"])
+        self.assertEqual((search["tool_name"], search["status"], search["message_id"]),
+                         ("web_search", "completed", "search-1"))
+        self.assertIsNone(search["call_id"])
+        self.assertEqual((pending["text"], pending["status"]), ("", "in_progress"))
+        for item in full["items"]:
+            self.assertEqual((item["thread_source"], item["parent_session_id"], item["agent_path"]),
+                             ("subagent", "parent-demo", "/root/check"))
+        self.assertNotIn("fixture-secret", json.dumps(full))
+        self.assertNotIn("fixture-search-secret", json.dumps(full))
+        self.assertNotIn("HIDDEN", json.dumps(full))
+        self.assertNotIn("ENCRYPTED-NOT-VISIBLE", json.dumps(full))
+        self.assertEqual((p.read_bytes(), p.stat().st_mtime_ns), before)
+        # 经过真实 CLI 入口，而不只调用底层生成器。
+        script = ROOT / "plugins/client-readers/skills/read-codex/scripts/read.py"
+        run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p),
+                              "--session", "child-demo"], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual([x["kind"] for x in json.loads(run.stdout)["items"]], ["message"])
+
+    def test_codex_new_tool_events_search_pagination_and_expansion(self):
+        p = self.write("agent-pages.jsonl", [
+            {"type": "session_meta", "payload": {"id": "pages"}},
+            *[{"type": "response_item", "timestamp": f"2026-10-12T08:0{i}:00Z", "payload": {
+                "type": "agent_message", "id": f"r{i}", "author": "/root/check", "recipient": "/root",
+                "content": [{"type": "text", "text": "报告" + str(i) + "正文" * 40}]}} for i in range(3)],
+        ])
+        self.assertEqual(self.read("codex", p, "search", "--query", "报告")["items"], [])
+        first = self.read("codex", p, "search", "--query", "报告", "--include-tools", "--limit", "1")
+        self.assertTrue(first["has_more"])
+        second = self.read("codex", p, "search", "--query", "报告", "--include-tools", "--limit", "1",
+                           "--offset", str(first["next_offset"]))
+        self.assertEqual([first["items"][0]["message_id"], second["items"][0]["message_id"]], ["r0", "r1"])
+        chosen = self.read("codex", p, "read", "--session", "pages", "--include-tools",
+                           "--since", "2026-10-12T08:01:00Z", "--until", "2026-10-12T08:01:00Z")
+        self.assertEqual([x["message_id"] for x in chosen["items"]], ["r1"])
+        ref = first["items"][0]["record_ref"]
+        part = self.read("codex", p, "read", "--session", "pages", "--include-tools", "--record", ref,
+                         "--max-chars", "32")["items"][0]
+        rest = self.read("codex", p, "read", "--session", "pages", "--include-tools", "--record", ref,
+                         "--text-offset", str(part["next_text_offset"]))["items"][0]
+        self.assertEqual(part["text"] + rest["text"], first["items"][0]["text"])
+        self.assertEqual(self.read("codex", p, "read", "--session", "pages", "--record", ref)["items"], [])
+
+    def test_codex_thread_metadata_is_additive_and_optional(self):
+        for thread_type in ("user", "subagent", "automation", "guardian_review", None):
+            with self.subTest(thread_type=thread_type):
+                metadata = {"id": "native-thread"}
+                if thread_type is not None:
+                    metadata.update(thread_source=thread_type, parent_thread_id="parent", agent_path="/root/task")
+                p = self.write("thread.jsonl", [{"type": "session_meta", "payload": metadata}])
+                row = self.read("codex", p, "list")["items"][0]
+                self.assertEqual(row["variant"], "jsonl")
+                self.assertEqual(row["session_ref"], "codex:jsonl:native-thread")
+                self.assertEqual(row["thread_source"], thread_type)
+                self.assertEqual(row["parent_session_id"], "parent" if thread_type else None)
+                self.assertEqual(row["agent_path"], "/root/task" if thread_type else None)
+
+    def test_codex_new_event_invalid_shapes_remain_warnings(self):
+        for payload in (
+            {"type": "agent_message", "content": [{"type": "text", "text": 42}]},
+            {"type": "agent_message", "content": "text", "author": []},
+            {"type": "web_search_call", "action": []},
+            {"type": "web_search_call", "action": {"query": {"unknown": "shape"}}},
+        ):
+            with self.subTest(payload=payload):
+                p = self.write("invalid-extra.jsonl", [{"type": "session_meta", "payload": {"id": "invalid"}},
+                              {"type": "response_item", "payload": payload}])
+                for flags in ([], ["--include-tools"]):
+                    result = self.read("codex", p, "read", "--session", "invalid", *flags)
+                    self.assertEqual(result["items"], [])
+                    self.assertTrue(any(w.startswith("unsupported_body:") for w in result["warnings"]))
+                    self.assertFalse(result["coverage"]["scan_complete"])
+
+    def test_list_warnings_follow_time_project_query_and_page(self):
+        for sid, stamp, project, bad in (("good", "2026-10-14", "/work/good", False),
+                                         ("bad", "2026-10-13", "/work/bad", True),
+                                         ("old", "2026-08-01", "/work/old", True)):
+            self.write(sid + ".jsonl", [
+                {"type": "session_meta", "timestamp": stamp, "payload": {"id": sid, "cwd": project}},
+                {"type": "response_item", "timestamp": stamp, "payload": {
+                    "type": "unknown" if bad else "message", "role": "user", "content": "正文"}},
+            ])
+        for flags in (["--query", "good"], ["--project", "/work/good"],
+                      ["--since", "2026-10-14"], ["--since", "2026-10-01", "--limit", "1"]):
+            with self.subTest(flags=flags):
+                out = self.read("codex", self.root, "list", *flags)
+                self.assertEqual([s["session_id"] for s in out["items"]], ["good"])
+                self.assertEqual(out["warnings"], [])
+                self.assertEqual(out["warnings_outside_filter"], 2)
+        out = self.read("codex", self.root, "list", "--since", "2026-10-01", "--offset", "1", "--limit", "1")
+        self.assertEqual([s["session_id"] for s in out["items"]], ["bad"])
+        self.assertEqual(len(out["warnings"]), 1)
+        self.assertIn("bad.jsonl", out["warnings"][0])
+        self.assertEqual(out["warnings_outside_filter"], 1)
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.write("unreadable.jsonl", [{"type": "unknown"}])
+        out = self.read("codex", self.root, "list", "--query", "good")
+        self.assertTrue(any(w.startswith("source_error:") for w in out["warnings"]))
+        self.assertFalse(out["coverage"]["metadata_complete"])
+
+    def test_workbuddy_distinct_format(self):
+        p = self.write("wb.jsonl", [
+            {"type": "message", "id": "u1", "sessionId": "wb", "role": "user", "content": [{"type": "input_text", "text": "检查部署"}]},
+            {"type": "reasoning", "sessionId": "wb", "content": "HIDDEN"},
+            {"type": "function_call", "id": "c1", "sessionId": "wb", "callId": "call1", "name": "test", "arguments": {"mode": "read"}},
+            {"type": "function_call_result", "id": "r1", "sessionId": "wb", "callId": "call1", "name": "test", "output": "未部署"},
+        ])
+        items = self.read("workbuddy", p, "read", "--session", "wb", "--include-tools")["items"]
+        self.assertEqual([x["kind"] for x in items], ["message", "tool_call", "tool_result"])
+        self.assertEqual(items[-1]["call_id"], items[-2]["call_id"])
+
+    def test_iso_times_parse_the_same_on_python_39(self):
+        # 3.9/3.10 的 fromisoformat 不认 Z、非 3/6 位小数秒和 +0000；规整后与 3.11 结果一致
+        expected = datetime(2026, 10, 11, 3, 41, 47, 123456, tzinfo=timezone.utc).timestamp()
+        for value in ("2026-10-11T03:41:47.123456Z", "2026-10-11T03:41:47.1234567Z", "2026-10-11T11:41:47.123456+08:00",
+                      "2026-10-11T03:41:47.123456+0000", "2026-10-11 03:41:47.123456+00", "2026-10-11T03:41:47,123456Z"):
+            with self.subTest(value=value):
+                self.assertAlmostEqual(reader.epoch(value), expected, places=5)
+        self.assertEqual(reader.epoch("2026-10-11T03:41:47.12Z"), reader.epoch("2026-10-11T03:41:47.120Z"))
+        self.assertEqual(reader.epoch("不是时间"), 0)
+        self.assertEqual(reader.parse_iso("2026-10-11").isoformat(), "2026-10-11T00:00:00")
+
+    def test_redaction_and_hidden_tool_keys(self):
+        p = self.write("s.jsonl", [self.claude(text='password="private-value" Bearer secret-token sk-12345678901234567890')])
+        text = self.read("claude", p, "read", "--session", "session-demo")["items"][0]["text"]
+        for token in ["private-value", "secret-token", "sk-12345678901234567890"]:
+            self.assertNotIn(token, text)
+        self.assertNotIn("hidden-value", reader.tool_text({"result": "ok", "thinking": "hidden-value"}))
+
+    def test_script_json_stays_valid_after_redaction(self):
+        # 经脚本入口输出；带引号的键值在 JSON 转义后不能被二次替换破坏结构。
+        text = 'password="fixture-pass" 与 API_KEY: "fixture-key"'
+        p = self.write("s.jsonl", [self.claude(text=text),
+                                   {"type": "ai-title", "sessionId": "session-demo", "aiTitle": "access_token=fixture-title"}])
+        script = ROOT / "plugins/client-readers/skills" / SKILLS["claude"] / "scripts/read.py"
+        for args in (["read", "--session", "session-demo"], ["search", "--query", "password"], ["list"]):
+            with self.subTest(action=args[0]):
+                run = subprocess.run([sys.executable, "-B", str(script), "sessions", *args, "--root", str(p)],
+                                     capture_output=True, text=True)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                out = json.loads(run.stdout)
+                self.assertTrue(out["items"])
+                for secret in ["fixture-pass", "fixture-key", "fixture-title"]:
+                    self.assertNotIn(secret, run.stdout)
+                if args[0] == "list":
+                    self.assertEqual(out["items"][0]["title"], "access_token=[REDACTED]")
+
+    def test_search_fragment_and_long_record_expansion(self):
+        text = "前" * 300 + "检索目标" + "后" * 300
+        p = self.write("s.jsonl", [self.claude(text=text)])
+        item = self.read("claude", p, "search", "--query", "检索目标", "--max-chars", "50")["items"][0]
+        self.assertIn("检索目标", item["text"])
+        self.assertTrue(item["truncated"])
+        expanded = self.read("claude", p, "read", "--session", "session-demo", "--record", item["record_ref"],
+                             "--text-offset", "300", "--max-chars", "50")["items"][0]
+        self.assertEqual(expanded["text"], text[300:350])
+        self.assertEqual(expanded["next_text_offset"], 350)
+
+    def test_pagination_and_fingerprint(self):
+        rows = [dict(self.claude(text=str(i)), uuid=f"u{i}") for i in range(5)]
+        p = self.write("s.jsonl", rows)
+        first = self.read("claude", p, "read", "--session", "session-demo", "--limit", "2")
+        self.assertEqual(first["next_offset"], 2)
+        fp = next(iter(first["snapshot"].values()))
+        second = self.read("claude", p, "read", "--session", "session-demo", "--limit", "2", "--offset", "2", "--snapshot", fp)
+        self.assertEqual([x["text"] for x in second["items"]], ["2", "3"])
+        with p.open("a") as f:
+            f.write(json.dumps(self.claude(text="新增")) + "\n")
+        with self.assertRaisesRegex(reader.ReaderError, "snapshot_changed"):
+            self.read("claude", p, "read", "--session", "session-demo", "--snapshot", fp)
+
+    def test_partial_tail_reports_boundary(self):
+        p = self.write("s.jsonl", [self.claude()])
+        with p.open("a") as f:
+            f.write('{"unfinished":')
+        out = self.read("claude", p, "read", "--session", "session-demo")
+        self.assertEqual(len(out["items"]), 1)
+        self.assertTrue(any("partial_record" in w for w in out["warnings"]))
+        self.assertFalse(out["coverage"]["scan_complete"])
+
+    def test_known_old_id_not_hidden_by_scan_cap(self):
+        self.write("old.jsonl", [self.claude(sid="old")])
+        self.write("new.jsonl", [self.claude(sid="new")])
+        out = self.read("claude", self.root, "read", "--session", "old", "--max-sessions", "1")
+        self.assertEqual(out["items"][0]["session_id"], "old")
+        listed = self.read("claude", self.root, "list", "--max-sessions", "1")
+        self.assertFalse(listed["coverage"]["scan_complete"])
+
+    def test_filename_is_only_a_hint_for_native_id(self):
+        self.write("target.jsonl", [self.claude(sid="unrelated")])
+        self.write("alias.jsonl", [self.claude(sid="target")])
+        out = self.read("claude", self.root, "read", "--session", "claude:jsonl:target")
+        self.assertEqual(out["items"][0]["session_id"], "target")
+
+    def test_unicode_search_fragment_uses_original_offsets(self):
+        text = "ß" * 30 + "TARGET" + "尾" * 30
+        p = self.write("s.jsonl", [self.claude(text=text)])
+        item = self.read("claude", p, "search", "--query", "target", "--max-chars", "12")["items"][0]
+        self.assertIn("TARGET", item["text"])
+        self.assertEqual(item["text"], text[item["text_offset"]:item["text_offset"] + 12])
+
+    def test_unknown_source_is_not_empty_success(self):
+        p = self.write("unknown.jsonl", [{"arbitrary": "not a client transcript"}])
+        out = self.read("claude", p, "list")
+        self.assertEqual(out["items"], [])
+        self.assertFalse(out["coverage"]["scan_complete"])
+
+    def test_qodercn_desktop_projection_and_read_only(self):
+        p = self.qoder_db()
+        payload = {"role": "assistant", "text": "same", "parts": [
+            {"id": "p1", "type": "text", "text": "same"},
+            {"id": "p2", "type": "thinking", "text": "HIDDEN"},
+            {"id": "p3", "type": "tool", "tool": {"id": "c1", "name": "test", "input": {}, "response": "ok"}}],
+            "tools": [{"id": "c1", "name": "test", "input": {}, "response": "ok"}]}
+        with sqlite3.connect(p) as c:
+            c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", "m1", 1, json.dumps(payload), 1))
+        before = p.read_bytes()
+        items = self.read("qodercn", p, "read", "--session", "session-demo", "--include-tools")["items"]
+        self.assertEqual([x["text"] for x in items], ["same", "{}", "ok"])
+        self.assertEqual(p.read_bytes(), before)
+        with reader.database(p) as c:
+            with self.assertRaises(sqlite3.OperationalError):
+                c.execute("DELETE FROM chat_sessions")
+
+    def test_qodercn_migration_duplicates_remain_separate(self):
+        p = self.qoder_db()
+        j = self.write("session-demo.jsonl", [self.claude()])
+        args = reader.parser("qodercn").parse_args(["read", "--session", "session-demo", "--root", str(p), "--root", str(j)])
+        with self.assertRaisesRegex(reader.ReaderError, "ambiguous_session"):
+            reader.run("qodercn", args)
+        chosen = self.read("qodercn", j, "read", "--session", "qodercn:jsonl:session-demo")
+        self.assertEqual(len(chosen["items"]), 1)
+
+    def test_zcode_order_tools_and_synthetic_exclusion(self):
+        p = self.root / "db.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, sequence INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, sequence INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES('s','测试','/work/demo',1,2)")
+            c.execute("INSERT INTO message VALUES('m','s',1,1,?)", (json.dumps({"role": "assistant", "parentID": "u"}),))
+            parts = [(2, {"type": "text", "text": "第二段"}), (1, {"type": "text", "text": "第一段"}),
+                     (3, {"type": "reasoning", "text": "HIDDEN"}),
+                     (4, {"type": "text", "text": "INTERNAL", "synthetic": True}),
+                     (5, {"type": "tool", "callID": "call1", "tool": "Read", "state": {"input": {}, "output": "ok"}})]
+            for seq, data in parts:
+                c.execute("INSERT INTO part VALUES(?,?,?,?,?,?)", (str(seq), "m", "s", 1, seq, json.dumps(data)))
+        before = hashlib.sha256(p.read_bytes()).hexdigest()
+        items = self.read("zcode", p, "read", "--session", "s", "--include-tools")["items"]
+        self.assertEqual([x["text"] for x in items], ["第一段", "第二段", "{}", "ok"])
+        self.assertEqual(items[0]["parent_id"], "u")
+        self.assertEqual(hashlib.sha256(p.read_bytes()).hexdigest(), before)
+
+    def test_sqlite_wal_committed_data_visible(self):
+        p = self.qoder_db()
+        c = sqlite3.connect(p)
+        self.addCleanup(c.close)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", "wal-msg", 1, json.dumps({"role": "user", "text": "WAL 中已提交"}), 1))
+        c.commit()
+        self.assertTrue(Path(str(p) + "-wal").exists())
+        items = self.read("qodercn", p, "read", "--session", "session-demo")["items"]
+        self.assertEqual(items[0]["text"], "WAL 中已提交")
+
+    def test_schema_mismatch_reported(self):
+        p = self.root / "unknown.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE other(id TEXT)")
+        out = self.read("zcode", p, "list")
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertIn("unsupported_schema", out["warnings"][0])
+
+    def test_sqlite_parent_directory_discovers_known_database(self):
+        self.qoder_db()
+        out = self.read("qodercn", self.root, "list")
+        self.assertEqual(out["items"][0]["session_id"], "session-demo")
+        self.assertEqual(out["items"][0]["variant"], "desktop")
+
+    def test_xr001_complete_sensitive_text_values(self):
+        values = [
+            'password="SYNTHETIC_PREFIX SYNTHETIC_SUFFIX"',
+            "password='SYNTHETIC_PREFIX SYNTHETIC_SUFFIX'",
+            'password="SYNTHETIC_PREFIX\\" quoted SYNTHETIC_SUFFIX"',
+            "password='SYNTHETIC_PREFIX\\' quoted SYNTHETIC_SUFFIX'",
+            'password="SYNTHETIC_PREFIX\nSYNTHETIC_SUFFIX"',
+            'password="SYNTHETIC_PREFIX\\nSYNTHETIC_SUFFIX"',
+            'password=SYNTHETIC_PREFIX SYNTHETIC_SUFFIX',
+        ]
+        for value in values:
+            with self.subTest(value=value):
+                text = "正常前文\n" + value + "\n正常后文"
+                result = reader.redact(text)
+                self.assertNotIn("SYNTHETIC_", result)
+                self.assertIn("正常前文", result)
+                self.assertIn("正常后文", result)
+                self.assertEqual(reader.redact(result), result)
+        self.assertEqual(reader.redact('password="SYNTHETIC_PREFIX" 然后继续检查'),
+                         'password="[REDACTED]" 然后继续检查')
+
+    def test_xr001_nested_tool_values_and_json_arguments(self):
+        value = {"normal": "保留", "nested": [
+            {"password": "SYNTHETIC_PREFIX SYNTHETIC_SUFFIX"},
+            {"API_KEY": {"nested": "SYNTHETIC_OBJECT"}},
+            {"authorization": ["SYNTHETIC_LIST", "SYNTHETIC_TAIL"]},
+            {"refresh-token": "SYNTHETIC_MULTILINE\nSYNTHETIC_END"},
+        ]}
+        for raw in (value, json.dumps(value)):
+            with self.subTest(encoded=isinstance(raw, str)):
+                result = reader.tool_text(raw)
+                self.assertNotIn("SYNTHETIC_", result)
+                decoded = json.loads(result)
+                self.assertEqual(decoded["normal"], "保留")
+                self.assertEqual(decoded["nested"][1]["API_KEY"], "[REDACTED]")
+        self.assertEqual(reader.scrub(value)["nested"][2]["authorization"], "[REDACTED]")
+
+    def test_xr001_redacted_pagination_uses_stable_offsets(self):
+        text = '正常前文 password="SYNTHETIC_PREFIX SYNTHETIC_SUFFIX" 正常后文' * 3
+        p = self.write("redacted.jsonl", [self.claude(text=text)])
+        script = ROOT / "plugins/client-readers/skills" / SKILLS["claude"] / "scripts/read.py"
+        first = self.read("claude", p, "read", "--session", "session-demo")
+        expected = first["items"][0]["text"]
+        record = first["items"][0]["record_ref"]
+        snapshot = next(iter(first["snapshot"].values()))
+        offset, chunks = 0, []
+        while offset is not None:
+            run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p),
+                                  "--session", "session-demo", "--record", record, "--snapshot", snapshot,
+                                  "--text-offset", str(offset), "--max-chars", "17"], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            item = json.loads(run.stdout)["items"][0]
+            self.assertEqual(item["text_offset"], offset)
+            self.assertEqual(item["text_chars"], len(expected))
+            self.assertEqual(item["text"], expected[offset:offset + 17])
+            chunks.append(item["text"])
+            offset = item["next_text_offset"]
+        self.assertEqual("".join(chunks), expected)
+        self.assertNotIn("SYNTHETIC_", expected)
+
+    def test_xr001_tool_json_is_not_redacted_after_serialization(self):
+        payload = {"password": "SYNTHETIC_PREFIX SYNTHETIC_SUFFIX",
+                   "note": '正常前文 password="SYNTHETIC_NESTED SYNTHETIC_END" 正常后文'}
+        p = self.write("tool.jsonl", [self.claude(), {"type": "assistant", "sessionId": "session-demo",
+                         "message": {"content": [{"type": "tool_use", "id": "c", "input": payload}]}}])
+        out = self.read("claude", p, "read", "--session", "session-demo", "--include-tools")
+        text = out["items"][-1]["text"]
+        self.assertNotIn("SYNTHETIC_", text)
+        self.assertEqual(json.loads(text), {"password": "[REDACTED]",
+                         "note": '正常前文 password="[REDACTED]" 正常后文'})
+
+    def test_xr002_mixed_native_sessions_are_rejected(self):
+        for client in ("claude", "qodercn", "workbuddy", "codex"):
+            with self.subTest(client=client):
+                if client == "workbuddy":
+                    rows = [dict(type="message", role="user", sessionId=s, content=f"正文-{s}") for s in ("A", "B")]
+                elif client == "codex":
+                    rows = []
+                    for sid in ("A", "B"):
+                        rows += [{"type": "session_meta", "payload": {"id": sid}},
+                                 {"type": "response_item", "payload": {"type": "message", "role": "user", "content": "正文-" + sid}}]
+                else:
+                    rows = [self.claude(sid=s, text="正文-" + s) for s in ("A", "B")]
+                p = self.write(client + ".jsonl", rows)
+                out = self.read(client, p, "search", "--query", "正文-A")
+                self.assertEqual(out["items"], [])
+                self.assertFalse(out["coverage"]["scan_complete"])
+                self.assertIn("mixed_session_ids", " ".join(out["warnings"]))
+                script = ROOT / "plugins/client-readers/skills" / SKILLS[client] / "scripts/read.py"
+                run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p), "--session", "B"],
+                                     capture_output=True, text=True)
+                self.assertEqual(run.returncode, 2)
+                self.assertIn("mixed_session_ids", " ".join(json.loads(run.stdout)["warnings"]))
+
+    def test_xr002_subagent_and_message_identity_are_preserved(self):
+        p = self.write("subagents/agent-demo.jsonl", [self.claude(sid="parent-demo", parentUuid="parent-message")])
+        out = self.read("claude", p, "list", "--include-subagents")
+        self.assertEqual(out["items"][0]["parent_session_id"], "parent-demo")
+        ref = out["items"][0]["session_ref"]
+        item = self.read("claude", p, "read", "--session", ref, "--include-subagents")["items"][0]
+        self.assertEqual(item["native_session_id"], "parent-demo")
+        self.assertEqual(item["message_id"], "u1")
+        self.assertEqual(item["parent_id"], "parent-message")
+        self.assertIn("#byte:0", item["source_ref"])
+
+    def test_xr003_wrong_client_body_is_not_empty_success(self):
+        p = self.write("workbuddy.jsonl", [{"type": "message", "sessionId": "s", "role": "user", "content": "目标正文"}])
+        self.assertEqual(len(self.read("workbuddy", p, "search", "--query", "目标")["items"]), 1)
+        for client in ("claude", "qodercn"):
+            with self.subTest(client=client):
+                out = self.read(client, p, "search", "--query", "目标", "--role", "assistant")
+                self.assertEqual(out["items"], [])
+                self.assertFalse(out["coverage"]["scan_complete"])
+                self.assertIn("unsupported_body", " ".join(out["warnings"]))
+                self.assertEqual(out["coverage"]["content_status"], "unsupported")
+
+    def test_xr003_valid_no_match_filtered_and_metadata_only(self):
+        p = self.write("valid.jsonl", [self.claude()])
+        no_match = self.read("claude", p, "search", "--query", "不存在")
+        filtered = self.read("claude", p, "read", "--session", "session-demo", "--role", "assistant")
+        meta = self.write("meta.jsonl", [self.claude(isMeta=True),
+                                          {"type": "ai-title", "sessionId": "session-demo", "aiTitle": "只有元事件"}])
+        metadata_only = self.read("claude", meta, "read", "--session", "session-demo")
+        for out in (no_match, filtered, metadata_only):
+            self.assertEqual(out["items"], [])
+            self.assertEqual(out["warnings"], [])
+            self.assertTrue(out["coverage"]["scan_complete"])
+        self.assertEqual(no_match["coverage"]["content_status"], "no_match")
+        self.assertEqual(filtered["coverage"]["content_status"], "filtered_out")
+        self.assertEqual(metadata_only["coverage"]["content_status"], "metadata_only")
+
+    def test_xr003_partial_body_preserves_supported_records(self):
+        p = self.write("partial.jsonl", [self.claude(text="正常正文"),
+                                          {"type": "message", "sessionId": "session-demo", "role": "user", "content": "未知正文"}])
+        out = self.read("claude", p, "read", "--session", "session-demo")
+        self.assertEqual([i["text"] for i in out["items"]], ["正常正文"])
+        self.assertEqual(out["coverage"]["content_status"], "partial")
+        self.assertFalse(out["coverage"]["scan_complete"])
+
+    def test_xr003_malformed_body_types_are_reported_before_filters(self):
+        p = self.write("malformed.jsonl", [self.claude(text="正常正文"),
+            {"sessionId": "session-demo", "type": []},
+            {"sessionId": "session-demo", "type": "assistant", "message": {"content": [{"type": [], "text": "未知"}]}}])
+        out = self.read("claude", p, "read", "--session", "session-demo", "--role", "tool")
+        self.assertEqual(out["items"], [])
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertTrue(out["coverage"]["metadata_complete"])
+        self.assertEqual(out["coverage"]["content_status"], "partial")
+        self.assertEqual(sum("unsupported_body" in w for w in out["warnings"]), 2)
+
+    def test_xr004_middle_title_in_large_jsonl(self):
+        rows = [dict(self.claude(text="前" * 20000), uuid=f"before-{i}") for i in range(4)]
+        rows += [{"type": "ai-title", "sessionId": "session-demo", "aiTitle": "中段原生标题"}]
+        rows += [dict(self.claude(text="后" * 20000), uuid=f"after-{i}") for i in range(4)]
+        p = self.write("large.jsonl", rows)
+        self.assertGreater(p.stat().st_size, 192 * 1024)
+        out = self.read("claude", p, "list", "--query", "中段原生标题")
+        self.assertEqual(out["items"][0]["title"], "中段原生标题")
+        self.assertTrue(out["items"][0]["metadata_complete"])
+        self.assertNotIn("后" * 100, json.dumps(out, ensure_ascii=False))
+
+    def test_xr004_long_final_record_keeps_time_filtered_hit(self):
+        rows = [dict(self.claude(text="旧" * 20000), uuid=f"old-{i}") for i in range(4)]
+        rows += [dict(self.claude(text="长" * 90000 + "最新目标"), uuid="latest", timestamp="2026-10-08T12:00:00Z")]
+        p = self.write("large-time.jsonl", rows)
+        plain = self.read("claude", p, "search", "--query", "最新目标", "--max-chars", "20")
+        dated = self.read("claude", p, "search", "--query", "最新目标", "--since", "2026-10-08", "--max-chars", "20")
+        self.assertEqual(dated["items"], plain["items"])
+        self.assertEqual(len(dated["items"]), 1)
+        listed = self.read("claude", p, "list", "--since", "2026-10-08")
+        self.assertEqual(listed["items"][0]["updated_at"], "2026-10-08T12:00:00Z")
+
+    def test_xr005_qodercn_invalid_shapes_preserve_good_records(self):
+        p = self.qoder_db()
+        invalid = [[], None, "not an object", {"role": "assistant", "parts": "bad"},
+                   {"role": "assistant", "parts": [None, {"type": "tool", "tool": []}]},
+                   {"role": "assistant", "tools": "bad"}, {"role": []},
+                   {"role": "assistant", "parts": [{"type": []}, {"type": "tool", "tool": None},
+                                                      {"type": "text", "text": []}]}]
+        rows = [{"role": "user", "text": "正常前文"}, *invalid, {"role": "assistant", "text": "正常后文"}]
+        with sqlite3.connect(p) as c:
+            for i, payload in enumerate(rows):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", f"m{i}", i, json.dumps(payload), i))
+        script = ROOT / "plugins/client-readers/skills" / SKILLS["qodercn"] / "scripts/read.py"
+        run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p),
+                              "--session", "session-demo", "--include-tools"], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        out = json.loads(run.stdout)
+        self.assertEqual([i["text"] for i in out["items"]], ["正常前文", "正常后文"])
+        self.assertFalse(out["coverage"]["scan_complete"])
+        for i in range(1, len(rows) - 1):
+            self.assertIn(f"message:m{i}", " ".join(out["warnings"]))
+
+    def test_xr005_zcode_invalid_nested_shapes_preserve_good_parts(self):
+        p = self.root / "zcode.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES('s','测试','/work/demo',1,2)")
+            for i, value in enumerate([[], None, "bad", {"role": "assistant", "semantics": []}, {"role": "assistant"}, {"role": []}]):
+                c.execute("INSERT INTO message VALUES(?,?,?,?)", (f"m{i}", "s", i, json.dumps(value)))
+            for i, value in enumerate([[], None, "bad", {"type": "tool", "state": "bad"}, {"type": "text", "text": "正常内容"},
+                                       {"type": []}, {"type": "tool", "state": None}, {"type": "text", "text": []}]):
+                c.execute("INSERT INTO part VALUES(?,?,?,?,?)", (f"p{i}", "m4", "s", i, json.dumps(value)))
+        out = self.read("zcode", p, "read", "--session", "s", "--include-tools")
+        self.assertEqual([i["text"] for i in out["items"]], ["正常内容"])
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertIn("message:m3", " ".join(out["warnings"]))
+        self.assertIn("part:p3", " ".join(out["warnings"]))
+
+    def read_script(self, client, path, include_tools=False, session="session-demo"):
+        script = ROOT / "plugins/client-readers/skills" / SKILLS[client] / "scripts/read.py"
+        args = [sys.executable, "-B", str(script), "sessions", "read", "--root", str(path), "--session", session]
+        if include_tools:
+            args.append("--include-tools")
+        run = subprocess.run(args, capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(run.stderr, "")
+        return json.loads(run.stdout)
+
+    def jsonl_block_records(self, block, identity):
+        tool = dict({"type": block, "name": "read", "input": {}}, **identity) if block == "tool_use" \
+            else dict({"type": block, "content": "结果"}, **identity)
+        return [self.claude(text="前文"),
+                {"type": "assistant", "sessionId": "session-demo", "uuid": "a1",
+                 "message": {"role": "assistant", "content": [
+                     {"type": "text", "text": "块前"}, tool, {"type": "text", "text": "块后"}]}},
+                self.claude(text="后文")]
+
+    def assert_jsonl_id_case(self, out, p, valid, identity, id_key, block_index, tool_text, include_tools):
+        # 事件序：前文、块前、（工具块在消息内容中的下标 1）、块后、后文。
+        expected = ["前文", "块前", "块后", "后文"]
+        if valid and include_tools:
+            expected[2:2] = [tool_text]
+        self.assertEqual([i["text"] for i in out["items"]], expected)
+        self.assertEqual(out["coverage"]["scan_complete"], valid)
+        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+        if valid:
+            self.assertEqual(out["warnings"], [])
+            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+            self.assertEqual([i["call_id"] for i in calls], [identity.get(id_key)] * (1 if include_tools else 0))
+        else:
+            self.assertEqual(len(out["warnings"]), 1)
+            self.assertIn(f"{p}#byte:", out["warnings"][0])
+            self.assertIn(f"block:{block_index}/{id_key}", out["warnings"][0])
+            self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_claude_jsonl_tool_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"id": None}, True), ("string", {"id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"id": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            for block in ("tool_use", "tool_result"):
+                id_key = "id" if block == "tool_use" else "tool_use_id"
+                block_identity = {id_key: identity["id"]} if "id" in identity else {}
+                p = self.write("session-demo.jsonl", self.jsonl_block_records(block, block_identity))
+                for include_tools in (False, True):
+                    with self.subTest(block=block, identity=label, include_tools=include_tools):
+                        out = self.read_script("claude", p, include_tools)
+                        self.assert_jsonl_id_case(out, p, valid, block_identity, id_key, 1,
+                                                  "{}" if block == "tool_use" else "结果", include_tools)
+
+    def test_xr005_qodercn_jsonl_tool_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"id": None}, True), ("string", {"id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"id": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            for block in ("tool_use", "tool_result"):
+                id_key = "id" if block == "tool_use" else "tool_use_id"
+                block_identity = {id_key: identity["id"]} if "id" in identity else {}
+                p = self.write("session-demo.jsonl", self.jsonl_block_records(block, block_identity))
+                for include_tools in (False, True):
+                    with self.subTest(block=block, identity=label, include_tools=include_tools):
+                        out = self.read_script("qodercn", p, include_tools)
+                        self.assert_jsonl_id_case(out, p, valid, block_identity, id_key, 1,
+                                                  "{}" if block == "tool_use" else "结果", include_tools)
+
+    def test_xr005_codex_jsonl_call_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"call_id": None}, True), ("string", {"call_id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"call_id": value}, False) for value in ([], {}, 1, False)]
+        # custom_tool_call 用 input 字段携带输入，与普通 function_call 的 arguments 相区分。
+        variants = (("function_call", {"name": "test", "arguments": "{}"}, "{}"),
+                    ("function_call_output", {"output": "通过"}, "通过"),
+                    ("custom_tool_call", {"name": "test", "input": "自定义输入"}, "自定义输入"),
+                    ("custom_tool_call_output", {"output": "自定义输出"}, "自定义输出"))
+        for label, identity, valid in cases:
+            for record_type, extra, payload_text in variants:
+                records = [
+                    {"type": "session_meta", "payload": {"id": "codex-demo", "cwd": "/work/demo"}},
+                    {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user",
+                                                           "content": [{"type": "input_text", "text": "前文"}]}},
+                    {"type": "response_item", "payload": dict({"type": record_type}, **extra, **identity)},
+                    {"type": "response_item", "payload": {"type": "message", "id": "a1", "role": "assistant",
+                                                           "content": [{"type": "output_text", "text": "后文"}]}},
+                ]
+                p = self.write("rollout.jsonl", records)
+                for include_tools in (False, True):
+                    with self.subTest(record_type=record_type, identity=label, include_tools=include_tools):
+                        out = self.read_script("codex", p, include_tools, session="codex-demo")
+                        expected = ["前文", "后文"]
+                        if valid and include_tools:
+                            expected[1:1] = [payload_text]
+                        self.assertEqual([i["text"] for i in out["items"]], expected)
+                        self.assertEqual(out["coverage"]["scan_complete"], valid)
+                        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                        if valid:
+                            self.assertEqual(out["warnings"], [])
+                            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                            self.assertEqual([i["call_id"] for i in calls], [identity.get("call_id")] * (1 if include_tools else 0))
+                        else:
+                            self.assertEqual(len(out["warnings"]), 1)
+                            self.assertIn(f"{p}#byte:", out["warnings"][0])
+                            self.assertIn("/call_id", out["warnings"][0])
+                            self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_workbuddy_jsonl_call_ids_in_both_read_modes(self):
+        cases = [("missing", {}, True), ("null", {"callId": None}, True), ("string", {"callId": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"callId": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            for record_type in ("function_call", "function_call_result"):
+                extra = {"id": "c1", "name": "test", "arguments": "{}"} if record_type == "function_call" \
+                    else {"id": "r1", "output": "未部署"}
+                records = [
+                    {"type": "message", "id": "u1", "sessionId": "wb", "role": "user",
+                     "content": [{"type": "input_text", "text": "前文"}]},
+                    dict({"type": record_type, "sessionId": "wb"}, **extra, **identity),
+                    {"type": "message", "id": "a1", "sessionId": "wb", "role": "assistant",
+                     "content": [{"type": "output_text", "text": "后文"}]},
+                ]
+                p = self.write("wb.jsonl", records)
+                for include_tools in (False, True):
+                    with self.subTest(record_type=record_type, identity=label, include_tools=include_tools):
+                        out = self.read_script("workbuddy", p, include_tools, session="wb")
+                        expected = ["前文", "后文"]
+                        if valid and include_tools:
+                            expected[1:1] = ["{}"] if record_type == "function_call" else ["未部署"]
+                        self.assertEqual([i["text"] for i in out["items"]], expected)
+                        self.assertEqual(out["coverage"]["scan_complete"], valid)
+                        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                        if valid:
+                            self.assertEqual(out["warnings"], [])
+                            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                            self.assertEqual([i["call_id"] for i in calls], [identity.get("callId")] * (1 if include_tools else 0))
+                        else:
+                            self.assertEqual(len(out["warnings"]), 1)
+                            self.assertIn(f"{p}#byte:", out["warnings"][0])
+                            self.assertIn("/callId", out["warnings"][0])
+                            self.assertIn("invalid_id:", out["warnings"][0])
+
+    def jsonl_uuid_records(self, uuid_value):
+        middle = {"type": "assistant", "sessionId": "session-demo",
+                  "message": {"role": "assistant", "content": [{"type": "text", "text": "中间消息"}]}}
+        if uuid_value is not ...:
+            middle["uuid"] = uuid_value
+        return [self.claude(text="前文"), middle, self.claude(text="后文")]
+
+    def assert_jsonl_uuid_case(self, client, uuid_value, valid, include_tools):
+        p = self.write("session-demo.jsonl", self.jsonl_uuid_records(uuid_value))
+        with self.subTest(identity=type(uuid_value).__name__ if uuid_value is not ... else "missing",
+                          include_tools=include_tools):
+            out = self.read_script(client, p, include_tools)
+            # 消息级粒度：异常 uuid 跳过整条记录（含其正常文本块），前后消息保留。
+            self.assertEqual([i["text"] for i in out["items"]],
+                             ["前文", "中间消息", "后文"] if valid else ["前文", "后文"])
+            self.assertEqual(out["coverage"]["scan_complete"], valid)
+            self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+            if valid:
+                self.assertEqual(out["warnings"], [])
+            else:
+                self.assertEqual(len(out["warnings"]), 1)
+                self.assertIn(f"{p}#byte:", out["warnings"][0])
+                self.assertIn("/uuid", out["warnings"][0])
+                self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_claude_jsonl_record_uuid_in_both_read_modes(self):
+        cases = [(..., True), (None, True), ("rec-2", True)]
+        cases += [(value, False) for value in ([], {}, 1, False)]
+        for value, valid in cases:
+            for include_tools in (False, True):
+                self.assert_jsonl_uuid_case("claude", value, valid, include_tools)
+
+    def test_xr005_qodercn_jsonl_record_uuid_in_both_read_modes(self):
+        cases = [(..., True), (None, True), ("rec-2", True)]
+        cases += [(value, False) for value in ([], {}, 1, False)]
+        for value, valid in cases:
+            for include_tools in (False, True):
+                self.assert_jsonl_uuid_case("qodercn", value, valid, include_tools)
+
+    def test_xr005_qodercn_tool_ids_in_both_read_modes(self):
+        p = self.qoder_db()
+        with sqlite3.connect(p) as c:
+            for i, payload in enumerate([{"role": "user", "text": "前文"}, {}, {"role": "assistant", "text": "后文"}]):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)",
+                          ("session-demo", f"m{i}", i, json.dumps(payload), i))
+        cases = [("missing", {}, True), ("null", {"id": None}, True), ("string", {"id": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"id": value}, False) for value in ([], {}, 1, False)]
+        for projection in ("parts", "tools"):
+            for label, identity, valid in cases:
+                tool = dict(identity, input={}, response="RESULT")
+                payload = {"role": "assistant", "turnId": "turn-demo", "parts": [
+                    {"id": "before", "type": "text", "text": "块前"},
+                    {"id": "after", "type": "text", "text": "块后"}]}
+                if projection == "parts":
+                    payload["parts"].insert(1, {"id": "tool-part", "type": "tool", "tool": tool})
+                else:
+                    payload["tools"] = [tool]
+                with sqlite3.connect(p) as c:
+                    c.execute("UPDATE chat_session_messages SET payload_json=? WHERE message_id='m1'", (json.dumps(payload),))
+                for include_tools in (False, True):
+                    with self.subTest(projection=projection, identity=label, include_tools=include_tools):
+                        out = self.read_script("qodercn", p, include_tools)
+                        expected = ["前文", "块前", "块后", "后文"]
+                        if valid and include_tools:
+                            index = 2 if projection == "parts" else 3
+                            expected[index:index] = ["{}", "RESULT"]
+                        self.assertEqual([i["text"] for i in out["items"]], expected)
+                        self.assertEqual(out["coverage"]["scan_complete"], valid)
+                        self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                        if valid:
+                            self.assertEqual(out["warnings"], [])
+                            calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                            self.assertEqual([i["call_id"] for i in calls], [identity.get("id")] * (2 if include_tools else 0))
+                            self.assertTrue(all(i["turn_id"] == "turn-demo" for i in calls))
+                        else:
+                            locator = "part:tool-part/tool:1" if projection == "parts" else "tool:0"
+                            self.assertEqual(len(out["warnings"]), 1)
+                            self.assertIn(f"{p}#message:m1/{locator}/id", out["warnings"][0])
+                            self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_zcode_tool_ids_in_both_read_modes(self):
+        p = self.root / "zcode-ids.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES('session-demo','测试','/work/demo',1,2)")
+            for i in range(3):
+                c.execute("INSERT INTO message VALUES(?,?,?,?)", (f"m{i}", "session-demo", i,
+                          json.dumps({"role": "assistant", "parentID": "parent-demo"})))
+            for i, (message, payload) in enumerate([
+                ("m0", {"type": "text", "text": "前文"}), ("m1", {"type": "text", "text": "块前"}),
+                ("m1", {}), ("m1", {"type": "text", "text": "块后"}), ("m2", {"type": "text", "text": "后文"})]):
+                c.execute("INSERT INTO part VALUES(?,?,?,?,?)", (f"p{i}", message, "session-demo", i, json.dumps(payload)))
+        cases = [("missing", {}, True), ("null", {"callID": None}, True), ("string", {"callID": "call-demo"}, True)]
+        cases += [(type(value).__name__, {"callID": value}, False) for value in ([], {}, 1, False)]
+        for label, identity, valid in cases:
+            payload = dict(identity, type="tool", tool="Read", state={"input": {}, "output": "RESULT"})
+            with sqlite3.connect(p) as c:
+                c.execute("UPDATE part SET data=? WHERE id='p2'", (json.dumps(payload),))
+            for include_tools in (False, True):
+                with self.subTest(identity=label, include_tools=include_tools):
+                    out = self.read_script("zcode", p, include_tools)
+                    expected = ["前文", "块前", "块后", "后文"]
+                    if valid and include_tools:
+                        expected[2:2] = ["{}", "RESULT"]
+                    self.assertEqual([i["text"] for i in out["items"]], expected)
+                    self.assertEqual(out["coverage"]["scan_complete"], valid)
+                    self.assertEqual(out["coverage"]["content_status"], "matches" if valid else "partial")
+                    if valid:
+                        self.assertEqual(out["warnings"], [])
+                        calls = [i for i in out["items"] if i["kind"] in {"tool_call", "tool_result"}]
+                        self.assertEqual([i["call_id"] for i in calls], [identity.get("callID")] * (2 if include_tools else 0))
+                        self.assertTrue(all(i["parent_id"] == "parent-demo" for i in calls))
+                    else:
+                        self.assertEqual(len(out["warnings"]), 1)
+                        self.assertIn(f"{p}#message:m1/part:p2/callID", out["warnings"][0])
+                        self.assertIn("invalid_id:", out["warnings"][0])
+
+    def test_xr005_qodercn_locator_and_turn_ids(self):
+        p = self.qoder_db()
+        with sqlite3.connect(p) as c:
+            for i, text in enumerate(("前文", "异常记录", "后文")):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)",
+                          ("session-demo", f"m{i}", i, json.dumps({"role": "assistant", "text": text}), i))
+        for field in ("id", "turnId"):
+            for value in ([], {}):
+                payload = {"role": "assistant", "parts": [{"type": "text", "text": "正常块"},
+                                                          {"type": "text", "text": "异常块"}]}
+                (payload["parts"][1] if field == "id" else payload)[field] = value
+                with sqlite3.connect(p) as c:
+                    c.execute("UPDATE chat_session_messages SET payload_json=? WHERE message_id='m1'", (json.dumps(payload),))
+                for include_tools in (False, True):
+                    with self.subTest(field=field, value=value, include_tools=include_tools):
+                        out = self.read_script("qodercn", p, include_tools)
+                        self.assertEqual([i["text"] for i in out["items"]],
+                                         ["前文", "正常块", "后文"] if field == "id" else ["前文", "后文"])
+                        self.assertFalse(out["coverage"]["scan_complete"])
+                        self.assertEqual(out["coverage"]["content_status"], "partial")
+                        locator = "part:1/id" if field == "id" else "turnId"
+                        self.assertIn(f"{p}#message:m1/{locator}", " ".join(out["warnings"]))
+
+    def test_xr005_zcode_parent_id_is_checked_before_parts(self):
+        p = self.root / "zcode-parent.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES('session-demo','测试','/work/demo',1,2)")
+            for i, text in enumerate(("前文", "异常记录", "后文")):
+                c.execute("INSERT INTO message VALUES(?,?,?,?)", (f"m{i}", "session-demo", i, json.dumps({"role": "assistant"})))
+                c.execute("INSERT INTO part VALUES(?,?,?,?,?)", (f"p{i}", f"m{i}", "session-demo", i,
+                          json.dumps({"type": "text", "text": text})))
+        for value in ([], {}):
+            with sqlite3.connect(p) as c:
+                c.execute("UPDATE message SET data=? WHERE id='m1'", (json.dumps({"role": "assistant", "parentID": value}),))
+            for include_tools in (False, True):
+                with self.subTest(value=value, include_tools=include_tools):
+                    out = self.read_script("zcode", p, include_tools)
+                    self.assertEqual([i["text"] for i in out["items"]], ["前文", "后文"])
+                    self.assertFalse(out["coverage"]["scan_complete"])
+                    self.assertEqual(out["coverage"]["content_status"], "partial")
+                    self.assertIn(f"{p}#message:m1/parentID", " ".join(out["warnings"]))
+
+    def test_xr006_qodercn_interleaved_parts_and_pagination(self):
+        p = self.qoder_db()
+        parts = [{"id": "t1", "type": "text", "text": "第一段"},
+                 {"id": "p1", "type": "tool", "tool": {"id": "c1", "input": {}, "response": "结果一"}},
+                 {"id": "t2", "type": "text", "text": "第二段"},
+                 {"id": "p2", "type": "tool", "tool": {"id": "c2", "input": {}, "response": "结果二"}},
+                 {"id": "t3", "type": "text", "text": "第三段"}]
+        payload = {"role": "assistant", "parts": parts, "text": "重复文字投影",
+                   "tools": [part["tool"] for part in parts if part["type"] == "tool"]}
+        with sqlite3.connect(p) as c:
+            c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", "m1", 1, json.dumps(payload), 1))
+        args = ("read", "--session", "session-demo", "--include-tools")
+        full = self.read("qodercn", p, *args)
+        expected = ["第一段", "{}", "结果一", "第二段", "{}", "结果二", "第三段"]
+        self.assertEqual([i["text"] for i in full["items"]], expected)
+        paged, offset = [], 0
+        while offset is not None:
+            page = self.read("qodercn", p, *args, "--limit", "2", "--offset", str(offset))
+            paged += [i["text"] for i in page["items"]]
+            offset = page["next_offset"]
+        self.assertEqual(paged, expected)
+        text_only = self.read("qodercn", p, "read", "--session", "session-demo")
+        self.assertEqual([i["text"] for i in text_only["items"]], ["第一段", "第二段", "第三段"])
+
+    def test_xr006_qodercn_missing_projection_fallback(self):
+        p = self.qoder_db()
+        rows = [{"role": "assistant", "text": "回退文字", "parts": [
+                    {"type": "tool", "tool": {"id": "c1", "input": {}, "response": "结果一"}}]},
+                {"role": "assistant", "parts": [{"type": "text", "text": "正文"}],
+                 "tools": [{"id": "c2", "input": {}, "response": "回退结果"}]}]
+        with sqlite3.connect(p) as c:
+            for i, payload in enumerate(rows):
+                c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", f"m{i}", i, json.dumps(payload), i))
+        out = self.read("qodercn", p, "read", "--session", "session-demo", "--include-tools")
+        self.assertEqual([i["text"] for i in out["items"]], ["回退文字", "{}", "结果一", "正文", "{}", "回退结果"])
+
+    def test_codex_telemetry_envelopes_are_metadata(self):
+        p = self.write("rollout.jsonl", [
+            {"type": "session_meta", "payload": {"id": "codex-demo", "cwd": "/work/demo"}},
+            {"type": "token_usage_record", "payload": {"total": 1}},
+            {"type": "world_state", "payload": {"nodes": []}},
+            {"type": "inter_agent_communication_metadata", "payload": {"channel": "board"}},
+            {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user", "content": [{"type": "input_text", "text": "部署核对"}]}},
+        ])
+        out = self.read("codex", p, "list")
+        self.assertFalse([w for w in out["warnings"] if w.startswith("unsupported_body")])
+        self.assertTrue(out["coverage"]["metadata_complete"])
+        self.assertEqual(out["items"][0]["body_format"], "supported")
+        self.assertEqual(self.read("codex", p, "read", "--session", "codex-demo")["items"][0]["text"], "部署核对")
+
+    def zcode_db(self, sid):
+        p = self.root / "db.sqlite"
+        with sqlite3.connect(p) as c:
+            c.execute("CREATE TABLE session(id TEXT, title TEXT, directory TEXT, time_created INTEGER, time_updated INTEGER)")
+            c.execute("CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("CREATE TABLE part(id TEXT, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)")
+            c.execute("INSERT INTO session VALUES(?,?,?,1,2)", (sid, "界面引用", "/work/demo"))
+            c.execute("INSERT INTO message VALUES(?,?,1,?)", ("m", sid, json.dumps({"role": "user", "parentID": None})))
+            c.execute("INSERT INTO part VALUES(?,?,?,1,?)", ("p1", "m", sid, json.dumps({"type": "text", "text": "虚拟路径可定位"})))
+        return p
+
+    def test_zcode_ui_virtual_reference_and_bare_uuid(self):
+        sid = "sess_04390ec0-1198-462c-a5a0-347d17b254d6"
+        p = self.zcode_db(sid)
+        virtual = f"/Users/fixture-user/work/{sid}.zcode-session"
+        for value in (virtual, f"C:/workspace/{sid}.zcode-session",
+                      f"C:\\workspace\\{sid}.zcode-session", sid, sid[len("sess_"):],
+                      f"zcode:sqlite:{sid}"):
+            items = self.read("zcode", p, "read", "--session", value)["items"]
+            self.assertEqual([x["text"] for x in items], ["虚拟路径可定位"])
+        # 跨客户端的界面引用不做转换：原样查找，明确报未找到。
+        with self.assertRaises(reader.ReaderError):
+            self.read("claude", self.root / "absent", "read", "--session", virtual)
+        with self.assertRaises(reader.ReaderError):
+            self.read("zcode", p, "read", "--session", f"C:/workspace/{sid}.claude-session")
+
+    def test_zcode_lifecycle_parts_are_not_unsupported(self):
+        # step-start/step-finish/timeline/compaction 是生命周期与遥测事件，
+        # 静默跳过，不产生 unsupported_body 警告（实测 0.1.2 曾对每条报警刷屏）。
+        sid = "sess_lifecycle-demo"
+        p = self.zcode_db(sid)
+        with sqlite3.connect(p) as c:
+            lifecycle = [
+                {"type": "step-start"},
+                {"type": "step-finish", "reason": "tool-calls", "cost": 0, "tokens": {"total": 28183}},
+                {"type": "timeline", "timelineType": "model_change", "display": "separator", "status": "completed"},
+                {"type": "compaction", "auto": True, "compactReason": "context_limit",
+                 "summaryMessageId": "msg_other", "boundaryId": "compact_demo"},
+            ]
+            for i, data in enumerate(lifecycle):
+                c.execute("INSERT INTO part VALUES(?,?,?,2,?)", (f"lp{i}", "m", sid, json.dumps(data)))
+        out = self.read("zcode", p, "read", "--session", sid)
+        self.assertFalse([w for w in out["warnings"] if w.startswith("unsupported_body")])
+        self.assertEqual([x["text"] for x in out["items"]], ["虚拟路径可定位"])
+
+    def test_zstd_rollout_reads_and_reports_missing_tool(self):
+        zstd = shutil.which("zstd")
+        if not zstd:
+            self.skipTest("需要系统 zstd 命令")
+        plain = self.write("rollout-cold.jsonl", [
+            {"type": "session_meta", "payload": {"id": "codex-cold", "cwd": "/work/demo"}},
+            {"type": "response_item", "payload": {"type": "message", "id": "u1", "role": "user", "content": [{"type": "input_text", "text": "冷会话正文"}]}},
+        ])
+        packed = plain.with_name(plain.name + ".zst")
+        subprocess.run([zstd, "-qf", "-o", str(packed), str(plain)], check=True)
+        plain.unlink()
+        listed = self.read("codex", self.root, "list")
+        self.assertEqual(listed["items"][0]["session_id"], "codex-cold")
+        self.assertTrue(listed["items"][0]["source"].endswith(".jsonl.zst"))
+        items = self.read("codex", self.root, "read", "--session", "codex-cold")["items"]
+        self.assertEqual(items[0]["text"], "冷会话正文")
+        from unittest import mock
+        with mock.patch.object(reader.runtime, "_capabilities", {"zstd": []}):
+            degraded = self.read("codex", self.root, "list")
+        self.assertEqual(degraded["items"], [])
+        self.assertTrue(any(w.startswith("zstd_missing") for w in degraded["warnings"]))
+
+    def test_zstd_oversized_records_preserve_following_offsets(self):
+        zstd = shutil.which("zstd")
+        if not zstd:
+            self.skipTest("需要系统 zstd 命令")
+        head = json.dumps({"type": "session_meta", "payload": {"id": "cold-long", "cwd": "/work/demo"}}).encode() + b"\n"
+        tail = json.dumps({"type": "response_item", "payload": {"type": "message", "id": "tail",
+                          "role": "user", "content": [{"type": "input_text", "text": "tail message"}]}}).encode() + b"\n"
+        prefix, suffix = b'{"padding":"', b'"}\n'
+        for sizes in ((reader.MAX_LINE + 1,), (reader.MAX_LINE + 257,),
+                      (reader.MAX_LINE * 2 + 257,), (reader.MAX_LINE + 1, reader.MAX_LINE + 257)):
+            with self.subTest(line_sizes=sizes):
+                long_lines = b"".join(prefix + b"x" * (size - len(prefix) - len(suffix)) + suffix for size in sizes)
+                plain = self.root / "long.jsonl"
+                plain.write_bytes(head + long_lines + tail)
+                packed = plain.with_name(plain.name + ".zst")
+                subprocess.run([zstd, "-qf", "-o", str(packed), str(plain)], check=True)
+                expected = len(head) + sum(sizes)
+                for path in (plain, packed):
+                    warnings = []
+                    rows = list(reader.json_rows(path, warnings))
+                    self.assertEqual(rows[-1][0], expected)
+                    self.assertEqual(len(rows), 2)
+                    self.assertEqual(sum(w.startswith("oversized_record:") for w in warnings), len(sizes))
+                    item = self.read("codex", path, "read", "--session", "cold-long")["items"][0]
+                    self.assertEqual(item["text"], "tail message")
+                    self.assertIn(f"@byte:{expected}/", item["record_ref"])
+
+
+if __name__ == "__main__":
+    unittest.main()

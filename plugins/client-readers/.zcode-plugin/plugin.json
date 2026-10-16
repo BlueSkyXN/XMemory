@@ -1,0 +1,9 @@
+{
+  "name": "client-readers",
+  "version": "0.2.0",
+  "description": "只读地读取各 AI 客户端留在本机的会话与原生记忆，五个客户端各一个技能。",
+  "author": {
+    "name": "BlueSkyXN"
+  },
+  "skills": "./skills"
+}

@@ -10,7 +10,7 @@
 | Claude Code | 源码或完整包根 | `xmemory@xmemory-marketplace` |
 | Codex | 源码或完整包根 | `xmemory@xmemory-marketplace` |
 
-三个客户端统一使用市场名 `xmemory-marketplace`；清单格式和市场根仍按各客户端要求保留。市场同时列出 `conversation-readers@xmemory-marketplace`，可单独安装。XMemory 不内嵌读取器，没有强制插件依赖。
+三个客户端统一使用市场名 `xmemory-marketplace`；清单格式和市场根仍按各客户端要求保留。市场同时列出 `client-readers@xmemory-marketplace`，可单独安装。XMemory 不内嵌读取器，没有强制插件依赖。
 
 以下新名称适用于当前源码。已发布的 v1.5.3 包仍使用旧名称，不能仅凭插件版本判断市场名称；以所用包内清单的 `name` 为准。
 

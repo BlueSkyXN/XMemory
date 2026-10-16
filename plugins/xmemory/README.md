@@ -1,6 +1,8 @@
 # XMemory 1.5.4
 
-以技能维护跨客户端 Markdown 记忆。六类对象分别更新，唯一程序是只读 `status`；定时由客户端负责，Conversation Readers 另装、可选。
+以技能维护跨客户端 Markdown 记忆。六类对象分别更新，唯一程序是只读 `status`；定时由客户端负责，Client Readers 另装、可选。
+
+1.6.0 未发布改动仅调整技能与来源说明：可用读取器定位原生记忆、生成项目候选并按角色采集；status 与 xmemory/v1.5 格式保持不变。
 
 ## 开始使用
 

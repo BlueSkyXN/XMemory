@@ -15,8 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOL = "xmemory"
 SKILLS = {TOOL, "xmemory-recall", "xmemory-note", "xmemory-run", "xmemory-extract", "xmemory-consolidate",
           "xmemory-setup", "xmemory-maintain"}
-# 市场中的插件及其显示名；conversation-readers 自身的载荷检查在 build_conversation_readers.check。
-PLUGINS = {"xmemory": "XMemory", "conversation-readers": "Conversation Readers"}
+# 市场中的插件及其显示名；client-readers 自身的载荷检查在 build_client_readers.check。
+PLUGINS = {"xmemory": "XMemory", "client-readers": "Client Readers"}
 ALLOWED = {".md", ".toml", ".json"}
 SCRIPTS = {"xmemory.py", "status.py", "toml_subset.py"}
 # 每个技能必须链接的本地资源；任务技能还必须链接工具技能。

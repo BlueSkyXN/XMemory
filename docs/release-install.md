@@ -1,16 +1,18 @@
-# XMemory 1.5.4 安装包
+# 本地构建包（未发布改动）
 
-本版包含 XMemory 1.5.4 与 Conversation Readers 0.1.6，文件格式仍为 `xmemory/v1.5`。安装包与校验文件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
+本地源码清单仍保留 XMemory 1.5.4；以下构建产物包含未发布改动，不是原 v1.5.4 Release 附件。
+
+本版包含 XMemory 1.5.4 与 Client Readers 0.2.0，文件格式仍为 `xmemory/v1.5`。安装包与校验文件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 本版三个客户端的市场名称统一为 `xmemory-marketplace`，以下命令适用于本版安装包。旧 v1.5.3 包仍使用 ZCode `xmemory`、Claude Code `xmemory-claude`、Codex `xmemory-codex`，以包内市场清单的 `name` 为准。
 
 | 包 | 内容 |
 |---|---|
-| `XMemory-1.5.4.zip` | 三端完整市场，包含 XMemory 1.5.4 与独立 Conversation Readers 0.1.6 |
+| `XMemory-1.5.4.zip` | 三端完整市场，包含 XMemory 1.5.4 与独立 Client Readers 0.2.0 |
 | `XMemory-1.5.4-skills.zip` | 八个 XMemory 技能、模板和只读 status；不含读取器 |
-| `ConversationReaders-0.1.6-skills.zip` | 五端自包含读取技能，可选安装 |
+| `ClientReaders-0.2.0-skills.zip` | 五端自包含读取技能，可选安装 |
 
-Python 3.9+，无额外依赖。完整包解压后，ZCode 添加 `plugins/` 为市场根；Claude Code 与 Codex 添加解压根。三端都安装 `xmemory@xmemory-marketplace`；需要会话读取时另装 `conversation-readers@xmemory-marketplace`。
+Python 3.9+，无额外依赖。完整包解压后，ZCode 添加 `plugins/` 为市场根；Claude Code 与 Codex 添加解压根。三端都安装 `xmemory@xmemory-marketplace`；需要会话读取时另装 `client-readers@xmemory-marketplace`。
 
 ```bash
 claude plugin marketplace add /absolute/path/to/XMemory-1.5.4

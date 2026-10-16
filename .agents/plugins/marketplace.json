@@ -9,8 +9,8 @@
       "category": "Productivity"
     },
     {
-      "name": "conversation-readers",
-      "source": { "source": "local", "path": "./plugins/conversation-readers" },
+      "name": "client-readers",
+      "source": { "source": "local", "path": "./plugins/client-readers" },
       "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
       "category": "Productivity"
     }

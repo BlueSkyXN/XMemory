@@ -1,5 +1,27 @@
 # XMemory 验证报告
 
+## 未发布改动：1.6.0（2026-10-15）
+
+本节仅记录 W1–W9（含 W2b）的本地实现与程序检查。读取器改名为 Client Readers 0.2.0；XMemory 清单仍为 1.5.4，status 程序与 `xmemory/v1.5` 格式不变。未执行 W10 模型评测、W11 发布收尾或客户端安装。
+
+- 改动前 107 项测试通过。W1 阶段仍为 107 项通过，原读取器 267 条断言不变；42 个函数/类的 AST 搬迁前后一致，114 次 API 与 242 次 CLI 合成夹具对照逐字节相同，没有忽略时间字段。Python 3.9 的原运行时 92 项通过后才继续后续工作包。
+- 最终全套 143 项通过，相比基线新增 36 项；Python 3.9 的原 92 项和新增 36 项均通过。相同的 14 项 zstd 测试分别在 Python 3.9、3.11、3.15 通过，实际后端分别为已有 zstd 命令、backports.zstd、标准库 compression.zstd。zstandard、外部定位与能力缺失路径使用 mock。
+- 新增 memory locate/list/read/search、projects、doctor；会话保留原引用与历史 schema，增加 runtime。仅两项会话修正：Codex 压缩双份窗口优先明文，zstd 按已有能力回退。记忆按角色、归属依据、重复与迁移关联返回，脚本不写客户端。
+- 本机只读对照按当时探测数字逐项比较。WorkBuddy 的完整 cwd 扫描比探测脚本的首个 cwd 采样多发现一种别名；按 inode 对齐后工作区与文件数一致。frontmatter 超出限定子集时仍报告解析告警，未知文件保留 unknown，不能把数量一致当成全部元数据已解析。
+- XMemory 技能补充按角色采集、Codex V1/V2 与自动化来源、ZCode 正向映射；保留无读取器时的手工退路。程序检查与本机对照不证明自然触发、模型整理质量、长期运行或真实客户端接入结果。
+
+读回修正补充：记忆告警按当前页范围返回，范围外告警单独计数；locate 增加布局与状态汇总；frontmatter 支持普通标量续写、块式列表和任意键下一层映射，不支持的键以 `frontmatter_partial` 标出。压缩双份提示按会话范围显示并排除在覆盖率缺口之外；补齐多 cwd 自动化筛选、CRLF 偏移、通用 slug 的 near、WorkBuddy 用户根去重及 `broad_root`。仅 Codex memory locate 扫描会话头部；zstandard 仅在接受跨 frame 参数时启用，缺失建议中的安装命令只作为文字。
+
+修正后 Python 3.11 全套 **163/163**，相对 143 新增 20 项；Python 3.9 运行时四组 **148/148**；zstd 相关 **19 项**分别在 3.9、3.11、3.15 通过，无跳过。原 61 项读取器测试及 267 条断言不变；会话逐函数差异仍限于 catalogue、run、zstd_rows 与新增提示判定 helper。五端只读对照的 frontmatter_partial 文件数均为 0；Qoder CN 仍有 629 个 store，默认 40 项分页最大 22,415 字节，单文件小切片输出 1,164 字节；Codex 同类读取约 0.19 秒。Claude 的 9 条原有记录解析告警仍保留。zstandard 的参数支持与回退仅经 mock 检查；Windows/Linux 实机、W10 和 W11 仍未执行。
+
+第二轮读回修正：会话扫描告警先按来源文件记录，记忆命令按客户端规则归到 store、文件或全局，projects 按来源涉及的 cwd 分配。Claude 记忆命令只扫描有 memory/ 的目录，指定文件或 store 时只扫描目标目录；18 个本机 store 的 list --store 与 list --project 条目逐字段相同。单文件小切片读取 0.085 秒，locate 1.65 秒、0 条告警、scan_complete=true；原 9 条告警保留在 projects。projects 新增筛选分页前计算的 parent/children，setup 说明按 parent 分组。zstandard 探测的异常一律回退；search 中途读取失败的文件只报全局告警，不作为结果返回。
+
+本轮 Python 3.11 全套 **177/177**，相对 163 新增 14 项；Python 3.9 四组 **162/162**；三种解释器的 zstd 相关测试各 **21/21**，均无跳过。两个独立 frame 拼接的固定夹具已分别通过已有外部 zstd、backports.zstd、compression.zstd 的记录及字节偏移检查。sessions.py、common.py、原读取器测试文件保持上一轮字节；会话逐函数对照结果相同。Qoder CN 仍为 629 个 store，单文件 1,164 字节、最大默认页 22,415 字节。新增 Windows 与独立 zstandard CI 任务，沿用固定 action SHA；安装只在该可选后端 CI 任务中执行，实际 zstandard 测试放在本机 discover 不收集的 ci_zstandard_backend 模块。CI 未运行，需 push 并开 PR 后由 GitHub 执行；本机未安装依赖，未预先为 Windows 增加跳过标记。
+
+以下原有文字保留各版本当时的状态，不表示本轮已经发布。
+
+---
+
 当前源码版本：**1.5.4**（文件格式 `xmemory/v1.5`；Conversation Readers 0.1.6）。最新核对日期：2026-10-14。发布状态与正式附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，下文保留开发阶段的验证记录及当时构建哈希。
 
 本文保留各开发阶段的验证记录，其中的规范、技能名和“未提交／未发布”等表述只对应当时；后续完成情况以相应版本的收尾记录为准。Git 提交、PR 与 CI 的当前状态以 GitHub 为准。仓库自动检查由 `.github/workflows/validate.yml` 运行，覆盖包装、单元测试和分发包构建，不替代真实客户端与 Agent 行为验收。

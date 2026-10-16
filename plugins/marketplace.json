@@ -5,7 +5,7 @@
       "name": "xmemory",
       "source": "./xmemory",
       "version": "1.5.4",
-      "description": "XMemory：以技能维护跨客户端 Markdown 记忆。六类对象分别更新，程序仅提供只读 status；Conversation Readers 另装可选，定时由客户端负责。不依赖 git，不保存运行状态。",
+      "description": "XMemory：以技能维护跨客户端 Markdown 记忆。六类对象分别更新，程序仅提供只读 status；Client Readers 另装可选，定时由客户端负责。不依赖 git，不保存运行状态。",
       "displayName": "XMemory",
       "displayName_i18n": {
         "zh-CN": "XMemory"
@@ -15,16 +15,16 @@
       }
     },
     {
-      "name": "conversation-readers",
-      "source": "./conversation-readers",
-      "version": "0.1.6",
-      "description": "五个客户端各一个 Skill 和只读脚本：列出、检索、定位与读取对话，不自动写入记忆。",
-      "displayName": "Conversation Readers",
+      "name": "client-readers",
+      "source": "./client-readers",
+      "version": "0.2.0",
+      "description": "只读地读取各 AI 客户端留在本机的会话与原生记忆，五个客户端各一个技能。",
+      "displayName": "Client Readers",
       "displayName_i18n": {
-        "zh-CN": "对话读取"
+        "zh-CN": "客户端读取器"
       },
       "description_i18n": {
-        "zh-CN": "只读列出、检索和读取 Claude、Codex、ZCode、Qoder CN、WorkBuddy 的历史对话。"
+        "zh-CN": "只读地读取各 AI 客户端留在本机的会话与原生记忆，五个客户端各一个技能。"
       }
     }
   ]

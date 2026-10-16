@@ -6,7 +6,7 @@
 |---|---|
 | AI 按技能 | 建库、选择来源、制作记录、更新六类对象、整理、遗忘、生成告知 |
 | 只读 status | 库内更新线索、断链、字段、时间、疑似秘密、入口大小、来源记录时间 |
-| Conversation Readers（可选） | 客户端会话 list/read/search；独立安装 |
+| Client Readers（可选） | projects、sessions 与 memory 的只读入口；独立安装 |
 | 客户端 | 当前代理、定时调度，以及自身原生记忆的读取、注入和维护 |
 
 对象与操作见 [技能](../skills/xmemory/SKILL.md)。目录树就是记忆，不使用 git、队列、锁、ledger、持久化游标或运行日志。排除列表属于配置，其他事实与来源写在 Markdown 中。

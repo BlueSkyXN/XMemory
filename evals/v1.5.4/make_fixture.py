@@ -47,7 +47,7 @@ def record(job: Path, name: str, updated: str, day: str, body: str, projects=Non
 def setup(job: Path, skills: Path, task: str, reader: Path | None = None) -> None:
     shutil.copytree(skills, job / "guidance", ignore=shutil.ignore_patterns(".DS_Store", "__pycache__", "*.pyc"))
     if reader:
-        shutil.copytree(reader, job / "readers/read-codex-conversations",
+        shutil.copytree(reader, job / "readers/read-codex",
                         ignore=shutil.ignore_patterns(".DS_Store", "__pycache__", "*.pyc"))
     write(job / "prompt.md", "这是虚构材料的独立执行。工作目录内 memory/ 是本轮 XMemory 根，"
           "guidance/ 是待测的正式技能，按相应技能及其引用工序执行。宿主原生记忆在本实验中不可用。"
@@ -139,7 +139,7 @@ def make_fixture(root: Path, skills: Path, reader: Path) -> None:
                             {"type": "encrypted_content", "encrypted_content": "SYNTHETIC-UNREADABLE"}]}})
         write(sessions / f"rollout-{sid}.jsonl", "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
     setup(job, skills, f"使用 xmemory-extract，将配置选定的全部原生笔记及 {day} 的会话制作成记录；"
-          "本轮只做记录，不整理其他对象。Codex 读取技能在 readers/read-codex-conversations/。", reader)
+          "本轮只做记录，不整理其他对象。Codex 读取技能在 readers/read-codex/。", reader)
     manifest["cases"]["attribution"] = {"parent": parent, "child": child,
                                          "automation": automation, "guardian": guardian,
                                          "notes": {"signature.md": ["Maple"], "settings.md": ["Nimbus-config"],
