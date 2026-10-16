@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查及构建对话读取扩展；不安装、不发布。三端市场登记由 check_package.check_markets 检查。"""
+"""检查及构建 Client Readers；不安装、不发布。三端市场登记由 check_package.check_markets 检查。"""
 from __future__ import annotations
 
 import argparse
@@ -54,7 +54,7 @@ def check(plugin=PLUGIN):
             errors.append(f"Unexpected payload: {rel}")
             continue
         text = path.read_text(encoding="utf-8")
-        if re.search(r"/(?:Users|Volumes|home)/|(?i:[A-Z]:[\\/]+Users[\\/])", text):
+        if re.search(r"/(?:Users|Volumes)/|/home/(?!linuxbrew/)|(?i:[A-Z]:[\\/]+Users[\\/])", text):
             errors.append(f"Private path: {rel}")
         if any(line.rstrip() != line for line in text.splitlines()):
             errors.append(f"Whitespace: {rel}")

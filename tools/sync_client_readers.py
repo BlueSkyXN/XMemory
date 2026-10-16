@@ -25,7 +25,8 @@ def sync(root=ROOT, apply=False):
         base = root / "plugins/client-readers/skills" / skill
         wrapper = ("#!/usr/bin/env python3\n"
                    '"""本技能专用脚本；无需安装命令或修改 PATH。"""\n'
-                   "import sys\nsys.dont_write_bytecode = True\n"
+                   "import sys\nfrom pathlib import Path\nsys.dont_write_bytecode = True\n"
+                   "sys.path.insert(0, str(Path(__file__).resolve().parent))\n"
                    "from client_readers.cli import main\n\n"
                    f'if __name__ == "__main__":\n    raise SystemExit(main("{client}"))\n').encode()
         for rel, data in dict(payload, **{"scripts/read.py": wrapper}).items():

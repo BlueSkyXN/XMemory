@@ -18,6 +18,8 @@ def run(ctx, args):
     ctx.memory_target = None
     ctx.include_recent_injection = False
     stores, files = catalogue(ctx)
+    session_paths = {path for session in ctx.sessions for path in session['cwds']}
+    session_inodes = {key for path in session_paths for key in [inode(path)] if key is not None}
     rows = {}
     def ensure(path):
         if path not in rows:
@@ -98,7 +100,9 @@ def run(ctx, args):
         path = row['path']
         row['sessions']['count'] = len(row['_sessions'])
         row['memory'].update(stores=len(row['_stores']), files=len(row['_files']))
-        if row['memory']['stores'] and not row['sessions']['count']:
+        has_sessions = any(p in session_paths or inode(p) in session_inodes
+                           for p in [path, *row['aliases']])
+        if row['memory']['stores'] and not has_sessions:
             row['flags'].append('memory_without_sessions')
         if row['exists'] == 'unmounted':
             row['flags'].append('unmounted')

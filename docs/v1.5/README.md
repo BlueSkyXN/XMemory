@@ -1,6 +1,6 @@
 # XMemory 1.5 版本线
 
-当前源码为 XMemory 1.5.4 与 Conversation Readers 0.1.6；发布状态及附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。下面保留此前版本说明，并列出本版改动。
+本文保留 XMemory 1.5.x 与 Conversation Readers 的历史变更。当前版本说明见 [1.6 版本线](../v1.6/README.md)，历史发布及附件见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
 
 ## 1.5.0
 

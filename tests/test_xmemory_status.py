@@ -43,14 +43,14 @@ class StatusTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.root = self.base / "memory"
         self.root.mkdir()
-        (self.root / "config.toml").write_text(CONFIG)
+        (self.root / "config.toml").write_text(CONFIG, encoding='utf-8')
 
     def write(self, path, kind, updated="2026-10-12T10:00:00+08:00", body="", **fields):
         data = dict(format=FORMAT, kind=kind, updated=updated, **fields)
         p = self.root / path
         p.parent.mkdir(parents=True, exist_ok=True)
         header = "\n".join(k + ": " + json.dumps(v, ensure_ascii=False) for k, v in data.items())
-        p.write_text("---\n" + header + "\n---\n" + body)
+        p.write_text("---\n" + header + "\n---\n" + body, encoding='utf-8')
         return p
 
     def record(self, path="records/sessions/claude/r.md", **overrides):
@@ -244,7 +244,7 @@ class StatusTests(unittest.TestCase):
         self.record("records/sessions/codex/other.md", source_ref="codex:jsonl:fixture", client="codex",
                     session_refs=["codex:fixture"])
         p = self.root / "config.toml"
-        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["claude:fixture"]'))
+        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["claude:fixture"]'), encoding='utf-8')
         result = self.result()
         excluded = {x["path"] for x in result["issues"] if x["code"] == "excluded_record"}
         self.assertEqual(excluded, {"records/sessions/claude/r.md", "records/imported/codex/copy.md"})
@@ -256,7 +256,7 @@ class StatusTests(unittest.TestCase):
         self.record(session_refs=[legacy])
         self.record("records/sessions/claude/native.md")
         p = self.root / "config.toml"
-        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["' + legacy + '"]'))
+        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["' + legacy + '"]'), encoding='utf-8')
         result = self.result()
         excluded = {x["path"] for x in result["issues"] if x["code"] == "excluded_record"}
         self.assertEqual(excluded, {"records/sessions/claude/r.md"})
@@ -284,7 +284,7 @@ class StatusTests(unittest.TestCase):
     def test_future_timestamp_and_malformed_frontmatter(self):
         p = self.record(updated="2027-01-01T00:00:00+00:00")
         self.assertIn("future_time", self.codes())
-        p.write_text('---\nupdated: "unfinished\n')
+        p.write_text('---\nupdated: "unfinished\n', encoding='utf-8')
         self.assertIn("invalid_field", self.codes())
         self.assertIn("missing_field", self.codes())
 
@@ -309,7 +309,7 @@ class StatusTests(unittest.TestCase):
         self.write("projects/demo/AWARENESS.md", "awareness", body="x" * 200)
         self.assertIn("oversize", self.codes())
         self.assertIn("limit_unset", self.codes())
-        with (self.root / "config.toml").open("a") as stream:
+        with (self.root / "config.toml").open("a", encoding='utf-8') as stream:
             stream.write("\n[limits]\nawareness_max_bytes = 100\n")
         sizes = [x["path"] for x in self.result()["issues"] if x["code"] == "oversize"]
         self.assertIn("projects/demo/AWARENESS.md", sizes)
@@ -342,7 +342,7 @@ class StatusTests(unittest.TestCase):
     def test_exclusions_and_backup_ignored(self):
         self.record()
         p = self.root / "config.toml"
-        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["claude:fixture"]'))
+        p.write_text(CONFIG.replace('exclude_sessions = []', 'exclude_sessions = ["claude:fixture"]'), encoding='utf-8')
         self.write(".xmemory/backups/USER.md", "user", body="password = not-a-real-secret\n")
         result = self.result()
         self.assertIn("excluded_record", {x["code"] for x in result["issues"]})
@@ -350,7 +350,7 @@ class StatusTests(unittest.TestCase):
 
     def test_symlinks_and_unreadable_format_keep_scan_gap(self):
         outside = self.base / "outside.md"
-        outside.write_text("must not be read")
+        outside.write_text("must not be read", encoding='utf-8')
         (self.root / "USER.md").symlink_to(outside)
         self.write("memory_summary.md", "summary")
         self.assertIn("unsupported_format", self.codes())
@@ -363,13 +363,13 @@ class StatusTests(unittest.TestCase):
         missing = self.base / "does-not-exist"
         self.assertFalse(report(missing, NOW)["ok"])
         self.assertFalse(missing.exists())
-        (self.root / "config.toml").write_text(CONFIG.replace(FORMAT, "xmemory/v1.4"))
+        (self.root / "config.toml").write_text(CONFIG.replace(FORMAT, "xmemory/v1.4"), encoding='utf-8')
         before = snapshot(self.root)
         self.assertFalse(self.result()["ok"])
         self.assertEqual(before, snapshot(self.root))
 
     def test_bad_config_does_not_echo_input(self):
-        (self.root / "config.toml").write_text('password = private-fixture-secret\n')
+        (self.root / "config.toml").write_text('password = private-fixture-secret\n', encoding='utf-8')
         result = self.result()
         self.assertFalse(result["ok"])
         self.assertNotIn("private-fixture-secret", json.dumps(result))
@@ -380,7 +380,7 @@ class StatusTests(unittest.TestCase):
         shutil.copytree(SCRIPTS, scripts)
         before = snapshot(self.base)
         command = [sys.executable, str(scripts / "xmemory.py"), "status", "--root", str(self.root)]
-        result = subprocess.run(command, text=True, capture_output=True, cwd=self.base)
+        result = subprocess.run(command, text=True, capture_output=True, cwd=self.base, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["timezone"], "Asia/Shanghai")
         self.assertEqual(before, snapshot(self.base))
@@ -392,13 +392,13 @@ class StatusTests(unittest.TestCase):
     def test_old_write_commands_are_not_exposed(self):
         command = [sys.executable, "-B", str(SCRIPTS / "xmemory.py"), "init", "--root", str(self.root)]
         before = snapshot(self.root)
-        result = subprocess.run(command, text=True, capture_output=True)
+        result = subprocess.run(command, text=True, capture_output=True, encoding='utf-8')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(before, snapshot(self.root))
 
     def test_configuration_subset_and_templates(self):
         template = SCRIPTS.parent / "templates/config.toml"
-        data = TomlSubset(template.read_text()).parse()
+        data = TomlSubset(template.read_text(encoding='utf-8')).parse()
         self.assertEqual(data["format"], FORMAT)
         self.assertTrue(all(not x["enabled"] for x in data["sources"].values()))
         text = '[projects."中文项目"]\nroots = ["/fixture",\n "/alias",]\n'
@@ -407,8 +407,8 @@ class StatusTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 TomlSubset(bad).parse()
         for path in template.parent.glob("*.md"):
-            if path.read_text().startswith("---\n"):
-                self.assertEqual(frontmatter(path.read_text())["format"], FORMAT)
+            if path.read_text(encoding='utf-8').startswith("---\n"):
+                self.assertEqual(frontmatter(path.read_text(encoding='utf-8'))["format"], FORMAT)
 
 
 if __name__ == "__main__":

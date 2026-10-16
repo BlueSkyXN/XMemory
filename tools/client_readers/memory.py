@@ -400,7 +400,8 @@ def run(ctx, args):
                 raise ReaderError('unsupported_memory_file')
             continue
         try:
-            text = redact(Path(entry['path']).read_bytes().decode('utf-8'))
+            raw = Path(entry['path']).read_bytes()
+            text = redact(raw.decode('utf-8'))
         except (OSError, UnicodeError):
             warning = 'memory_read_error: ' + entry['path']
             if args.action == 'search':
@@ -410,6 +411,12 @@ def run(ctx, args):
                 ctx._memory_warnings.add(warning)
                 results.append(dict(entry))
             continue
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest != entry['sha256']:
+            warning = 'source_changed_during_read: ' + entry['path']
+            entry['_warnings'].append(warning)
+            ctx._memory_warnings.add(warning)
+        entry['sha256'] = digest
         start, end = args.text_offset, len(text)
         if args.action == 'search':
             pos = match_start(text, args.query.casefold())

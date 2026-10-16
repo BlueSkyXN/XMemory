@@ -14,7 +14,7 @@ import sysconfig
 import threading
 
 PREFIXES = (Path('/opt/homebrew/bin'), Path('/usr/local/bin'),
-            Path(os.sep) / 'home/linuxbrew/.linuxbrew/bin', Path('/opt/local/bin'))
+            Path('/home/linuxbrew/.linuxbrew/bin'), Path('/opt/local/bin'))
 REGISTRY = {
     'zstd': {'purpose': '读取 Codex .jsonl.zst',
              'order': ('compression.zstd', 'backports.zstd', 'zstandard', 'PATH:zstd', 'prefix:zstd'),
@@ -46,6 +46,9 @@ def module_backend(name):
 def external_tools(name, prefixes=PREFIXES):
     found, seen = [], set()
     on_path = shutil.which(name)
+    directories = {Path(p).resolve() for p in os.get_exec_path() if Path(p).is_absolute()}
+    if on_path and Path(on_path).absolute().parent.resolve() not in directories:
+        on_path = None
     candidates = ([('PATH:' + name, Path(on_path))] if on_path else [])
     candidates += [('prefix:' + name, prefix / name) for prefix in prefixes]
     for kind, path in candidates:
@@ -67,12 +70,14 @@ def external_tools(name, prefixes=PREFIXES):
     return found
 
 
-def capabilities():
+def capabilities(include_external=False):
     global _capabilities
     if _capabilities is None:
         backends = [b for b in (module_backend(n) for n in REGISTRY['zstd']['order'][:3]) if b]
-        backends += external_tools('zstd')
-        _capabilities = {'zstd': backends}
+        _capabilities = {'zstd': backends, '_external_probed': False}
+    if not _capabilities.get('_external_probed', True) and (include_external or not _capabilities['zstd']):
+        _capabilities['zstd'].extend(external_tools('zstd'))
+        _capabilities['_external_probed'] = True
     return _capabilities
 
 
@@ -91,12 +96,18 @@ def describe():
             'zstd': (selected['name'] + ' ' + selected['version']) if selected else None}
 
 
-def read_toml(path):
+def read_toml(path, keys=None):
     try:
         toml = importlib.import_module('tomllib')
     except ImportError:
         from .toml_subset import TomlSubset
-        return TomlSubset(Path(path).read_text(encoding='utf-8')).parse()
+        text = Path(path).read_text(encoding='utf-8')
+        try:
+            return TomlSubset(text).parse()
+        except ValueError:
+            if keys is None:
+                raise
+            return TomlSubset(text).top_level(keys)
     with Path(path).open('rb') as stream:
         return toml.load(stream)
 
@@ -273,7 +284,7 @@ def doctor(ctx, include_candidates=False):
     reason = 'explicit' if specified and Path(specified).expanduser().resolve() == Path(sys.executable).resolve() else (
         'alias' if alias and Path(alias).resolve() == Path(sys.executable).resolve() else 'PATH')
     current.update(reason=reason, path_position=path_position(sys.executable), alias_target=alias)
-    cap = capabilities()['zstd']
+    cap = capabilities(include_external=True)['zstd']
     missing = sum(1 for root in (ctx.root / 'sessions', ctx.root / 'archived_sessions')
                   for p in root.rglob('*.jsonl.zst') if not p.with_suffix('').is_file()) if ctx.client == 'codex' and not cap else 0
     output = dict(schema='client-readers/doctor-v1', client=ctx.client, data_root=str(ctx.root),

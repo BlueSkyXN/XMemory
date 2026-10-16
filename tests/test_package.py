@@ -40,20 +40,20 @@ class PackageTests(unittest.TestCase):
         self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir() if p.name != ".DS_Store"}, SKILLS)
         self.assertEqual(len(SKILLS), 8)
         for skill in SKILLS - {"xmemory"}:
-            text = (PLUGIN / "skills" / skill / "SKILL.md").read_text()
+            text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(encoding='utf-8')
             self.assertIn("](../xmemory/SKILL.md)", text, skill)
 
     def test_unexpected_script_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             copy_repo(root)
-            (root / "plugins/xmemory/run.py").write_text("print('unexpected')\n")
+            (root / "plugins/xmemory/run.py").write_text("print('unexpected')\n", encoding='utf-8')
             self.assertTrue(any("Non-document payload" in error for error in check(root)))
             (root / "plugins/xmemory/run.py").unlink()
-            (root / "plugins/xmemory/skills/xmemory/scripts/extra.py").write_text("x = 1\n")
+            (root / "plugins/xmemory/skills/xmemory/scripts/extra.py").write_text("x = 1\n", encoding='utf-8')
             self.assertTrue(any("Unexpected script set" in error for error in check(root)))
             (root / "plugins/xmemory/skills/xmemory/scripts/extra.py").unlink()
-            (root / "plugins/xmemory/skills/xmemory-note/helper.py").write_text("x = 1\n")
+            (root / "plugins/xmemory/skills/xmemory-note/helper.py").write_text("x = 1\n", encoding='utf-8')
             self.assertTrue(any("Non-document payload" in error for error in check(root)))
 
     def test_xmemory_does_not_need_reader_plugin(self):
@@ -62,7 +62,7 @@ class PackageTests(unittest.TestCase):
             shutil.copytree(PLUGIN / "skills", root / "skills")
             import subprocess
             command = [sys.executable, "-B", str(root / "skills/xmemory/scripts/xmemory.py"), "--help"]
-            result = subprocess.run(command, text=True, capture_output=True)
+            result = subprocess.run(command, text=True, capture_output=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("status", result.stdout)
             self.assertFalse(list((root / "skills").rglob("reader_runtime.py")))
@@ -71,7 +71,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             copy_repo(root)
-            with (root / "plugins/xmemory/skills/xmemory/SKILL.md").open("a") as stream:
+            with (root / "plugins/xmemory/skills/xmemory/SKILL.md").open("a", encoding='utf-8') as stream:
                 stream.write("\n[missing](missing.md)\n")
             self.assertTrue(any("Broken or escaping link" in error for error in check(root)))
 
@@ -80,18 +80,18 @@ class PackageTests(unittest.TestCase):
             root = Path(tmp)
             copy_repo(root)
             path = root / "plugins/xmemory/README.md"
-            original = path.read_text()
+            original = path.read_text(encoding='utf-8')
             self.assertEqual(check(root), [])
             windows = "\\".join(("C:", "Users", "fixture-user", "notes.md"))
             paths = ["/".join(("", base, "fixture-user", "notes.md")) for base in ("Users", "Volumes", "home")]
             paths += [windows, json.dumps(windows), windows.replace("\\", "/")]
             for private_path in paths:
                 with self.subTest(path=private_path):
-                    path.write_text(original + "\n" + private_path + "\n")
+                    path.write_text(original + "\n" + private_path + "\n", encoding='utf-8')
                     self.assertIn("Private absolute path in payload: README.md", check(root))
-            path.write_text(original)
+            path.write_text(original, encoding='utf-8')
             script = root / "plugins/xmemory/skills/xmemory/scripts/status.py"
-            script.write_text(script.read_text() + "\n# " + paths[0] + "\n")
+            script.write_text(script.read_text(encoding='utf-8') + "\n# " + paths[0] + "\n", encoding='utf-8')
             self.assertTrue(any("Private absolute path" in e for e in check(root)))
 
     def test_archive_is_reproducible_and_complete(self):
@@ -134,7 +134,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual({p.relative_to(skills).parts[0] for p in skills.rglob("*.py")}, {"xmemory"})
             skill = skills
             for path in skills.rglob("*.md"):
-                for raw in LINK.findall(path.read_text()):
+                for raw in LINK.findall(path.read_text(encoding='utf-8')):
                     if re.match(r"(?:[a-z][a-z0-9+.-]*:|#)", raw, re.I) or "{{" in raw or "<" in raw:
                         continue
                     target = (path.parent / unquote(raw.split("#", 1)[0])).resolve()
@@ -199,7 +199,7 @@ class PackageTests(unittest.TestCase):
 
     def test_terminology_keeps_office_memory_spelled_out(self):
         for path in PLUGIN.rglob("*.md"):
-            self.assertNotRegex(path.read_text(), r"(?<![A-Za-z])OM(?![A-Za-z])", str(path))
+            self.assertNotRegex(path.read_text(encoding='utf-8'), r"(?<![A-Za-z])OM(?![A-Za-z])", str(path))
 
     def test_build_does_not_overwrite_existing_archive(self):
         with tempfile.TemporaryDirectory() as tmp:

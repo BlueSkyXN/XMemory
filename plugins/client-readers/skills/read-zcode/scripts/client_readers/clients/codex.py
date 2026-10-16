@@ -90,7 +90,7 @@ def locate(ctx):
         config = {}
         warnings = []
         try:
-            config = runtime.read_toml(path / 'automation.toml')
+            config = runtime.read_toml(path / 'automation.toml', keys=('cwds', 'name', 'rrule'))
         except (OSError, ValueError):
             warnings.append('automation_config_unreadable: ' + str(path / 'automation.toml'))
         cwds = config.get('cwds', [])
