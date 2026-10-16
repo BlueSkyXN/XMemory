@@ -21,7 +21,7 @@ class ReaderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
 
     def write(self, filename, rows):
         p = self.root / filename
@@ -94,6 +94,13 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(out["items"][0]["session_id"], "session-demo")
         self.assertEqual(out["items"][0]["title"], "回滚方案")
         self.assertEqual(self.read("claude", p, "list", "--project", "/work/dem")["items"], [])
+
+    def test_project_filter_accepts_forward_slashes_in_native_paths(self):
+        project = self.root / 'Project'
+        self.assertTrue(reader.project_matches(project.as_posix(), str(project)))
+        self.assertTrue(reader.project_matches((project / 'nested').as_posix(), str(project)))
+        self.assertFalse(reader.project_matches((self.root / 'Project-other').as_posix(), str(project)))
+        self.assertFalse(reader.project_matches(None, str(project)))
 
     def test_codex_projection_and_reasoning_exclusion(self):
         p = self.write("rollout.jsonl", [

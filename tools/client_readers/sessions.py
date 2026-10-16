@@ -246,7 +246,7 @@ def project_matches(project, query):
     if not query:
         return True
     wanted = str(Path(query).expanduser()).rstrip("/\\")
-    actual = str(project or "").rstrip("/\\")
+    actual = str(Path(str(project)).expanduser()).rstrip("/\\") if project else ""
     return actual == wanted or actual.startswith(wanted + os.sep)
 
 
