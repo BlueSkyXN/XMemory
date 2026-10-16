@@ -1,14 +1,15 @@
 # XMemory 验证报告
 
-## 1.6.1 本地候选检查（2026-10-16）
+## 1.6.1 验证记录（2026-10-16）
 
-候选版本为 XMemory **1.6.1**、Client Readers **0.2.1**，格式仍为 `xmemory/v1.5`。本节记录本地修复、单元测试、合成预检、构建与只读读回。
+版本为 XMemory **1.6.1**、Client Readers **0.2.1**，格式仍为 `xmemory/v1.5`。本节记录本地检查与 [PR #20](https://github.com/BlueSkyXN/XMemory/pull/20) 的 CI 结果。
 
 | 检查 | 结果 |
 |---|---|
 | Python 3.11.9 全套 | **197/197**，相对 181 新增 16 项，无跳过 |
 | Python 3.9.6 四组运行时测试 | **182/182**，相对 166 新增 16 项，无跳过 |
 | Python 3.15.0 全套 | **197/197**，无跳过；使用已有 compression.zstd |
+| GitHub CI | 修复提交 `236bbec635f34afa4e00fcd4a0108303b0710653` 的 [Validate 38872792744](https://github.com/BlueSkyXN/XMemory/actions/runs/38872792744) 首轮四项通过：Linux 检查/测试/构建 197 项、Python 3.9 182 项、Windows 3.11 151 项、真实 zstandard 1 项，均无跳过 |
 | 回归覆盖 | 自动化 TOML 的真实结构合成夹具、多行诱饵、无关值类型、子表、非法目标值、3.11 tomllib 对照及隔离 CLI；旧会话和 inode 别名；正文 hash 及范围外变化告警；按需外部探测与 PATH 绝对目录；隔离入口和 Linuxbrew 前缀检查 |
 | 既有测试 | 既有测试及辅助函数在去除新增 encoding 参数后 AST 相同，原断言保持；测试文本读写与文本子进程解码均显式使用 UTF-8 |
 | 包装 | 包清单、链接、五端代码与契约副本一致性检查通过；三个候选 ZIP 的完整性、载荷对应、包内 SHA256SUMS 和包外校验文件通过，排除 .DS_Store 与 __pycache__ |
@@ -20,7 +21,9 @@
 
 对历史 W10 的补充说明：1.6.0 的迁移场景中新旧文件逐字节相同；此前本机只读评审统计的 249 个迁移目标，与旧分类文件逐字节相同的数量为 **0**。原评测主要验证相同内容关联；本次准备的转换迁移场景把内容对应判断留给后续模型评测。
 
-本轮未执行 CI、模型评测、发布或插件管理命令。Windows 任务已移除 PYTHONUTF8，结果须由推送后的 Windows CI 验证；本地测试不能补齐该项。GLM 场景每项三次的执行、真实客户端调用、自然触发和调度仍待各自授权与验收。XMemory 自身 TOML 解析器、会话 schema 与引用格式、数据根选择和旧评测目录保持原样。
+上述 Windows 任务没有设置全局 PYTHONUTF8；隔离入口、cp1252 输出、含内联表的自动化 CLI、PATH 排除隐式当前目录等回归均通过。该轮 Linux 构建的三个 ZIP 与同一修复提交的本地候选 SHA256 一致。
+
+四个补充场景的模型评测尚未运行；真实客户端升级、自然触发和调度仍待分别验收。XMemory 自身 TOML 解析器、会话 schema 与引用格式、数据根选择和旧评测目录保持原样。后续文档提交与正式发布状态以 PR 的最新检查及 [Releases](https://github.com/BlueSkyXN/XMemory/releases) 为准。
 
 ## 1.6.0 发布验证（2026-10-16）
 
@@ -530,7 +533,7 @@ XMemory 四份插件清单统一为 1.5.4，Conversation Readers 四份清单保
 
 **GLM-5.3 隔离试跑**
 
-环境与 1.2.0 相同：Codex CLI 0.160.1，`-m glm-5.3`（provider `私有 provider`），`--ephemeral`，`-s workspace-write`（调取用 `read-only`），每组使用独立的 `/tmp` 目录和当轮技能副本。夹具全部虚构，由 `tools/behavior_fixtures.py build <case> <dir>` 生成；`check` 命令比对运行前后的哈希快照，并审计日志中的命令。各组执行的命令中没有出现 `/Users/`、`~/` 或 `$HOME`，未读写 `~/.agents/memory` 或真实客户端数据。更正：日志第 15 行是 Codex 启动警告，含其配置文件路径；这几组运行时 Codex 宿主的记忆功能处于开启状态，隔离边界见下文“补充试跑”。
+环境与 1.2.0 相同：Codex CLI 0.160.1，`-m glm-5.3`（私有 provider），`--ephemeral`，`-s workspace-write`（调取用 `read-only`），每组使用独立的 `/tmp` 目录和当轮技能副本。夹具全部虚构，由 `tools/behavior_fixtures.py build <case> <dir>` 生成；`check` 命令比对运行前后的哈希快照，并审计日志中的命令。各组执行的命令中没有出现 `/Users/`、`~/` 或 `$HOME`，未读写 `~/.agents/memory` 或真实客户端数据。更正：日志第 15 行是 Codex 启动警告，含其配置文件路径；这几组运行时 Codex 宿主的记忆功能处于开启状态，隔离边界见下文“补充试跑”。
 
 | 组 | 夹具 | 第一轮（修正前规范） | 修正 | 最终规范重跑 |
 |---|---|---|---|---|
@@ -654,7 +657,7 @@ XMemory 四份插件清单统一为 1.5.4，Conversation Readers 四份清单保
 
 **GLM-5.3 隔离试跑**
 
-测试环境：Codex CLI 0.160.1，`-m glm-5.3`（provider `私有 provider`），`--ephemeral`。写入只限 `/tmp` 下的一次性目录。
+测试环境：Codex CLI 0.160.1，`-m glm-5.3`（私有 provider），`--ephemeral`。写入只限 `/tmp` 下的一次性目录。
 
 数据：夹具为 3 份虚构的 Codex 风格 rollout summary，分别是 2026-10-08 配置解析修复、2026-10-09 staging 部署回归、一份纯问候。
 
