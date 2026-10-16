@@ -1,6 +1,17 @@
 # 安装与首次使用
 
-当前源码版本 **1.5.4**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装仅提供技能和只读程序，不建库、不采集、不修改客户端配置。
+当前源码版本 **1.6.0**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装提供技能和只读程序，建库与采集按后续用户选择执行。
+
+## 升级前先卸载 conversation-readers
+
+升级读取器时先记录旧插件 ID、启用状态和需要保留的数据，再通过客户端卸载旧插件。下例使用当前统一市场名；使用旧市场名的安装按实际 ID 替换。
+
+```bash
+claude plugin uninstall conversation-readers@xmemory-marketplace --keep-data
+codex plugin remove conversation-readers@xmemory-marketplace
+```
+
+ZCode 在插件管理中卸载 Conversation Readers，再安装 Client Readers。独立技能安装需移除旧的五个 `read-*-conversations` 目录后复制新技能。已有 XMemory 记忆库沿用原目录和 `xmemory/v1.5` 格式。
 
 ## 市场安装
 
@@ -19,6 +30,7 @@ Claude Code：
 ```bash
 claude plugin marketplace add /absolute/path/to/XMemory
 claude plugin install xmemory@xmemory-marketplace
+claude plugin install client-readers@xmemory-marketplace
 ```
 
 Codex：
@@ -26,6 +38,7 @@ Codex：
 ```bash
 codex plugin marketplace add /absolute/path/to/XMemory
 codex plugin add xmemory@xmemory-marketplace
+codex plugin add client-readers@xmemory-marketplace
 ```
 
 ZCode 在插件市场添加 `plugins/` 的实际绝对路径。已添加同名市场时更新已有安装。不同 CLI 版本先看实际 help。

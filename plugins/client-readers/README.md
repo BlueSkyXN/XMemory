@@ -18,9 +18,11 @@ Read sessions and native memory stored locally by each AI client — Codex, Clau
 | Qoder CN | `read-qodercn` | 项目 JSONL、桌面 main.sqlite；分别保留来源身份 |
 | WorkBuddy | `read-workbuddy` | 项目 JSONL 的 message 与工具事件 |
 
-0.2.0 为未发布源码改动：统一入口 `read.py`，命令分为 `projects`、`sessions`、`memory`，另有 `doctor`。原生记忆只定位、标注和读出；不摘要、不写回。会话引用保持兼容，Codex 压缩切换窗口与已有 zstd 后端回退的说明见各技能契约。
+0.2.0 统一入口 `read.py`，命令分为 `projects`、`sessions`、`memory`，另有 `doctor`。原生记忆提供定位、归属与关系标注、正文读取；会话引用保持兼容。Codex 压缩读取依次使用已有的 Python 后端或 zstd 命令，缺失能力时按根目录汇总未读数量。脚本以 UTF-8 输出 JSON 或 Markdown。
 
 ## 使用与安装边界
+
+从 Conversation Readers 升级时，先通过客户端卸载 `conversation-readers`，保留需要的插件数据，再安装 `client-readers@xmemory-marketplace`。独立技能安装需移除旧的五个 `read-*-conversations` 目录，避免旧入口继续参与技能选择；记忆库和客户端原始会话沿用现有位置。
 
 需要 **Python 3.9+**（使用用户自己的 `python3`），只用标准库。脚本位于每个 Skill 的 `scripts/read.py`，无需安装统一 CLI、修改 PATH、配置 MCP 或启动服务。
 
