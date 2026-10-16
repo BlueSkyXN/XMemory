@@ -6,8 +6,8 @@ from typing import NoReturn
 class TomlSubset:
     """只解析配置模板使用的 TOML 子集：注释、表头（含带引号的键）、字符串、整数、布尔、数组。
 
-    不用 tomllib：它要 Python 3.11，而客户端里的 python3 常是系统自带的 3.9。所有解释器都走这一个
-    解析器，同一份配置在哪个客户端读都一样；超出子集的写法明确报错，不去猜。
+    runtime 在没有 tomllib 时使用本解析器。parse 拒绝超出子集的值；top_level
+    仅解析指定顶层键，跳过其他值，供自动化配置的归属读取使用。
     """
     BARE = re.compile(r"[A-Za-z0-9_-]+")
     TOKEN = re.compile(r"[^\s,\]#]+")
@@ -90,6 +90,67 @@ class TomlSubset:
                 self.error(f"缺少 {terminator}")
             self.i += 1
             return tuple(parts)
+
+    def top_level(self, keys) -> dict:
+        """只取第一个表头前的指定键；其他值按字符串与容器边界整体跳过。"""
+        result = {}
+        while True:
+            self.skip(newlines=True)
+            if self.peek() in ("", "["):
+                return result
+            path = self.key_path("=")
+            self.skip()
+            if len(path) == 1 and path[0] in keys:
+                if path[0] in result:
+                    self.error(f"键重复：{path[0]}")
+                result[path[0]] = self.value()
+            else:
+                self.skip_value()
+            self.skip()
+            if self.peek() not in ("", "\n"):
+                self.error("一行只能有一个键值")
+
+    def skip_value(self):
+        """跳过不参与归属的值，不解释其类型；不把值内的诱饵行当成键。"""
+        closing = []
+        while self.peek():
+            c = self.peek()
+            if c in "\"'":
+                quote = c
+                multiline = self.s.startswith(quote * 3, self.i)
+                self.i += 3 if multiline else 1
+                while True:
+                    c = self.peek()
+                    if not c or (not multiline and c == "\n"):
+                        self.error("字符串缺少结束引号")
+                    if quote == '"' and c == "\\":
+                        self.i += 2
+                        continue
+                    if multiline and self.s.startswith(quote * 3, self.i):
+                        # TOML 允许结束三引号前保留一个或两个相同引号。
+                        self.i += 3
+                        for _ in range(2):
+                            if self.peek() == quote:
+                                self.i += 1
+                        break
+                    self.i += 1
+                    if not multiline and c == quote:
+                        break
+            elif c in "[{":
+                closing.append("]" if c == "[" else "}")
+                self.i += 1
+            elif c in "]}":
+                if not closing or c != closing.pop():
+                    self.error("容器结束符不匹配")
+                self.i += 1
+            elif c == "#":
+                self.skip()
+            elif c == "\n" and not closing:
+                return
+            else:
+                self.i += 1
+        if closing:
+            self.error("容器缺少结束符")
 
     def value(self):
         c = self.peek()

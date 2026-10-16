@@ -86,7 +86,7 @@ class MemoryTests(MemoryFixture):
         folder = self.session('claude')
         self.put(folder / 'MEMORY.md', '[Topic](topic.md) [[other]] [gone](gone.md)')
         topic = self.put(folder / 'topic.md', '# Knowledge\nOriginal conditions\n')
-        self.put(folder / 'other.md', topic.read_text())
+        self.put(folder / 'other.md', topic.read_text(encoding='utf-8'))
         self.put(folder / 'unlinked.md', '# Unlinked\n')
         out = self.run_memory('claude', 'list', '--store', topic.parent)
         items = {e['rel']: e for e in out['items']}
@@ -310,7 +310,7 @@ class MemoryTests(MemoryFixture):
         self.assertEqual({s['status'] for s in legacy}, {'ok', 'orphan'})
         old = next(e for e in entries if e['role'] == 'topic' and 'task_flow' in Path(e['path']).parts)
         self.assertEqual(old['frontmatter']['category'], 'task_flow')
-        target.write_text(target.read_text() + '\nChanged')
+        target.write_text(target.read_text(encoding='utf-8') + '\nChanged', encoding='utf-8')
         changed = self.run_memory('qodercn', 'list', '--store', target.parent)['items'][0]
         self.assertFalse(changed['migrated']['unchanged'])
 
@@ -321,7 +321,7 @@ class MemoryTests(MemoryFixture):
         script = ROOT / 'plugins/client-readers/skills/read-claude/scripts/read.py'
         env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home))
         for command in (['memory', 'locate'], ['projects'], ['doctor']):
-            proc = subprocess.run([sys.executable, '-B', str(script), *command], env=env, capture_output=True, text=True)
+            proc = subprocess.run([sys.executable, '-B', str(script), *command], env=env, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(json.loads(proc.stdout)['client'], 'claude')
         self.assertEqual(self.snapshot(), before)
@@ -572,6 +572,114 @@ metadata:
         self.assertEqual(files[0]['duplicate_of'], [])
 
 
+class ReleaseFixTests(MemoryFixture):
+    def test_automation_inline_target_cli_locates_project(self):
+        from tests.automation_fixtures import automation
+        self.put('.codex/automations/fixture/automation.toml', automation(str(self.project)))
+        self.put('.codex/automations/fixture/memory.md', '合成执行历史')
+        script = ROOT / 'plugins/client-readers/skills/read-codex/scripts/read.py'
+        env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home))
+        before = self.snapshot()
+        proc = subprocess.run([sys.executable, '-I', '-B', str(script), 'memory', 'locate'],
+                              env=env, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        output = json.loads(proc.stdout)
+        self.assertEqual(output['summary'], {'codex-automation': {'ok': 1}})
+        item = output['items'][0]
+        self.assertEqual(item['project'], {'path': str(self.project), 'basis': 'automation_cwds'})
+        self.assertEqual(item['automation'], {'name': '合成自动化', 'rrule': 'FREQ=DAILY;BYHOUR=8'})
+        self.assertEqual(output['warnings'], [])
+        self.assertTrue(output['coverage']['scan_complete'])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_automation_fallback_retains_invalid_cwds_warnings(self):
+        from client_readers import runtime
+        path = self.put('.codex/automations/fixture/memory.md', '合成执行历史')
+        for value, prefix in [('"invalid"', 'automation_cwds_invalid:'),
+                              ('["/fixture/unclosed"', 'automation_config_unreadable:')]:
+            self.put(path.parent / 'automation.toml', 'target = { future = true }\ncwds = ' + value)
+            # 只拦截 tomllib；Context 的客户端适配器仍按正常路径导入。
+            ctx = self.ctx('codex')
+            args = cli.parser('codex').parse_args(['memory', 'locate'])
+            with self.subTest(value=value), mock.patch.object(runtime.importlib, 'import_module', side_effect=ImportError):
+                output = memory.run(ctx, args)
+            self.assertEqual(output['summary'], {'codex-automation': {'orphan': 1}})
+            self.assertTrue(output['warnings'][0].startswith(prefix))
+            self.assertFalse(output['coverage']['scan_complete'])
+
+    def test_read_and_search_hash_the_returned_source_bytes(self):
+        path = self.put(self.session('claude') / 'topic.md', 'Initial')
+        raw = '更新正文\r\n'.encode('utf-8')
+        catalogue = memory.catalogue
+        def change_after_catalogue(*args, **kwargs):
+            result = catalogue(*args, **kwargs)
+            path.write_bytes(raw)
+            return result
+        for args in [('read', '--path', path), ('search', '--query', '更新')]:
+            path.write_text('Initial', encoding='utf-8')
+            with self.subTest(action=args[0]), mock.patch.object(memory, 'catalogue', side_effect=change_after_catalogue):
+                output = self.run_memory('claude', *args)
+            self.assertEqual(output['items'][0]['text'], raw.decode('utf-8'))
+            self.assertEqual(output['items'][0]['sha256'], hashlib.sha256(raw).hexdigest())
+            self.assertEqual(output['warnings'], ['source_changed_during_read: ' + str(path)])
+            self.assertEqual(output['warnings_outside_filter'], 0)
+            self.assertFalse(output['coverage']['scan_complete'])
+
+    def test_changed_search_file_outside_query_or_page_is_counted_locally(self):
+        folder = self.session('claude')
+        self.put(folder / 'a.md', 'matching unchanged')
+        changed = self.put(folder / 'z.md', 'Initial')
+        catalogue = memory.catalogue
+        for text, limit, more in [('no hit', 40, False), ('matching changed', 1, True)]:
+            changed.write_text('Initial', encoding='utf-8')
+            def change_after_catalogue(*args, **kwargs):
+                result = catalogue(*args, **kwargs)
+                changed.write_text(text, encoding='utf-8')
+                return result
+            with self.subTest(text=text), mock.patch.object(memory, 'catalogue', side_effect=change_after_catalogue):
+                output = self.run_memory('claude', 'search', '--query', 'matching', '--limit', limit)
+            self.assertEqual([e['rel'] for e in output['items']], ['a.md'])
+            self.assertEqual(output['warnings'], [])
+            self.assertEqual(output['warnings_outside_filter'], 1)
+            self.assertEqual(output['has_more'], more)
+            self.assertEqual(output['coverage']['scan_complete'], not more)
+
+    def test_projects_since_keeps_old_session_memory_distinct_from_no_sessions(self):
+        from client_readers.common import epoch
+        old_memory = self.project
+        memory_only = self.project.parent / 'MemoryOnly'
+        old_only = self.project.parent / 'OldOnly'
+        self.put(self.session('claude', old_memory) / 'topic.md', 'Memory with old session')
+        self.session('claude', old_only)
+        self.put(Path('.claude/projects') / claude.encode(str(memory_only)) / 'memory/topic.md', 'No sessions')
+        for since in (None, epoch('2026-10-10')):
+            ctx = self.ctx('claude', [self.project.parent, memory_only])
+            output = projects.run(ctx, argparse.Namespace(since=since, offset=0, limit=200))
+            rows = {row['path']: row for row in output['items']}
+            self.assertNotIn('memory_without_sessions', rows[str(old_memory)]['flags'])
+            self.assertIn('memory_without_sessions', rows[str(memory_only)]['flags'])
+            self.assertEqual(str(old_only) in rows, since is None)
+            if since:
+                self.assertEqual(rows[str(old_memory)]['sessions'], {'count': 0, 'first': None, 'last': None})
+            else:
+                self.assertEqual(rows[str(old_memory)]['sessions']['count'], 1)
+
+    def test_projects_since_finds_old_sessions_through_inode_alias(self):
+        from client_readers.common import epoch
+        alias = self.project.parent / 'ZAlias'
+        alias.symlink_to(self.project, target_is_directory=True)
+        self.session('workbuddy', alias)
+        self.put(self.project / '.workbuddy/memory/MEMORY.md', 'Shared project memory')
+        ctx = self.ctx('workbuddy', [self.project])
+        output = projects.run(ctx, argparse.Namespace(since=epoch('2026-10-10'), offset=0, limit=200))
+        self.assertEqual(len(output['items']), 1)
+        row = output['items'][0]
+        self.assertEqual(row['path'], str(self.project))
+        self.assertEqual(row['sessions']['count'], 0)
+        self.assertEqual(row['memory']['stores'], 1)
+        self.assertNotIn('memory_without_sessions', row['flags'])
+
+
 class ProjectTests(MemoryFixture):
     def test_broad_roots_do_not_make_all_projects_nested(self):
         child = self.project / 'Child'
@@ -674,7 +782,7 @@ class ProjectTests(MemoryFixture):
 class MemorySecondFixTests(MemoryFixture):
     def corrupt_session(self, folder):
         path = self.home / folder.parent / 'session.jsonl'
-        with path.open('a') as stream:
+        with path.open('a', encoding='utf-8') as stream:
             stream.write('{"partial":\n')
         return path
 
@@ -819,7 +927,7 @@ class MemorySecondFixTests(MemoryFixture):
         self.put('.codex/memories/memory_summary.md', 'Memory V1')
         old = self.put('.codex/memories/local/process.md', 'Old process')
         source = self.codex_session('bad-header')
-        with source.open('a') as stream:
+        with source.open('a', encoding='utf-8') as stream:
             stream.write('{"partial":\n')
         located = self.run_memory('codex', 'locate')
         self.assertEqual(len(located['warnings']), 1)

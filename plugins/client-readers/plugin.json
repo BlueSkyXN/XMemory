@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "client-readers",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "只读地读取各 AI 客户端留在本机的会话与原生记忆，五个客户端各一个技能。"
 }

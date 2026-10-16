@@ -15,6 +15,8 @@ read.py doctor [--candidates]
 
 `--project` 正向计算项目归属，不由目录 hash 反推项目。`--store` 必须是当前客户端发现的存储位置。`memory read` 只接受已知 store 内的记忆文件；越界或通向 store 外的文件链接报 `not_in_store`。备份默认只列元数据，不读正文；显式 `--include-backups` 才读取。`.git/`、`.DS_Store` 不参与结果。
 
+`memory`、`projects` 和 `doctor` 的客户端数据根固定为当前用户主目录下的默认位置，没有 `--root`，也不读取 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`。迁到其他位置的数据无法由这些命令定位；WorkBuddy 工作区记忆仍按会话 cwd 或 `--project` 发现。会话命令可用 `sessions ... --root PATH` 指定原件。
+
 默认 JSON，可用 `--format markdown`。列表、检索和总览默认每页 40 项，`--limit` 上限 200；按 `next_offset` 继续，不把单页当全量。`--role` 可重复或列多个值。`--since` 是会话最近时间的下界，不据记忆文件旧 mtime 删除候选。
 
 ## 共同信封
@@ -36,6 +38,8 @@ read.py doctor [--candidates]
 Claude 的记忆命令按编码目录在当前调用内复用扫描结果，不访问全量会话缓存。指定单文件或 store 时，其他 store 仍枚举文件并计算 SHA256，以保留 `duplicate_of`，但不计算其项目归属、不进入输出。`projects` 仍扫描全部会话；来源告警挂到该文件涉及 cwd 的项目行，没有产出任何 cwd 的来源告警保留为全局缺口。
 
 `read` 的文件在正文读取期间失败时，保留文件元数据和告警，不返回 `text`；`search` 遇到同类失败时不返回该文件，改为一条全局 `memory_read_error: <path>`，使 `scan_complete=false`，且不重复计入 `warnings_outside_filter`。
+
+`read/search` 的 `sha256` 对应本次正文读取所用的完整原始字节，计算发生在遮蔽与分页之前；与编目值不同时加局部告警 `source_changed_during_read: <path>`。变化条目在当前页返回时计入缺口，`scan_complete=false`；search 中因关键词或分页未返回的变化条目计入 `warnings_outside_filter`。
 
 `coverage.total_items` 是筛选后的总项数；`scan_complete` 仅在本页无缺口告警、全局无缺口且无下一页时为 true。`compressed_twin:` 为提示类前缀，不参与缺口判定；范围外局部告警也不降低本页覆盖率。`has_more`、`next_offset` 描述项目或文件分页，长正文继续使用 `next_text_offset`。
 
@@ -74,6 +78,8 @@ Codex V1/V2 正规 store 另有 `last_written`。仅 `memory locate` 计算 `rec
 
 每项含 `path`、`aliases`、`exists`（true / false / `unmounted`）、`sessions={count,first,last}`、`memory={stores,files}`、`flags`、`parent`、`children`。按最近会话使用时间排序。未唯一归属的记忆不计入某一候选的文件数。
 
+`--since` 只过滤会话计数、first/last 和排序依据；`memory_without_sessions` 按全部会话判断，含同 inode 的别名。保留已有行选择规则：有记忆的项目继续显示，仅有旧会话且未由其他条件引入的项目不显示。
+
 `parent` 为最近祖先项目行的主路径，比较时同时检查主路径及 aliases；宽根不参与父子关系，没有祖先时为 null。`children` 为 parent 指向本行的直接子项目数。两项均在 --project 筛选与分页之前计算，筛选后保留原值，供调用方按父项目分组。
 
 `flags`：`case_variant`、`alias`、`collision`、`nested`、`broad_root`、`unmounted`、`memory_without_sessions`、`orphan_nearby`。等于自身 anchor 的文件系统根（含 Windows 盘符根）、用户主目录和 macOS 根目录下 Volumes 的直接子目录标为 `broad_root`，计算 `nested` 时既不作父目录也不作子目录。其余父子项目标为 `nested`。同 inode 的路径合为 aliases；不同 inode 的 worktree 与大小写变体并列，不替用户合并项目。Codex 会话元数据仅取首行 `session_meta`，中途切换目录不计入总览，精确归属用 `sessions read`。
@@ -84,4 +90,6 @@ Codex V1/V2 正规 store 另有 `last_written`。仅 `memory locate` 计算 `rec
 
 zstd 固定顺序：`compression.zstd` → 已有 `backports.zstd` → 已有 `zstandard` → PATH 的 `zstd` → 常见前缀的 `zstd`。zstandard 先用空输入试调 `stream_reader(..., read_across_frames=True)`；探测期间出现任何 Exception 都视为该后端不可用并继续回退，实际读取也传该参数。前缀包括 Apple/Intel Homebrew、Linuxbrew、MacPorts；没有 Homebrew 也可使用 Python 后端。外部工具使用参数列表、超时、流式读取和退出码检查，不经 shell。全部缺失时给出 `zstd_missing`、未读数量与文字建议：指定已有 Python 3.14+；或 `python3 -m pip install --user backports.zstd`；或 macOS `brew install zstd`。由用户自行选择执行。
 
-`doctor` 给出当前解释器来源、版本、包数、PEP 668 标记、选择依据、各可用后端及数据根状态。`--candidates` 只以 `-I -B` 启动已找到的其他解释器做探测，每个限时 5 秒；不用于自动切换。别名仅识别 shell 文件里的字面路径，不执行 shell 配置或动态表达式。TOML 先用已有 `tomllib`，Python 3.9 回退仓库已有的 TOML 子集解析器。
+已有 Python zstd 后端时，普通命令及 `runtime` 信息不启动外部探测；`doctor` 补充列出所有可用后端。PATH 查找结果的所在目录必须属于 PATH 中的绝对路径项，排除当前目录隐式搜索和相对项；常见安装前缀继续探测。
+
+`doctor` 给出当前解释器来源、版本、包数、PEP 668 标记、选择依据、各可用后端及数据根状态。`--candidates` 只以 `-I -B` 启动已找到的其他解释器做探测，每个限时 5 秒；不用于自动切换。别名仅识别 shell 文件里的字面路径，不执行 shell 配置或动态表达式。TOML 先用已有 `tomllib`；无该模块且完整子集解析失败时，自动化配置只要求第一个表头之前的顶层 `cwds`、`name`、`rrule` 可由子集解析，其余值整体跳过。字符串内部及子表中的同名键不参与顶层归属。

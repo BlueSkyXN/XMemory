@@ -50,7 +50,7 @@ class ReaderTests(unittest.TestCase):
         for client, skill in SKILLS.items():
             script = ROOT / "plugins/client-readers/skills" / skill / "scripts/read.py"
             run = subprocess.run([sys.executable, "-B", str(script), "sessions", "list", "--root", str(self.root / "absent")],
-                                 cwd=self.root, capture_output=True, text=True)
+                                 cwd=self.root, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(run.returncode, 0, run.stderr)
             out = json.loads(run.stdout)
             self.assertEqual(out["client"], client)
@@ -75,7 +75,7 @@ class ReaderTests(unittest.TestCase):
         plugin = self.root / "client-readers"
         shutil.copytree(ROOT / "plugins/client-readers", plugin)
         path = plugin / "README.md"
-        original = path.read_text()
+        original = path.read_text(encoding='utf-8')
         self.assertEqual(check(plugin), [])
         # 仅使用虚构目录，覆盖原始路径和 JSON 转义形式。
         windows = "\\".join(("C:", "Users", "fixture-user", "notes.md"))
@@ -85,8 +85,21 @@ class ReaderTests(unittest.TestCase):
                   windows.replace("Users", "users")]
         for private_path in paths:
             with self.subTest(path=private_path):
-                path.write_text(original + "\n" + private_path + "\n")
+                path.write_text(original + "\n" + private_path + "\n", encoding='utf-8')
                 self.assertIn("Private path: README.md", check(plugin))
+
+    def test_linuxbrew_prefix_is_the_only_home_path_exception(self):
+        from build_client_readers import check
+        plugin = self.root / 'client-readers'
+        shutil.copytree(ROOT / 'plugins/client-readers', plugin)
+        path = plugin / 'README.md'
+        original = path.read_text(encoding='utf-8')
+        for prefix, allowed in [('/home/linuxbrew/.linuxbrew/bin', True),
+                                ('/home/fixture-user/notes.md', False),
+                                ('/home/linuxbrew-other/notes.md', False)]:
+            with self.subTest(prefix=prefix):
+                path.write_text(original + '\n' + prefix + '\n', encoding='utf-8')
+                self.assertEqual('Private path: README.md' in check(plugin), not allowed)
 
     def test_native_id_title_and_scope(self):
         p = self.write("alias.jsonl", [self.claude(), {"type": "ai-title", "sessionId": "session-demo", "aiTitle": "回滚方案"}])
@@ -219,7 +232,7 @@ class ReaderTests(unittest.TestCase):
         # 经过真实 CLI 入口，而不只调用底层生成器。
         script = ROOT / "plugins/client-readers/skills/read-codex/scripts/read.py"
         run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p),
-                              "--session", "child-demo"], capture_output=True, text=True)
+                              "--session", "child-demo"], capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual([x["kind"] for x in json.loads(run.stdout)["items"]], ["message"])
 
@@ -342,7 +355,7 @@ class ReaderTests(unittest.TestCase):
         for args in (["read", "--session", "session-demo"], ["search", "--query", "password"], ["list"]):
             with self.subTest(action=args[0]):
                 run = subprocess.run([sys.executable, "-B", str(script), "sessions", *args, "--root", str(p)],
-                                     capture_output=True, text=True)
+                                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(run.returncode, 0, run.stderr)
                 out = json.loads(run.stdout)
                 self.assertTrue(out["items"])
@@ -370,14 +383,14 @@ class ReaderTests(unittest.TestCase):
         fp = next(iter(first["snapshot"].values()))
         second = self.read("claude", p, "read", "--session", "session-demo", "--limit", "2", "--offset", "2", "--snapshot", fp)
         self.assertEqual([x["text"] for x in second["items"]], ["2", "3"])
-        with p.open("a") as f:
+        with p.open("a", encoding='utf-8') as f:
             f.write(json.dumps(self.claude(text="新增")) + "\n")
         with self.assertRaisesRegex(reader.ReaderError, "snapshot_changed"):
             self.read("claude", p, "read", "--session", "session-demo", "--snapshot", fp)
 
     def test_partial_tail_reports_boundary(self):
         p = self.write("s.jsonl", [self.claude()])
-        with p.open("a") as f:
+        with p.open("a", encoding='utf-8') as f:
             f.write('{"unfinished":')
         out = self.read("claude", p, "read", "--session", "session-demo")
         self.assertEqual(len(out["items"]), 1)
@@ -531,7 +544,7 @@ class ReaderTests(unittest.TestCase):
         while offset is not None:
             run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p),
                                   "--session", "session-demo", "--record", record, "--snapshot", snapshot,
-                                  "--text-offset", str(offset), "--max-chars", "17"], capture_output=True, text=True)
+                                  "--text-offset", str(offset), "--max-chars", "17"], capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(run.returncode, 0, run.stderr)
             item = json.loads(run.stdout)["items"][0]
             self.assertEqual(item["text_offset"], offset)
@@ -572,7 +585,7 @@ class ReaderTests(unittest.TestCase):
                 self.assertIn("mixed_session_ids", " ".join(out["warnings"]))
                 script = ROOT / "plugins/client-readers/skills" / SKILLS[client] / "scripts/read.py"
                 run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p), "--session", "B"],
-                                     capture_output=True, text=True)
+                                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(run.returncode, 2)
                 self.assertIn("mixed_session_ids", " ".join(json.loads(run.stdout)["warnings"]))
 
@@ -667,7 +680,7 @@ class ReaderTests(unittest.TestCase):
                 c.execute("INSERT INTO chat_session_messages VALUES(?,?,?,?,?)", ("session-demo", f"m{i}", i, json.dumps(payload), i))
         script = ROOT / "plugins/client-readers/skills" / SKILLS["qodercn"] / "scripts/read.py"
         run = subprocess.run([sys.executable, "-B", str(script), "sessions", "read", "--root", str(p),
-                              "--session", "session-demo", "--include-tools"], capture_output=True, text=True)
+                              "--session", "session-demo", "--include-tools"], capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(run.returncode, 0, run.stderr)
         out = json.loads(run.stdout)
         self.assertEqual([i["text"] for i in out["items"]], ["正常前文", "正常后文"])
@@ -698,7 +711,7 @@ class ReaderTests(unittest.TestCase):
         args = [sys.executable, "-B", str(script), "sessions", "read", "--root", str(path), "--session", session]
         if include_tools:
             args.append("--include-tools")
-        run = subprocess.run(args, capture_output=True, text=True)
+        run = subprocess.run(args, capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(run.stderr, "")
         return json.loads(run.stdout)

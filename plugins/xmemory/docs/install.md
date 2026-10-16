@@ -1,6 +1,6 @@
 # 安装与首次使用
 
-当前源码版本 **1.6.0**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装提供技能和只读程序，建库与采集按后续用户选择执行。
+当前源码版本 **1.6.1**（[发布与下载](https://github.com/BlueSkyXN/XMemory/releases)），格式 `xmemory/v1.5`，需要 Python 3.9+。安装提供技能和只读程序，建库与采集按后续用户选择执行。
 
 ## 升级前先卸载 conversation-readers
 

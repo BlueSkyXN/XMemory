@@ -3,6 +3,7 @@ import base64
 from contextlib import contextmanager
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 from client_readers import common, runtime, sessions
+from tests.automation_fixtures import KEYS, cases
 
 PLAIN = b'{"type":"session_meta","payload":{"id":"fixture-zstd","cwd":"/fixture/project"}}\n{"type":"response_item","payload":{"type":"message","role":"user","content":"synthetic text"}}\n'
 PACKED = base64.b64decode('KLUv/SCwzQMAcogZGYDHOVD8WC2RIKF5bMRIQhAZ1/SwdDLouDrEe/3iA9S6CWdMFvXMZ6h66pxKUY2g66kHKdNJ4i/DybClHfFer1xA14rCoHp6PA8BO+XLEhT1WG1Qj4QIk1pP050YDFems6huzNsEBQB2ZEAV8lNBZ868idaEAg==')
@@ -234,7 +236,7 @@ class RuntimeTests(unittest.TestCase):
         prefix = self.root / 'existing-bin'
         prefix.mkdir()
         binary = prefix / 'zstd'
-        binary.write_text('synthetic placeholder, never executed')
+        binary.write_text('synthetic placeholder, never executed', encoding='utf-8')
         binary.chmod(0o700)
         with mock.patch.object(runtime.shutil, 'which', return_value=None), \
              mock.patch.object(runtime.subprocess, 'run', return_value=types.SimpleNamespace(returncode=0, stdout='zstd fixture\n')) as run:
@@ -274,7 +276,7 @@ class RuntimeTests(unittest.TestCase):
         for path, source in expected.items():
             self.assertEqual(runtime.origin(path), source)
         binary = self.root / 'python3'
-        binary.write_text('placeholder')
+        binary.write_text('placeholder', encoding='utf-8')
         value = dict(path=str(binary), version='3.11.9', packages=42, virtual=False,
                      externally_managed=True, capabilities={'backports.zstd': True})
         with mock.patch.object(runtime, 'interpreter_paths', return_value=[binary]), \
@@ -288,7 +290,142 @@ class RuntimeTests(unittest.TestCase):
 
     def test_toml_existing_subset_fallback(self):
         path = self.root / 'automation.toml'
-        path.write_text('name = "fixture"\ncwds = [\n"/fixture/one",\n"/fixture/two",\n]\n')
+        path.write_text('name = "fixture"\ncwds = [\n"/fixture/one",\n"/fixture/two",\n]\n', encoding='utf-8')
         with mock.patch.object(runtime.importlib, 'import_module', side_effect=ImportError):
             data = runtime.read_toml(path)
         self.assertEqual(data['cwds'], ['/fixture/one', '/fixture/two'])
+
+    def test_automation_top_level_fallback_matches_expected_and_tomllib(self):
+        expected = dict(cwds=['/fixture/project'], name='合成自动化', rrule='FREQ=DAILY;BYHOUR=8')
+        for name, text in cases().items():
+            with self.subTest(case=name):
+                path = self.root / 'automation.toml'
+                path.write_text(text, encoding='utf-8')
+                with mock.patch.object(runtime.importlib, 'import_module', side_effect=ImportError):
+                    result = runtime.read_toml(path, keys=KEYS)
+                self.assertEqual({key: result.get(key) for key in KEYS}, expected)
+                if sys.version_info >= (3, 11):
+                    import tomllib
+                    native = tomllib.loads(text)
+                    self.assertEqual({key: result.get(key) for key in KEYS},
+                                     {key: native.get(key) for key in KEYS})
+                    self.assertEqual(runtime.read_toml(path, keys=KEYS), native)
+
+    def test_automation_top_level_never_takes_subtable_keys(self):
+        from client_readers.toml_subset import TomlSubset
+        text = 'target = { future = true }\n[child]\ncwds = ["/decoy"]\nname = "decoy"\n'
+        self.assertEqual(TomlSubset(text).top_level(KEYS), {})
+        path = self.root / 'automation.toml'
+        path.write_text(text, encoding='utf-8')
+        with mock.patch.object(runtime.importlib, 'import_module', side_effect=ImportError):
+            self.assertEqual(runtime.read_toml(path, keys=KEYS), {})
+            with self.assertRaises(ValueError):
+                runtime.read_toml(path)
+
+    def test_automation_skip_quoted_delimiters_and_dotted_keys(self):
+        from client_readers.toml_subset import TomlSubset
+        endings = ('x = """ends with a quote""""\n',
+                   "x = '''ends with two quotes'''''\n",
+                   'x = """line continuation\\\n  cwds = ["/decoy"]\n"""\n',
+                   "x = 'literal [ # }'\n",
+                   'other.cwds = ["/decoy"]\n')
+        for prefix in endings:
+            with self.subTest(prefix=prefix):
+                text = prefix + '"cwds" = ["/fixture/real"]\n'
+                result = TomlSubset(text).top_level(KEYS)
+                self.assertEqual(result, {'cwds': ['/fixture/real']})
+                if sys.version_info >= (3, 11):
+                    import tomllib
+                    self.assertEqual(result['cwds'], tomllib.loads(text)['cwds'])
+
+    def test_automation_invalid_selected_value_is_not_skipped(self):
+        from client_readers.toml_subset import TomlSubset
+        for body in ('cwds = ["/fixture/unclosed"', 'cwds = ["/fixture"]\ncwds = []',
+                     'name = "unterminated', 'rrule = { unsupported = true }'):
+            with self.subTest(body=body), self.assertRaises(ValueError):
+                TomlSubset('target = { type = "project" }\n' + body).top_level(KEYS)
+
+    def test_python_backend_ordinary_memory_and_sessions_never_spawn(self):
+        from client_readers import cli, memory
+        from client_readers.clients import Context
+        chosen = dict(name='compression.zstd', version='mock', path=None, module=object())
+        directory = self.root / '.codex/memories_v2'
+        directory.mkdir(parents=True)
+        note = directory / 'MEMORY.md'
+        note.write_text('合成正文', encoding='utf-8')
+        with mock.patch.object(runtime, 'module_backend', side_effect=lambda name: chosen if name == chosen['name'] else None), \
+             mock.patch.object(runtime.subprocess, 'run', side_effect=AssertionError('unexpected run')), \
+             mock.patch.object(runtime.subprocess, 'Popen', side_effect=AssertionError('unexpected Popen')):
+            self.assertEqual(runtime.describe()['zstd'], 'compression.zstd mock')
+            args = cli.parser('codex').parse_args(['memory', 'read', '--path', str(note)])
+            self.assertEqual(memory.run(Context('codex', home=self.root), args)['items'][0]['text'], '合成正文')
+            self.assertEqual(len(self.read('list')['items']), 1)
+            args = sessions.parser('claude').parse_args(['list', '--root', str(self.root / 'absent')])
+            self.assertEqual(sessions.run('claude', args)['items'], [])
+
+    def test_doctor_adds_external_backends_once_after_lazy_describe(self):
+        from client_readers.clients import Context
+        binary = self.root / 'zstd'
+        binary.write_text('fixture; never executed', encoding='utf-8')
+        binary.chmod(0o700)
+        chosen = dict(name='compression.zstd', version='mock', path=None, module=object())
+        probe = runtime.external_tools
+        with mock.patch.object(runtime, 'module_backend', side_effect=lambda name: chosen if name == chosen['name'] else None), \
+             mock.patch.dict(os.environ, {'PATH': str(self.root)}), \
+             mock.patch.object(runtime.shutil, 'which', return_value=str(binary)), \
+             mock.patch.object(runtime, 'external_tools', side_effect=lambda name: probe(name, prefixes=())), \
+             mock.patch.object(runtime.subprocess, 'run', return_value=types.SimpleNamespace(returncode=0, stdout='zstd mock\n')) as run:
+            runtime.describe()
+            run.assert_not_called()
+            output = runtime.doctor(Context('codex', home=self.root))
+            self.assertEqual([b['name'] for b in output['capabilities']['zstd']['available']],
+                             ['compression.zstd', 'PATH:zstd'])
+            self.assertEqual(output['capabilities']['zstd']['selected']['name'], 'compression.zstd')
+            self.assertEqual(run.call_args.args[0], [str(binary), '--version'])
+            runtime.doctor(Context('codex', home=self.root))
+            runtime.describe()
+            self.assertEqual(run.call_count, 1)
+
+    def test_external_path_rejects_implicit_cwd_and_relative_path_entries(self):
+        binary = self.root / 'zstd'
+        binary.write_text('fixture; never executed', encoding='utf-8')
+        binary.chmod(0o700)
+        for paths in ([str(self.root / 'other')], ['.'], ['']):
+            with self.subTest(paths=paths), mock.patch.object(runtime.os, 'get_exec_path', return_value=paths), \
+                 mock.patch.object(runtime.shutil, 'which', return_value=str(binary)), \
+                 mock.patch.object(runtime.subprocess, 'run', side_effect=AssertionError('implicit cwd tool')):
+                self.assertEqual(runtime.external_tools('zstd', prefixes=()), [])
+
+    def test_isolated_reader_and_xmemory_entrypoints(self):
+        env = dict(os.environ, HOME=str(self.root), USERPROFILE=str(self.root))
+        reader = ROOT / 'plugins/client-readers/skills/read-codex/scripts/read.py'
+        xmemory = ROOT / 'plugins/xmemory/skills/xmemory/scripts/xmemory.py'
+        result = subprocess.run([sys.executable, '-I', '-B', str(reader), 'doctor'],
+                                env=env, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['schema'], 'client-readers/doctor-v1')
+        result = subprocess.run([sys.executable, '-I', '-B', str(xmemory), '--help'],
+                                env=env, capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('status', result.stdout)
+
+    def test_xmemory_outputs_utf8_under_legacy_pipe_encoding(self):
+        env = dict(os.environ, HOME=str(self.root), USERPROFILE=str(self.root),
+                   PYTHONIOENCODING='cp1252', PYTHONUTF8='0')
+        script = ROOT / 'plugins/xmemory/skills/xmemory/scripts/xmemory.py'
+        missing = self.root / '合成记忆库'
+        for args, code, channel, expected in (
+            (['--help'], 0, 'stdout', '只读检查'),
+            (['错误命令'], 2, 'stderr', '错误命令'),
+            (['status', '--root', str(missing)], 2, 'stdout', '合成记忆库'),
+        ):
+            with self.subTest(args=args):
+                # 不加 -I，让子进程实际采用 cp1252 管道默认值。
+                result = subprocess.run([sys.executable, '-B', str(script), *args],
+                                        env=env, capture_output=True)
+                self.assertEqual(result.returncode, code, result.stderr.decode('utf-8'))
+                self.assertIn(expected, getattr(result, channel).decode('utf-8'))
+                self.assertNotIn(b'UnicodeEncodeError', result.stderr)
+                if args[0] == 'status':
+                    self.assertFalse(json.loads(result.stdout.decode('utf-8'))['ok'])
+        self.assertFalse(missing.exists())
