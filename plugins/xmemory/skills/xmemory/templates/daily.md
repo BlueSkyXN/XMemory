@@ -15,25 +15,24 @@ day: "{{day}}"
 - {{point}}
 - 来源：[{{record_label}}]({{record_link}})
 
-<!-- 与记录重叠的活动在上面的会话块内补充，不再另建活动块；多条线索和来源定位分别展开为多个列表项： -->
-- Skysight 活动线索（二手）：
-  - {{activity_hint}}
-  - 库外定位：
-    - {{activity_source_locations}}
-  - 覆盖：{{activity_window}}
-  - 归属依据：{{activity_attribution_basis}}
-  - 缺口：{{activity_gaps}}
-
-<!-- 以下示例仅用于未与记录重叠的独立活动；归属未定时改用“归属未定”节。 -->
+<!-- 无会话身份时改用 record:<根内记录相对路径> 标记。每块最多八条要点。 -->
+<!-- 重叠活动在会话块补一条 Skysight 活动线索及覆盖时段，出处归入文末；以下块仅用于独立活动。 -->
 <!-- activity:codex-skysight:{{day}} -->
 ### {{activity_subject}}
 
 - {{activity_point}}
-- 来源：Codex Skysight 活动摘要（库外，二手摘要，未读取原始事件流）。
-- 库外定位：
-  - {{activity_source_locations}}
 - 覆盖：{{activity_window}}
-- 归属依据：{{activity_attribution_basis}}
-- 缺口：{{activity_gaps}}
 
-<!-- 按记录更新时原样保留独立活动块及并入会话块的 Skysight 线索；只有重读同日来源或明确更正、删除要求才修改。活动不进入主题、意识或画像。 -->
+## 历史资料归档（事件日期未核实）
+
+- [{{record_label}}]({{record_link}})：{{record_scope}}
+
+<!-- 当天采集、没有事件日期的导入记录（day_basis: captured）每条一行，写范围和链接；具体内容归入项目主题或画像。没有时省略本节。 -->
+
+## 来源与覆盖
+
+Skysight 来源目录：{{activity_source_directory}}。活动来自二手摘要。
+
+- {{project_and_block_marker}}：{{activity_window}}；原件 {{activity_source_filenames}}
+
+<!-- 没有 Skysight 时省略来源与覆盖节。按块保留全部实际原件身份；归属推断和影响理解的缺口各说明一次。按记录更新时保留已有活动内容及出处，直到重读或明确更正、删除。 -->

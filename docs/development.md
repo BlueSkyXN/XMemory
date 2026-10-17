@@ -116,13 +116,13 @@ python3 -B tools/build_client_readers.py --output dist/readers-check
 
 `tests.ci_zstandard_backend` 不由常规 `discover` 收集，需要有该后端的环境单独运行。工作流定义只说明检查内容，具体提交的完成结果查 [Actions](https://github.com/BlueSkyXN/XMemory/actions)及[验证记录](validation.md)。
 
-行为评测进一步检查模型是否按来源提炼、识别更正、保留未定归属并正确计证。场景导航见[评测目录索引](README.md#开发版本与证据)。例如，只生成 1.6.1 的虚构输入：
+行为评测进一步检查模型是否按来源提炼、识别更正、保留未定归属并正确计证。场景导航见[评测目录索引](README.md#开发版本与证据)。例如，生成 1.7.0 的虚构输入，包括冷启动与规模变体：
 
 ```bash
-python3 -B evals/v1.6.1/make_fixture.py /absolute/path/to/new-evaluation --skills plugins/xmemory/skills --readers plugins/client-readers/skills
+python3 -B evals/v1.7.0/make_fixture.py /absolute/path/to/new-evaluation --repo /absolute/path/to/source
 ```
 
-生成器拒绝覆盖已有目录，不调用模型。模型评测按对应 README 的场景、授权与判据执行，保留失败轮及原始产物；夹具预检、程序测试和模型评分分别记录。
+实验目录放在任何 Git 仓库之外：客户端会沿工作目录向上加载 `AGENTS.md`，放在源码 worktree 内时基线也会读到候选的仓库说明。基线源码用 `git archive <提交>` 导出到新目录。生成器拒绝覆盖已有目录，不调用模型。模型评测按对应 README 的场景、授权与判据执行，保留失败轮及原始产物；夹具预检、程序测试和模型评分分别记录。
 
 ## 验证记录与交付
 

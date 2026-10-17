@@ -119,10 +119,10 @@ roots = ["/absolute/path/to/Maple"]
 设置后运行只读检查，将脚本路径替换为实际安装位置：
 
 ```bash
-python3 -B "/absolute/path/to/xmemory/skills/xmemory/scripts/xmemory.py" --root "/absolute/path/to/memory" status
+python3 -B "/absolute/path/to/xmemory/skills/xmemory/scripts/xmemory.py" --root "/absolute/path/to/memory" status --summary
 ```
 
-有效配置应能生成 `xmemory/status-v1.5` JSON。新库可能提示缺少尚未生成的对象；按实际材料决定创建范围。再让代理完成一次选定来源的更新，并读回文件与来源链接，详见[使用指南](usage.md)。
+有效配置应能生成 `xmemory/status-v1.5` JSON，开头的 `inventory` 给出配置来源、登记项目、已有内容与候选数量。新库可能列出有直接输入、尚未创建的候选；按实际材料决定创建范围。再让代理完成一次选定来源的更新，并读回文件与来源链接，详见[使用指南](usage.md)。
 
 ## 现有记忆库升级
 

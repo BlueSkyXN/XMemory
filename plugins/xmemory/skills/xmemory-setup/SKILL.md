@@ -1,11 +1,11 @@
 ---
 name: xmemory-setup
-description: "设置 XMemory 的记忆根、时区、来源选择和项目映射，按模板建库，准备客户端告知与定时提示词。"
+description: "首次设置或调整 XMemory：确认记忆根、时区、来源和项目，按模板初始化配置，准备客户端告知与定时提示词；查看初始化现状用维护技能。"
 ---
 
 # 设置 XMemory
 
-先读 [共同规则](../xmemory/SKILL.md) 和 [配置与格式](../xmemory/references/format.md)。建库用普通文件工具，不调用旧版 init、project、notice 或导入命令。
+先读 [共同规则](../xmemory/SKILL.md) 和 [配置与格式](../xmemory/references/format.md)。建库、配置和告知都用文件工具完成。
 
 ## 建库与来源
 
@@ -17,7 +17,7 @@ description: "设置 XMemory 的记忆根、时区、来源选择和项目映射
 
 ## 告知与调度
 
-- 按 [告知模板](../xmemory/templates/agents-notice.md) 填实际记忆根。只有用户要求集成到客户端时才合并到相应规则文件，保留原生记忆规则及其他内容，明确两套记忆共同使用；不自动注入记忆正文。读回确认没有把原生记忆入口改成只读 XMemory，也没有加入关闭原生记忆的设置或实验参数。
+- 按 [告知模板](../xmemory/templates/agents-notice.md) 填实际记忆根。只有用户要求集成到客户端时才合并到相应规则文件，保留原生记忆规则及其他内容，明确两套记忆共同使用；不自动注入记忆正文。读回确认没有把原生记忆入口改成只读 XMemory，也没有关闭原生记忆功能。
 - 按 [定时提示词](../xmemory/templates/automation-prompt.md) 填日常增量范围；完整整理单独用 [周期整理提示词](../xmemory/templates/organization-prompt.md)，由客户端每 7 天触发。XMemory 不创建后台服务或保存上次整理时间；用户已要求创建客户端定时任务时，可用该客户端的能力完成。
 - Client Readers 可另装；设置 XMemory 不代表授权安装或启用读取器。
 

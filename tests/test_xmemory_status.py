@@ -14,7 +14,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "plugins/xmemory/skills/xmemory/scripts"
 sys.path.insert(0, str(SCRIPTS))
-from status import FORMAT, frontmatter, report  # noqa: E402
+from status import FORMAT, format_summary, frontmatter, report, summarize  # noqa: E402
 from toml_subset import TomlSubset  # noqa: E402
 
 NOW = datetime.fromisoformat("2026-10-12T18:00:00+08:00")
@@ -215,7 +215,8 @@ class StatusTests(unittest.TestCase):
 
     def test_partial_record_real_update_invalidates_derived_content(self):
         self.record(updated="2026-10-12T08:00:00+08:00")
-        self.write("daily/2026/2026-10-12.md", "daily", day="2026-10-12")
+        self.write("daily/2026/2026-10-12.md", "daily", day="2026-10-12",
+                   body="[source](../../records/sessions/claude/r.md)")
         self.write("projects/demo/MEMORY.md", "project-index")
         self.write("projects/demo/topics/build.md", "topic", body="[source](../../../records/sessions/claude/r.md)")
         paths = ("daily/2026/2026-10-12.md", "projects/demo/MEMORY.md", "projects/demo/topics/build.md")
@@ -273,6 +274,199 @@ class StatusTests(unittest.TestCase):
         self.assertIn("partial_source", self.codes())
         self.record(updated="not-a-time", source_updated="")
         self.assertEqual(self.objects()["projects/demo/AWARENESS.md"]["assessment"], "unknown")
+
+    def test_inventory_separates_files_candidates_and_configuration(self):
+        config = self.root / "config.toml"
+        config.write_text(CONFIG + '\n[sources.disabled]\nenabled = false\nkind = "files"\n'
+                          'client = "filesystem"\npaths = []\n[projects.empty]\nroots = []\n')
+        self.record("records/imported/claude/one.md", coverage="partial")
+        self.record("records/notes/two.md", source="note", projects=[], project_status="unresolved")
+        self.write("projects/demo/MEMORY.md", "project-index")
+        before = snapshot(self.root)
+        result = self.result()
+        inventory = result["inventory"]
+        self.assertEqual(inventory["configuration"], {"sources": 2, "enabled_sources": 1,
+                                                       "projects": 2, "projects_with_records": 1})
+        self.assertEqual(inventory["existing_objects"], 3)
+        self.assertEqual(inventory["records"]["total"], 2)
+        self.assertEqual(inventory["records"]["partial"], 1)
+        self.assertEqual(inventory["records"]["unresolved_project"], 1)
+        self.assertEqual(inventory["records"]["by_source"]["note"], 1)
+        self.assertEqual(inventory["records"]["by_directory"]["imported"], 1)
+        self.assertEqual(inventory["derived"]["by_kind"]["project-index"], 1)
+        self.assertEqual(inventory["candidates"]["total"], result["counts"]["objects"]["missing"])
+        self.assertEqual(sum(result["counts"]["objects"].values()),
+                         inventory["existing_objects"] + inventory["candidates"]["total"])
+        self.assertEqual(snapshot(self.root), before)
+
+    def test_inventory_does_not_echo_invalid_source_values(self):
+        value = "sk-" + "a" * 24
+        self.record(source=value)
+        result = self.result()
+        self.assertNotIn(value, json.dumps(result))
+        self.assertEqual(result["inventory"]["records"]["unconfigured_source"], 1)
+        self.assertEqual(result["inventory"]["records"]["by_source"], {"claude": 0})
+
+    def test_candidates_require_direct_inputs_and_existing_objects_remain(self):
+        self.assertEqual(self.result()["objects"], [])
+        self.record()
+        self.assertNotIn("memory_summary.md", self.objects())
+        self.write("projects/demo/topics/build.md", "topic")
+        self.write("projects/empty/MEMORY.md", "project-index")
+        self.assertIn("projects/empty/MEMORY.md", self.objects())
+        self.assertIn("memory_summary.md", self.objects())
+        self.assertNotIn("projects/empty/AWARENESS.md", self.objects())
+
+    def test_unlinked_older_daily_record_stays_pending_until_linked(self):
+        path = "records/imported/claude/old note.md"
+        self.record(path, updated="2026-10-12T08:00:00+08:00")
+        daily = "daily/2026/2026-10-12.md"
+        self.write(daily, "daily", day="2026-10-12")
+        item = self.objects()[daily]
+        self.assertEqual(item["newer_sources"], [])
+        self.assertEqual(item["unlinked_sources"], [path])
+        self.assertEqual(item["assessment"], "stale")
+        self.write(daily, "daily", day="2026-10-12",
+                   body="[source][ref]\n[ref]: ../../records/imported/claude/old%20note.md#detail")
+        self.assertEqual(self.objects()[daily]["unlinked_sources"], [])
+        self.assertEqual(self.objects()[daily]["assessment"], "current")
+
+    def test_links_in_examples_or_other_scopes_do_not_cover_records(self):
+        path = "records/imported/claude/old.md"
+        self.record(path, updated="2026-10-12T08:00:00+08:00")
+        daily = "daily/2026/2026-10-12.md"
+        self.write(daily, "daily", day="2026-10-12", body="```md\n[source](../../" + path + ")\n```")
+        self.write("personal/topics/ref.md", "topic", body="[source](../../" + path + ")")
+        self.write("projects/demo/MEMORY.md", "project-index")
+        objects = self.objects()
+        self.assertEqual(objects[daily]["unlinked_sources"], [path])
+        self.assertEqual(objects["projects/demo/MEMORY.md"]["unlinked_sources"], [path])
+        self.assertEqual(objects["projects/demo/MEMORY.md"]["assessment"], "current")
+
+    def test_project_links_cover_older_records_without_changing_index_assessment(self):
+        paths = ["records/imported/claude/" + name + ".md" for name in ("a", "b")]
+        for path in paths:
+            self.record(path, updated="2026-10-12T08:00:00+08:00")
+        index = "projects/demo/MEMORY.md"
+        self.write(index, "project-index", "2026-10-12T14:00:00+08:00")
+        self.write("projects/demo/topics/a.md", "topic", body="[source](../../../" + paths[0] + ")")
+        item = self.objects()[index]
+        self.assertEqual(item["assessment"], "current")
+        self.assertEqual(item["unlinked_sources"], [paths[1]])
+        self.assertIn(index, {x["path"] for x in summarize(self.result())["objects"]})
+
+    def test_multiday_unlinked_signals_are_independent_and_unresolved_stays_out_of_personal(self):
+        path = "records/imported/claude/multiday.md"
+        self.record(path, updated="2026-10-12T08:00:00+08:00", projects=[], project_status="unresolved",
+                    event_days=["2026-10-11", "2026-10-12"])
+        for day in ("2026-10-11", "2026-10-12"):
+            self.write("daily/2026/" + day + ".md", "daily", day=day,
+                       body="[source](../../" + path + ")" if day.endswith("11") else "")
+        objects = self.objects()
+        self.assertEqual(objects["daily/2026/2026-10-11.md"]["assessment"], "current")
+        self.assertEqual(objects["daily/2026/2026-10-12.md"]["unlinked_sources"], [path])
+        self.assertNotIn("personal/MEMORY.md", objects)
+
+    def test_empty_source_time_is_record_warning_without_poisoning_derived_objects(self):
+        path = "records/imported/claude/unknown.md"
+        self.record(path, updated="2026-10-12T08:00:00+08:00", source_updated="")
+        self.write("USER.md", "user")
+        self.write("projects/demo/topics/build.md", "topic", body="[source](../../../" + path + ")")
+        result = self.result()
+        objects = self.objects(result)
+        self.assertEqual(objects[path]["assessment"], "review")
+        self.assertIn("unknown_source_time", objects[path]["reasons"])
+        self.assertEqual(objects["USER.md"]["assessment"], "current")
+        self.assertEqual(objects["projects/demo/topics/build.md"]["assessment"], "current")
+        self.assertNotIn("invalid_time", self.codes())
+        self.assertEqual(result["inventory"]["records"]["unknown_source_time"], 1)
+        self.assertIn(path, {x["path"] for x in summarize(result)["objects"]})
+
+    def test_invalid_source_times_and_missing_location_still_propagate_unknown(self):
+        self.write("USER.md", "user", "2026-10-12T17:00:00+08:00")
+        for value in ("bad", " ", "2026-10-12T10:00:00", "2027-01-01T00:00:00Z"):
+            with self.subTest(source_updated=value):
+                self.record(source_updated=value)
+                self.assertEqual(self.objects()["USER.md"]["assessment"], "unknown")
+        self.record(source_updated="", source_location="")
+        self.assertEqual(self.objects()["USER.md"]["assessment"], "unknown")
+
+    def test_summary_keeps_stale_topic_even_after_index_has_been_updated(self):
+        path = "records/imported/claude/b.md"
+        self.record(path, updated="2026-10-12T11:00:00+08:00")
+        topic = "projects/demo/topics/b.md"
+        self.write(topic, "topic", body="[source](../../../" + path + ")")
+        self.write("projects/demo/MEMORY.md", "project-index", "2026-10-12T12:00:00+08:00",
+                   body="[b](topics/b.md)")
+        result = self.result()
+        brief = summarize(result)
+        self.assertEqual(self.objects(result)["projects/demo/MEMORY.md"]["assessment"], "current")
+        self.assertEqual(self.objects(brief)[topic]["assessment"], "stale")
+        self.assertNotIn(path, self.objects(brief))
+        for key in ("inventory", "counts", "issues", "source_hints"):
+            self.assertEqual(brief[key], result[key])
+
+    def test_summary_cli_and_invalid_root_preserve_readonly_contract(self):
+        self.record("records/imported/claude/normal.md")
+        before = snapshot(self.root)
+        result = subprocess.run([sys.executable, "-B", str(SCRIPTS / "xmemory.py"),
+                                 "status", "--summary", "--root", str(self.root)],
+                                capture_output=True, text=True, check=True)
+        output = json.loads(result.stdout)
+        lines = [line for line in result.stdout.splitlines() if line.startswith('    {"path"')]
+        self.assertTrue(output["objects"])
+        self.assertEqual([json.loads(line.rstrip(",")) for line in lines], output["objects"])
+        self.assertLess(list(output).index("inventory"), list(output).index("objects"))
+        self.assertLess(list(output).index("counts"), list(output).index("objects"))
+        self.assertEqual(output["inventory"]["records"]["total"], 1)
+        self.assertFalse(any(x["kind"] == "record" for x in output["objects"]))
+        self.assertEqual(snapshot(self.root), before)
+        invalid = summarize(report(self.base / "absent", NOW))
+        self.assertEqual(json.loads(format_summary(invalid)), invalid)
+        self.assertIsNone(invalid["inventory"])
+        self.assertFalse(invalid["ok"])
+        self.assertFalse((self.base / "absent").exists())
+
+    def test_inventory_counts_existing_items_that_need_attention(self):
+        self.record("records/imported/claude/a.md", updated="2026-10-12T08:00:00+08:00")
+        self.record("records/imported/claude/bad.md", projects=[], day="2026-10-11", source_location="")
+        self.write("projects/demo/MEMORY.md", "project-index", "2026-10-12T14:00:00+08:00")
+        self.write("daily/2026/2026-10-12.md", "daily", "2026-10-12T14:00:00+08:00", day="2026-10-12")
+        self.write("USER.md", "user", "2026-10-12T14:00:00+08:00")
+        inventory = self.result()["inventory"]
+        self.assertEqual(inventory["records"]["unknown"], 1)
+        self.assertEqual(inventory["records"]["unlinked"], {"daily": 1, "projects": 1})
+        self.assertEqual(inventory["derived"]["by_assessment"], {"current": 1, "stale": 1, "review": 0, "unknown": 1})
+
+    def test_unlinked_hints_stay_on_existing_daily_and_index(self):
+        path = "records/imported/claude/old.md"
+        self.record(path, updated="2026-10-12T08:00:00+08:00")
+        objects = self.objects()
+        for missing in ("daily/2026/2026-10-12.md", "projects/demo/MEMORY.md", "projects/demo/AWARENESS.md"):
+            self.assertEqual(objects[missing]["assessment"], "missing")
+            self.assertEqual(objects[missing]["unlinked_sources"], [])
+            self.assertIn(path, objects[missing]["newer_sources"])
+        self.write("projects/demo/MEMORY.md", "project-index", "2026-10-12T14:00:00+08:00")
+        self.write("projects/demo/AWARENESS.md", "awareness", "2026-10-12T14:00:00+08:00")
+        objects = self.objects()
+        self.assertEqual(objects["projects/demo/MEMORY.md"]["unlinked_sources"], [path])
+        self.assertEqual(objects["projects/demo/AWARENESS.md"]["unlinked_sources"], [])
+        self.assertEqual(objects["projects/demo/AWARENESS.md"]["assessment"], "current")
+        self.assertNotIn("projects/demo/AWARENESS.md", {x["path"] for x in summarize(self.result())["objects"]})
+
+    def test_time_values_parse_the_same_on_supported_python_versions(self):
+        self.write("USER.md", "user", "2026-10-12T17:00:00+08:00")
+        for value in ("2026-10-12T01:00:00Z", "2026-10-12T09:00:00+0800", "2026-10-12T09:00:00+08",
+                      "2026-10-12T01:00:00.1234567z", "2026-10-12 09:00:00,5+08:00", "2026-10-12T09:00+08:00"):
+            with self.subTest(source_updated=value):
+                self.record(source_updated=value)
+                self.assertNotIn("invalid_time", self.codes())
+                self.assertEqual(self.objects()["USER.md"]["assessment"], "current")
+        for value in ("20261012T090000+0800", "2026-10-12T09+08:00", "2026-10-12T09:00:00+08:00:00"):
+            with self.subTest(source_updated=value):
+                self.record(source_updated=value)
+                self.assertIn("invalid_time", self.codes())
+                self.assertEqual(self.objects()["USER.md"]["assessment"], "unknown")
 
     def test_wrong_metadata_types_report_without_crashing(self):
         self.record(source=[], evidence=[], coverage=[], projects="demo", session_refs="bad")
