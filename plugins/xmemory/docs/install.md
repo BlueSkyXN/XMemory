@@ -1,6 +1,6 @@
 # 安装与首次使用
 
-当前版本为 XMemory **1.6.1**、可选 Client Readers **0.2.1**，记忆格式为 `xmemory/v1.5`。正式附件见 [v1.6.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1)。
+当前版本为 XMemory **1.7.0**、可选 Client Readers **0.2.1**，记忆格式为 `xmemory/v1.5`。正式附件见 [v1.7.0 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.7.0)。
 
 ## 运行前准备
 
@@ -27,7 +27,7 @@ flowchart TD
 
 ## 市场安装
 
-下载 `XMemory-1.6.1.zip`，按同名 `.zip.sha256` 校验后解压完整目录。使用源码目录时采用同样的市场根：
+下载 `XMemory-1.7.0.zip`，按同名 `.zip.sha256` 校验后解压完整目录。使用源码目录时采用同样的市场根：
 
 | 客户端 | 市场根 | 插件 ID |
 |---|---|---|
@@ -40,14 +40,14 @@ flowchart TD
 Claude Code：
 
 ```bash
-claude plugin marketplace add /absolute/path/to/XMemory-1.6.1
+claude plugin marketplace add /absolute/path/to/XMemory-1.7.0
 claude plugin install xmemory@xmemory-marketplace
 ```
 
 Codex：
 
 ```bash
-codex plugin marketplace add /absolute/path/to/XMemory-1.6.1
+codex plugin marketplace add /absolute/path/to/XMemory-1.7.0
 codex plugin add xmemory@xmemory-marketplace
 ```
 
@@ -57,7 +57,7 @@ ZCode 在插件市场添加 `plugins/` 的实际绝对路径并安装 XMemory。
 
 ## 独立技能安装
 
-- `XMemory-1.6.1-skills.zip`：将 `skills/` 下八个目录一起放进客户端支持的技能目录，保留相对位置。技能之间会互相引用。
+- `XMemory-1.7.0-skills.zip`：将 `skills/` 下八个目录一起放进客户端支持的技能目录，保留相对位置。技能之间会互相引用。
 - `ClientReaders-0.2.1-skills.zip`：按需要复制完整的 `read-<client>/` 目录，保留其中的 `scripts/` 与 `references/`。每个读取技能可以单独运行。
 
 同一客户端选择插件安装或独立技能安装中的一种，避免同名入口同时启用。确认新会话可以发现八个 XMemory 技能，以及实际安装的读取技能。

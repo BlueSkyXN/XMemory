@@ -1,8 +1,8 @@
-# XMemory 1.6.1
+# XMemory 1.7.0
 
 以技能维护跨客户端 Markdown 记忆。AI 处理选定来源、核对证据并直接编辑文件；只读 `status` 提供库内结构和更新线索。定时调度由客户端负责，Client Readers 可按需要独立安装。
 
-文件格式为 `xmemory/v1.5`，已有 1.5.x 库可以继续使用。当前发布见 [v1.6.1](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1)。
+文件格式为 `xmemory/v1.5`，已有 1.5.x 库可以继续使用。当前发布见 [v1.7.0](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.7.0)。
 
 ## 从这里开始
 

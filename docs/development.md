@@ -81,8 +81,8 @@ python3 -B tools/build_release.py --output dist/release-check
 
 | 当前产物 | 内容与文档位置 |
 |---|---|
-| `XMemory-1.6.1.zip` | 三端市场与两个插件；`INSTALL.md`，以及各插件 README、docs、技能参考 |
-| `XMemory-1.6.1-skills.zip` | XMemory `skills/`、`INSTALL.md`、许可证 |
+| `XMemory-1.7.0.zip` | 三端市场与两个插件；`INSTALL.md`，以及各插件 README、docs、技能参考 |
+| `XMemory-1.7.0-skills.zip` | XMemory `skills/`、`INSTALL.md`、许可证 |
 | `ClientReaders-0.2.1-skills.zip` | 读取器 `skills/`、README、`docs/validation.md`、许可证 |
 
 构建还生成各包外部 `.zip.sha256` 与内部 `SHA256SUMS`。归档文件名来自插件清单版本；写入 ZIP 使用固定时间与权限，便于比较相同载荷的构建结果。构建拒绝覆盖已有归档。

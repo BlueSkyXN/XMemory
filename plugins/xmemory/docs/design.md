@@ -116,4 +116,4 @@ CLI 为 `xmemory.py [--root DIR] status [--summary]`，`--root` 也可以放在 
 | 并发、多机与后台 | 没有并发写协调、多机同步、后台采集或自动注入 |
 | 内容质量 | 程序不评分正文语义；模型整理、自然触发和长期调度分别验收 |
 
-升级操作见[安装说明](install.md)。版本变更和验证证据集中保存在[版本说明](https://github.com/BlueSkyXN/XMemory/blob/main/docs/v1.6/README.md)与[验证报告](https://github.com/BlueSkyXN/XMemory/blob/main/docs/validation.md)。
+升级操作见[安装说明](install.md)。版本变更和验证证据集中保存在[版本说明](https://github.com/BlueSkyXN/XMemory/blob/main/docs/v1.7/README.md)与[验证报告](https://github.com/BlueSkyXN/XMemory/blob/main/docs/validation.md)。

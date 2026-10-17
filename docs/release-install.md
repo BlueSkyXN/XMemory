@@ -1,31 +1,31 @@
-# XMemory 1.6.1 安装与升级
+# XMemory 1.7.0 安装与升级
 
-本版包含 XMemory **1.6.1** 与可选 Client Readers **0.2.1**，记忆格式为 `xmemory/v1.5`。正式附件见 [v1.6.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1)。本文也随 XMemory ZIP 分发为 `INSTALL.md`。
+本版包含 XMemory **1.7.0** 与可选 Client Readers **0.2.1**，记忆格式为 `xmemory/v1.5`。正式附件见 [v1.7.0 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.7.0)。本文也随 XMemory ZIP 分发为 `INSTALL.md`。
 
 ## 选择安装包
 
 | 包 | 内容 | 适用方式 |
 |---|---|---|
-| `XMemory-1.6.1.zip` | 三端市场、XMemory 与 Client Readers 两个插件及各自文档 | 通过客户端插件市场安装 |
-| `XMemory-1.6.1-skills.zip` | 八个 XMemory 技能、模板、只读 status、INSTALL 与许可证 | 复制到客户端支持的技能目录 |
+| `XMemory-1.7.0.zip` | 三端市场、XMemory 与 Client Readers 两个插件及各自文档 | 通过客户端插件市场安装 |
+| `XMemory-1.7.0-skills.zip` | 八个 XMemory 技能、模板、只读 status、INSTALL 与许可证 | 复制到客户端支持的技能目录 |
 | `ClientReaders-0.2.1-skills.zip` | 五端自包含读取技能、README、验证记录与许可证 | 独立安装所需的读取技能 |
 
 每个 ZIP 都有同名 `.zip.sha256`，包内另有 `SHA256SUMS`。在下载目录先核对归档校验值，再解压；选择对应平台命令：
 
 ```bash
 # macOS；其他两个包替换为对应文件名
-shasum -a 256 -c XMemory-1.6.1.zip.sha256
+shasum -a 256 -c XMemory-1.7.0.zip.sha256
 ```
 
 ```bash
 # Linux
-sha256sum -c XMemory-1.6.1.zip.sha256
+sha256sum -c XMemory-1.7.0.zip.sha256
 ```
 
 ```powershell
 # Windows PowerShell：将结果与 .sha256 文件中的值比较
-Get-FileHash .\XMemory-1.6.1.zip -Algorithm SHA256
-Get-Content .\XMemory-1.6.1.zip.sha256
+Get-FileHash .\XMemory-1.7.0.zip -Algorithm SHA256
+Get-Content .\XMemory-1.7.0.zip.sha256
 ```
 
 安装后的程序需要 Python 3.9+。`status` 与普通读取使用标准库；Codex 压缩会话还需已有 zstd 后端，读取器 `doctor` 会报告可用情况。
@@ -52,7 +52,7 @@ ZCode 在插件管理中卸载 Conversation Readers。独立技能安装先确�
 
 ```bash
 # Claude Code
-claude plugin marketplace add /absolute/path/to/XMemory-1.6.1
+claude plugin marketplace add /absolute/path/to/XMemory-1.7.0
 claude plugin install xmemory@xmemory-marketplace
 # 需要读取器时再安装
 claude plugin install client-readers@xmemory-marketplace
@@ -60,7 +60,7 @@ claude plugin install client-readers@xmemory-marketplace
 
 ```bash
 # Codex
-codex plugin marketplace add /absolute/path/to/XMemory-1.6.1
+codex plugin marketplace add /absolute/path/to/XMemory-1.7.0
 codex plugin add xmemory@xmemory-marketplace
 # 需要读取器时再安装
 codex plugin add client-readers@xmemory-marketplace
