@@ -1,32 +1,45 @@
 # XMemory 1.6.1
 
-以技能维护跨客户端 Markdown 记忆。六类对象分别更新，唯一程序是只读 `status`；定时由客户端负责，Client Readers 另装、可选。
+以技能维护跨客户端 Markdown 记忆。AI 处理选定来源、核对证据并直接编辑文件；只读 `status` 提供库内结构和更新线索。定时调度由客户端负责，Client Readers 可按需要独立安装。
 
-使用 Client Readers 定位原生记忆、生成项目候选并按角色采集，核对同会话、重复与迁移关系；status 与 xmemory/v1.5 格式保持不变。升级读取器时先卸载 conversation-readers，再安装 client-readers，见安装说明。
+文件格式为 `xmemory/v1.5`，已有 1.5.x 库可以继续使用。当前发布见 [v1.6.1](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1)。
 
-## 开始使用
+## 从这里开始
 
-- [技能入口](skills/xmemory/SKILL.md)：查阅、记一条、运行一轮、制作记录、更新对象、设置、维护。
-- [安装](docs/install.md)：选择记忆根、来源、项目和时区。
-- [目录与格式](skills/xmemory/references/format.md)：`xmemory/v1.5` 模板。
-- [设计与边界](docs/design.md)：职责、已知限制与旧库关系。
+1. 按[安装与首次使用](docs/install.md)安装八个技能，选择记忆根、时区、来源和项目。
+2. 告诉代理“更新记忆”“只更新这个项目的意识”或“查一下上次的决定”。按用户指定范围选择对象。
+3. 按[使用指南](docs/usage.md)核对产物、来源和 `status` 提示。
 
 ```bash
-python3 <本插件目录>/skills/xmemory/scripts/xmemory.py --root <记忆根> status
+python3 -B "/absolute/path/to/xmemory/skills/xmemory/scripts/xmemory.py" --root "/absolute/path/to/memory" status
 ```
 
-程序需要 Python 3.9+ 标准库；不需要 git，不读客户端，不写文件。记录、总结、意识、画像、入口均由执行技能的 AI 使用普通文件工具维护。
+将脚本路径替换为本插件的实际安装位置。程序需要 Python 3.9+ 标准库；默认记忆根为 `~/.agents/memory/`，可用 `--root` 或 `XMEMORY_ROOT` 指定。`status` 只读配置和库内 Markdown；记录与对象的写入由执行技能的 AI 完成。
 
-只有用户选定的来源才会被处理。没有读取器时，AI 按 [来源参考](skills/xmemory/references/sources.md) 只读探索。
+## 技能与结果
 
-1.5.1 统一真实更新时间，分开日常增量与每 7 天的客户端整理任务，支持跨日导入关联，并明确原生会话身份与读取器引用的区别。1.5.0 库可以直接读取；可选字段与旧身份的兼容边界见设计文档。
+| 技能 | 用途 | 结果 |
+|---|---|---|
+| [xmemory](skills/xmemory/SKILL.md) | 共同规则、格式与任务入口 | 确定根目录和执行规则 |
+| [xmemory-setup](skills/xmemory-setup/SKILL.md) | 设置库、来源、项目与告知 | 配置和初始入口 |
+| [xmemory-run](skills/xmemory-run/SKILL.md) | 完成一轮选定范围的更新 | 记录、相关对象与完成范围报告 |
+| [xmemory-extract](skills/xmemory-extract/SKILL.md) | 从选定材料制作记录 | 带来源、日期、归属与覆盖信息的记录 |
+| [xmemory-consolidate](skills/xmemory-consolidate/SKILL.md) | 更新任意派生对象 | 日总结、项目总结、意识、画像或全局摘要 |
+| [xmemory-recall](skills/xmemory-recall/SKILL.md) | 查历史、接续工作与核对更正 | 带关键来源的回答，保持 XMemory 只读 |
+| [xmemory-note](skills/xmemory-note/SKILL.md) | 保存当场偏好、决定或纠正 | 笔记，必要时同步相关画像或主题 |
+| [xmemory-maintain](skills/xmemory-maintain/SKILL.md) | 修正结构、断链或按要求遗忘 | 修复文件，或排除会话并清理其支持关系 |
 
-1.5.2 补齐明确更正的即时同步与查阅路径；全局摘要会提示画像和项目入口尚未处理的新来源。文件更新时间不当作吸收水位，查阅保持只读。
+## 继续阅读
 
-1.5.3 补充 Codex/ZCode 来源适配，明确原生记忆与 XMemory 共同使用。联合查阅应用 `exclude_sessions`，已知来自被排除会话的原生副本也不参与回答或重新写回；原生库的物理删除仍由客户端处理。
+| 文档 | 内容 |
+|---|---|
+| [使用指南](docs/usage.md) | 常见请求、更新流程、状态与排障 |
+| [设计说明](docs/design.md) | 组件职责、对象关系图与联合查阅流程 |
+| [目录与格式](skills/xmemory/references/format.md) | `xmemory/v1.5` 配置、字段和来源身份 |
+| [对象工序](skills/xmemory/references/objects.md) | 六类对象独立更新的规则 |
+| [来源参考](skills/xmemory/references/sources.md) | 有读取器与手工读取时的来源定位 |
+| [status 契约](skills/xmemory/references/status.md) | 输出字段、问题类型和检查范围 |
 
-1.5.4 将 Skysight 活动直接按天写入日总结，按记录重建时保留活动，并在日常更新中独立检查覆盖缺口。项目归属要求具体依据，未定内容使用可选标记；status 增加未定归属与会话文件名身份提示。格式保持 `xmemory/v1.5`，旧库无需转换；1.5.3 的 status 可读但不理解未定归属语义。
+客户端原生记忆继续按原有机制使用和维护。XMemory 的来源开关控制导入范围；联合查阅会应用本库的会话排除配置。库内检查、程序测试和客户端行为的验证范围见[仓库验证报告](https://github.com/BlueSkyXN/XMemory/blob/main/docs/validation.md)。
 
-库内状态检查与行为评测的范围见仓库验证记录。当前源码为 **1.6.1**，发布状态见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)。
-
-许可证：GNU GPL v3。
+许可证：[GNU GPL v3](LICENSE)。
