@@ -1,7 +1,8 @@
-使用 XMemory 技能，在 `{{memory_root}}` 运行一轮记忆更新。
+使用 `xmemory-run` 在 `{{memory_root}}` 执行一轮记忆更新。
 
-本次范围：{{sources_projects_dates_and_objects}}。工作量限制：{{work_limit_or_full_requested_scope}}。
+模式：{{incremental_or_backfill_or_library_only}}。
+范围：{{sources_projects_dates_and_objects}}。
+优先项目：{{priority_projects_or_none}}。
+工作量限制：{{work_limit_or_full_requested_scope}}。
 
-读取配置并运行只读 status，按选定来源制作需要的记录，然后选择本轮应更新的对象。本轮采集包含已选定并启用的 Skysight 时，同时对照日总结的活动覆盖检查未整理窗口，即使没有新记录或 status 提示也按 [活动摘要工序](../references/sources-codex.md#skysight-活动摘要) 更新对应日期，优先处理即将清除的来源。项目总结进行增量更新，检查相关主题；完整整理另由客户端的每 7 天任务触发，不在每次更新时遍历全部历史。各对象按自己的工序执行，不要求固定顺序；可以只完成部分对象。未完成的派生对象暂不覆盖，正文一旦保存就用真实 updated；记录读不全时用 coverage: partial 保留缺口。
-
-完成后再次运行 status 并读回修改文件，汇报实际读取范围、记录数量、修改的对象、前后检查结果和未完成范围。外部来源未检查或读取有缺口时明确说明。不要新增调度、锁、运行进度或使用统计。
+先完整读取 `xmemory-run` 技能，按其清点、分批、写入并汇报；技能不可用时停止并报告。选定对象全部完成后报告完成；选定对象仍有缺口时报告具体剩余范围。

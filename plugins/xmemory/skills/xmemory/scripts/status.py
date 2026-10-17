@@ -23,14 +23,19 @@ REFERENCE = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*(<[^>\n]+>|\S+)')
 SECRET = re.compile(r'(?i)(?:\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|authorization)'
                     r'\b["\x27]?\s*[:=]\s*["\x27]?[^\s"\x27{},]{8,}|'
                     r'\bBearer\s+[A-Za-z0-9._~+/-]{12,}|\bsk-[A-Za-z0-9_-]{16,})')
+TIME = re.compile(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2})(?::(\d{2})(?:[.,](\d+))?)?([Zz]|[+-]\d{2}(?::?\d{2})?)")
 
 
 def timestamp(value):
-    if not isinstance(value, str) or not value:
+    """带时区的 ISO 时间。按读取器的写法规整后再解析，Python 3.9 与新版本结果一致。"""
+    match = TIME.fullmatch(value) if isinstance(value, str) else None
+    if not match:
         return None
+    base, seconds, fraction, zone = match.groups()
+    zone = "+00:00" if zone in {"Z", "z"} else zone[:3] + ":" + (zone[3:].lstrip(":") or "00")
+    text = base + (":" + seconds if seconds else "") + ("." + (fraction + "00000")[:6] if fraction else "") + zone
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo is not None else None
+        return datetime.fromisoformat(text)
     except ValueError:
         return None
 
@@ -111,15 +116,12 @@ def safe_target(root, source, target):
     if not decoded:
         return None
     candidate = Path(os.path.abspath(str((root / source).parent / decoded)))
-    try:
-        relative = candidate.relative_to(root)
-    except ValueError:
-        return None
+    relative = candidate.relative_to(root)
     current = root
     for part in relative.parts:
         current /= part
         if current.is_symlink():
-            return None
+            raise ValueError("relative link crosses a symlink")
     return candidate
 
 
@@ -155,7 +157,8 @@ def report(root, now=None):
     now = now or datetime.now(timezone.utc)
     issues, docs, targets = [], {}, {}
     output = {"schema": SCHEMA, "ok": True, "root": str(root), "timezone": None,
-              "now": now.isoformat(), "objects": [], "source_hints": [], "issues": issues, "counts": {}}
+              "now": now.isoformat(), "inventory": None, "counts": {}, "issues": issues,
+              "source_hints": [], "objects": []}
 
     def issue(code, path, line=None, field=None):
         entry = {"code": code, "path": path}
@@ -261,14 +264,18 @@ def report(root, now=None):
                         issue("invalid_field", rel, field="projects")
                 if "project_status" in fm and (fm["project_status"] != "unresolved" or fm["projects"]):
                     issue("invalid_field", rel, field="project_status")
-                if timestamp(fm.get("source_updated")) is None:
+                source_time = timestamp(fm.get("source_updated"))
+                if fm.get("source_updated") != "" and source_time is None:
                     issue("invalid_time", rel, field="source_updated")
-                elif timestamp(fm["source_updated"]) > now:
+                elif source_time and source_time > now:
                     issue("future_time", rel, field="source_updated")
             if kind == "daily":
                 if not valid_day(fm.get("day")) or Path(rel).stem != fm.get("day"):
                     issue("invalid_field", rel, field="day")
             bad = len(issues) != start
+            # 空值是格式允许的未知来源时间，保留记录级提示，不污染下游元数据。
+            if kind == "record" and fm.get("source_updated") == "":
+                issue("unknown_source_time", rel, field="source_updated")
             if kind == "record" and any(not canonical_identity(ref) for ref in fm.get("session_refs", [])):
                 issue("identity_review", rel, field="session_refs")
             if kind == "record" and fm.get("project_status") == "unresolved":
@@ -300,7 +307,11 @@ def report(root, now=None):
                 if definition:
                     matches.append(definition[1])
                 for raw in matches:
-                    target = safe_target(root, rel, raw)
+                    try:
+                        target = safe_target(root, rel, raw)
+                    except ValueError:
+                        issue("unchecked_link", rel, line=number)
+                        continue
                     if target is not None:
                         links.append(target.relative_to(root).as_posix())
                         if not target.exists():
@@ -332,19 +343,28 @@ def report(root, now=None):
         targets.setdefault("USER.md", "user")
         targets.setdefault("memory_summary.md", "summary")
     incomplete_scan = any(x["code"] in {"read_error", "unsupported_format"} for x in issues)
+    scope_links = {scope: {link for path, doc in docs.items() if path.startswith(scope + "/")
+                           for link in doc["links"]} for scope in scopes}
     for rel, kind in sorted(targets.items()):
         doc = docs.get(rel)
         inputs = []
+        unlinked = []
         if kind in {"daily", "user"}:
             inputs = list(records) if kind == "user" else [
                 r for r in records if Path(rel).stem in record_days(r["fm"]) or not record_days(r["fm"])
                 or (r["fm"].get("day_basis") == "captured" and "event_days" in r["fm"])]
+            if kind == "daily" and doc:
+                unlinked = [r["path"] for r in inputs if Path(rel).stem in record_days(r["fm"])
+                            and r["path"] not in doc["links"]]
         elif kind in {"project-index", "awareness"}:
             scope = rel.rsplit("/", 1)[0]
             project = scope.split("/", 1)[1] if scope.startswith("projects/") else None
             inputs = [r for r in records if (project in r["fm"].get("projects", []) if project else
                                               not r["fm"].get("projects", []) and
                                               r["fm"].get("project_status") != "unresolved")]
+            # 范围提示只挂在已有索引上；意识与缺失对象不重复列出，缺失对象的输入见 newer_sources。
+            if kind == "project-index" and doc:
+                unlinked = [r["path"] for r in inputs if r["path"] not in scope_links.get(scope, set())]
             if kind == "project-index":
                 inputs += [d for p, d in docs.items() if p.startswith(scope + "/topics/")]
         elif kind == "summary":
@@ -355,6 +375,9 @@ def report(root, now=None):
             # 已有引用也参与复查，避免日期或项目更正后旧对象失去变化信号。
             inputs += [docs[p] for p in doc["links"] if p in docs and p != rel]
             inputs = list({d["path"]: d for d in inputs}.values())
+        # 已有文件始终检查；缺失对象只有存在直接输入时才作为候选。
+        if doc is None and not inputs:
+            continue
         newer = [d["path"] for d in inputs if d["time"] and (not doc or not doc["time"] or d["time"] > doc["time"])]
         reasons = []
         state = "current"
@@ -370,6 +393,10 @@ def report(root, now=None):
         elif newer:
             state = "review" if kind in {"user", "awareness"} else "stale"
             reasons.append("newer_sources")
+        if unlinked and kind == "daily":
+            if state == "current":
+                state = "stale"
+            reasons.append("unlinked_sources")
         if any(d["fm"].get("coverage") == "partial" for d in inputs + ([doc] if doc else [])):
             if state == "current":
                 state = "review"
@@ -381,6 +408,7 @@ def report(root, now=None):
             reasons.extend(sorted(set(own_issues)))
         output["objects"].append({"path": rel, "kind": kind, "updated": doc["time"].isoformat() if doc and doc["time"] else None,
                                   "assessment": state, "reasons": reasons, "newer_sources": sorted(set(newer)),
+                                  "unlinked_sources": sorted(set(unlinked)),
                                   "size_bytes": doc["size_bytes"] if doc else None})
     summary = next((item for item in output["objects"] if item["kind"] == "summary"), None)
     if summary is not None:
@@ -409,7 +437,60 @@ def report(root, now=None):
                                        "external_checked": False})
     output["counts"] = {"objects": dict(Counter(d["assessment"] for d in output["objects"])),
                         "issues": dict(Counter(d["code"] for d in issues))}
+    derived = [d for d in docs.values() if d["kind"] != "record"]
+    candidates = [d for d in output["objects"] if d["assessment"] == "missing"]
+    record_projects = {project for r in records for project in r["fm"].get("projects", [])}
+    directories = ("sessions", "imported", "files", "notes")
+    by_directory = Counter(Path(r["path"]).parts[1] if Path(r["path"]).parts[1] in directories
+                           else "other" for r in records)
+    by_source = Counter({name: 0 for name in cfg.get("sources", {})})
+    known_sources = set(by_source) | {"note"}
+    by_source.update(r["fm"]["source"] for r in records if r["fm"].get("source") in known_sources)
+    # 需要处理的已有内容也放进清点，汇报时与配置和文件数量一起读到。
+    assessed = {item["path"]: item["assessment"] for item in output["objects"]}
+    unlinked_by_kind = {kind: {p for item in output["objects"] if item["kind"] == kind for p in item["unlinked_sources"]}
+                        for kind in ("daily", "project-index")}
+    output["inventory"] = {
+        "scan_complete": not incomplete_scan,
+        "configuration": {"sources": len(cfg.get("sources", {})),
+                          "enabled_sources": sum(s["enabled"] for s in cfg.get("sources", {}).values()),
+                          "projects": len(cfg.get("projects", {})),
+                          "projects_with_records": len(record_projects.intersection(cfg.get("projects", {})))},
+        "existing_objects": len(docs),
+        "records": {"total": len(records),
+                    "by_directory": {name: by_directory[name] for name in (*directories, "other")},
+                    "by_source": dict(sorted(by_source.items())),
+                    "unconfigured_source": sum(r["fm"].get("source") not in known_sources for r in records),
+                    "partial": sum(r["fm"].get("coverage") == "partial" for r in records),
+                    "unresolved_project": sum(r["fm"].get("project_status") == "unresolved" for r in records),
+                    "unknown_source_time": sum(r["fm"].get("source_updated") == "" for r in records),
+                    "unknown": sum(assessed.get(r["path"]) == "unknown" for r in records),
+                    "unlinked": {"daily": len(unlinked_by_kind["daily"]),
+                                 "projects": len(unlinked_by_kind["project-index"])}},
+        "derived": {"total": len(derived),
+                    "by_kind": {kind: sum(d["kind"] == kind for d in derived) for kind in sorted(KINDS - {"record"})},
+                    "by_assessment": {state: sum(assessed.get(d["path"]) == state for d in derived)
+                                      for state in ("current", "stale", "review", "unknown")}},
+        "candidates": {"total": len(candidates),
+                       "by_kind": {kind: sum(d["kind"] == kind for d in candidates) for kind in sorted(KINDS - {"record"})}},
+    }
     return output
+
+
+def summarize(result):
+    """保留全库计数与问题，省略正常对象及记录固定的外部复查提示。"""
+    return {**result, "objects": [item for item in result["objects"]
+                                 if item["unlinked_sources"] or
+                                 (item["kind"] != "record" and item["assessment"] != "current") or
+                                 (item["kind"] == "record" and
+                                  set(item["reasons"]) - {"external_source_not_checked"})]}
+
+
+def format_summary(result):
+    """精简报告的文本形式：报告头保持缩进，对象每条一行，按行读取也能看全清点。"""
+    head = json.dumps({k: v for k, v in result.items() if k != "objects"}, ensure_ascii=False, indent=2)
+    items = ",\n".join("    " + json.dumps(item, ensure_ascii=False) for item in result["objects"])
+    return head[:-2] + ',\n  "objects": [' + ("\n" + items + "\n  " if items else "") + "]\n}"
 
 
 def main(argv=None):
@@ -418,7 +499,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     status = sub.add_parser("status", help="报告库内更新线索与结构问题")
     status.add_argument("--root", default=argparse.SUPPRESS)
+    status.add_argument("--summary", action="store_true", help="精简对象列表，保留全库清点与问题")
     args = parser.parse_args(argv)
     result = report(args.root)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(format_summary(summarize(result)) if args.summary else json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 2

@@ -6,11 +6,11 @@ XMemory 是跨客户端的 Markdown 记忆库。AI 按技能把选定的会话�
 
 | 组件 | 当前版本 | 职责 |
 |---|---|---|
-| [XMemory](plugins/xmemory/README.md) | **1.6.1** | 八个技能、对象格式与模板、只读 `status` |
+| [XMemory](plugins/xmemory/README.md) | **1.7.0** | 八个技能、对象格式与模板、只读 `status` |
 | [Client Readers](plugins/client-readers/README.md) | **0.2.1** | 五端会话、原生记忆与项目候选读取，可独立安装 |
 | 记忆文件格式 | `xmemory/v1.5` | 现有 1.5.x 库沿用原格式 |
 
-[下载 v1.6.1](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1) · [文档导航](docs/README.md) · [安装与升级](docs/release-install.md) · [使用指南](plugins/xmemory/docs/usage.md) · [版本说明](docs/v1.6/README.md)
+[下载 v1.7.0](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.7.0) · [文档导航](docs/README.md) · [安装与升级](docs/release-install.md) · [使用指南](plugins/xmemory/docs/usage.md) · [版本说明](docs/v1.7/README.md)
 
 ## 工作方式
 
@@ -27,19 +27,21 @@ flowchart LR
     H["客户端手动或定时触发"] --> A
 ```
 
-AI 负责判断与写入；程序负责读取或检查。XMemory 的唯一程序命令是 `status`，Client Readers 提供 `projects`、`sessions`、`memory`、`doctor`。定时运行由宿主客户端调度。
+AI 负责判断与写入；程序负责读取或检查。日常使用是对代理说出要做的事，由技能完成整理与写入；XMemory 自带的程序只做只读检查 `status`，Client Readers 提供 `projects`、`sessions`、`memory`、`doctor`。定时运行由宿主客户端调度。
 
 Client Readers 可读取 Codex、Claude Code、ZCode、Qoder CN 和 WorkBuddy 的已适配本机数据。也可以只安装 XMemory，按[来源参考](plugins/xmemory/skills/xmemory/references/sources.md)读取选定文件。
 
 ## 开始使用
 
-1. 从 [Releases](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1) 下载完整市场包或独立技能包，按[安装说明](docs/release-install.md)校验并安装。三个宿主市场统一使用 `xmemory-marketplace`；旧读取器升级需先移除 `conversation-readers`。
+1. 从 [Releases](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.7.0) 下载完整市场包或独立技能包，按[安装说明](docs/release-install.md)校验并安装。三个宿主市场统一使用 `xmemory-marketplace`；旧读取器升级需先移除 `conversation-readers`。
 2. 告诉代理记忆根、时区、来源和项目。例如：**“设置 XMemory，先列出项目候选，我选择后再启用来源。”** 默认根为 `~/.agents/memory/`，来源默认关闭。
 3. 按当前需要调用技能，完成后查看实际产物与检查结果。
 
 | 想做的事 | 可以这样说 |
 |---|---|
 | 更新选定范围 | “更新记忆，只处理这个项目最近两天的会话。” |
+| 补全遗漏 | “补全这个项目的记忆，先做一批并报告各来源的剩余。” |
+| 查看现状 | “现在记忆什么情况，初始化好了没？” |
 | 接续工作 | “查一下这个项目上次的决定和未完成项，核对后来的更正。” |
 | 保存当场决定 | “记住：这个项目的发布前检查必须包含回滚验证。” |
 | 只更新一个对象 | “只根据现有记录更新这个项目的意识。” |
@@ -49,8 +51,10 @@ Client Readers 可读取 Codex、Claude Code、ZCode、Qoder CN 和 WorkBuddy �
 在源码仓库根目录，可以直接运行只读检查：
 
 ```bash
-python3 -B plugins/xmemory/skills/xmemory/scripts/xmemory.py --root "/absolute/path/to/memory" status
+python3 -B plugins/xmemory/skills/xmemory/scripts/xmemory.py --root "/absolute/path/to/memory" status --summary
 ```
+
+`--summary` 先给出配置、已有内容、候选与待处理数量，只列需要检查的对象；去掉它查看完整对象列表。
 
 插件安装后，使用实际安装目录中的 `skills/xmemory/scripts/xmemory.py`。根目录优先级为 `--root` → `XMEMORY_ROOT` → `~/.agents/memory/`。缺库或配置无效时退出 2，成功生成报告时退出 0；报告中的待处理项见[状态说明](plugins/xmemory/docs/usage.md#读懂-status)。
 

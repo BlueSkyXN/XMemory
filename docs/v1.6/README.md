@@ -1,6 +1,6 @@
 # XMemory 1.6 版本线
 
-当前版本为 XMemory **1.6.1** 与 Client Readers **0.2.1**，正式版于 **2026-10-16** 发布。记忆格式沿用 `xmemory/v1.5`，已有 1.5.x 库无需转换。
+1.6 版本线的最后版本为 XMemory **1.6.1** 与 Client Readers **0.2.1**，于 **2026-10-16** 发布；当前版本见 [1.7 版本线](../v1.7/README.md)。记忆格式沿用 `xmemory/v1.5`，已有 1.5.x 库无需转换。
 
 [下载 v1.6.1](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1) · [安装与升级](../release-install.md) · [使用指南](../../plugins/xmemory/docs/usage.md) · [验证报告](../validation.md)
 
