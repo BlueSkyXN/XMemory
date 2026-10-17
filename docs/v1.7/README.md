@@ -1,8 +1,8 @@
 # XMemory 1.7 版本线
 
-当前版本为 XMemory **1.7.0**，可选的 Client Readers 仍为 **0.2.1**。记忆格式沿用 `xmemory/v1.5`，已有库无需转换。
+本版为 XMemory **1.7.0**，可选的 Client Readers 仍为 **0.2.1**。记忆格式沿用 `xmemory/v1.5`，已有库无需转换。正式发布状态与附件见下方发布列表。
 
-[下载 v1.7.0](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.7.0) · [安装与升级](../release-install.md) · [使用指南](../../plugins/xmemory/docs/usage.md) · [验证报告](../validation.md)
+[正式发布](https://github.com/BlueSkyXN/XMemory/releases) · [安装与升级](../release-install.md) · [使用指南](../../plugins/xmemory/docs/usage.md) · [验证报告](../validation.md)
 
 ## 1.7.0：清点、意图分流与分批补全
 
@@ -12,6 +12,7 @@
 | 候选只列有直接输入的对象 | 没有任何记录的登记项目不再产生意识和索引候选 |
 | 未链接记录 | 已有日文件与项目索引列出从未被引用的记录：日文件因此判为 stale，项目层只作提示。局部保存推进索引时间后，旧记录仍会出现 |
 | `status --summary` | 只列需要检查的对象，每条一行；去掉参数查看完整列表 |
+| 相对来源链接 | 越出记忆根或经过符号链接时提示 `unchecked_link`，对象保留待复查；不读取库外目标 |
 | 来源时间 | 空 `source_updated` 只在该记录上提示为未知时间，不再让下游对象 unknown；时间先按读取器写法规整再解析，Python 3.9 与新版本对 `Z`、`+0800`、各种位数的小数秒等写法结果一致 |
 | 意图分流 | 先分清用户在问用法、看现状还是要执行；“补全，可以吗”这类范围明确的请求直接做首批 |
 | `xmemory-run` 六步 | 定范围、清点、分批、写记录、更新对象、收束；外部材料分为未收录、需续读或更新、已对应、不可读四类，汇报按来源列出剩余 |
@@ -27,5 +28,7 @@
 | 按 git 市场固定 tag 安装的客户端 | 以新 tag 重新添加市场，再重装插件；只更新市场不会切换 tag |
 | `xmemory/v1.5` 记忆库 | 原地沿用，不批量重写已有日总结与记录；实际更新到某个文件时按新模板调整 |
 | 读取 `status` 输出的脚本 | 原有字段保留，新增 `inventory`、`unlinked_sources`、`unknown_source_time`；没有直接输入的候选不再出现 |
+
+部分同步的保存条件由技能执行，程序没有逐来源的吸收水位；已出现模型只保存选中条目、遮住其余更正提示的情况。现阶段更新共享主题时仍需核对剩余来源，不能仅凭主题为 current 判定全部更正已处理。模型汇报也需对照实际 `assessment`，记录的 review 与派生对象的 current 分开理解。
 
 行为评测与程序检查结果见[验证报告](../validation.md)，场景定义见 [1.7.0 评测](../../evals/v1.7.0/README.md)。1.6.x 的变化见 [1.6 版本线](../v1.6/README.md)。

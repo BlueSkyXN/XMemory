@@ -116,15 +116,12 @@ def safe_target(root, source, target):
     if not decoded:
         return None
     candidate = Path(os.path.abspath(str((root / source).parent / decoded)))
-    try:
-        relative = candidate.relative_to(root)
-    except ValueError:
-        return None
+    relative = candidate.relative_to(root)
     current = root
     for part in relative.parts:
         current /= part
         if current.is_symlink():
-            return None
+            raise ValueError("relative link crosses a symlink")
     return candidate
 
 
@@ -310,7 +307,11 @@ def report(root, now=None):
                 if definition:
                     matches.append(definition[1])
                 for raw in matches:
-                    target = safe_target(root, rel, raw)
+                    try:
+                        target = safe_target(root, rel, raw)
+                    except ValueError:
+                        issue("unchecked_link", rel, line=number)
+                        continue
                     if target is not None:
                         links.append(target.relative_to(root).as_posix())
                         if not target.exists():

@@ -4,7 +4,7 @@
 
 ## 范围与计数
 
-程序只读指定根内的配置与 Markdown，不检查外部客户端、数据库、Skysight 原件或链接可达性，不跟随符号链接越出记忆根。不创建根、缓存、锁、运行状态或修改文件。`.xmemory/backups/` 不参与有效内容检查，遗忘技能另行处理备份。
+程序只读指定根内的配置与 Markdown，检查库内相对链接；不检查外部客户端、数据库、Skysight 原件或外部链接可达性。相对链接越出根或经过符号链接时报告 `unchecked_link`，不访问目标。不创建根、缓存、锁、运行状态或修改文件。`.xmemory/backups/` 不参与有效内容检查，遗忘技能另行处理备份。
 
 数量取 `inventory`，按下面单位汇报：
 
@@ -48,7 +48,7 @@ JSON 不保存到记忆库：
 | 项目 / personal 索引的 `unlinked_sources` | 该范围记录未被任何范围内文件引用；只列在已有索引上，作提示，不改变 assessment | 复核是否应纳入项目内容；确认不提炼的记录列入索引“参考记录”并写原因，不为消除提示强行提炼 |
 | 主题 stale、索引 current | 主题引用的记录仍有更新，索引保存没有完成主题整理 | 继续处理该主题；检查范围包含所有主题，不能只看索引 |
 | `candidate_target` / missing | 对象缺失但存在直接输入，输入见 `newer_sources`；不另列 `unlinked_sources` | 有实际内容才创建，登记项目本身不生成空候选 |
-| `external_source_not_checked` | 记录的固定提示，库外来源尚未检查 | 需要采集时按读取工序对照来源版本和覆盖，不把每条提示当作失败 |
+| `external_source_not_checked` | 记录固定判为 review，因为 status 不检查库外来源 | 采集时另核对来源版本与覆盖；汇报保留该 review，与派生对象 current 分开，不把每条提示当作失败 |
 | `unknown_source_time` | 记录明确写了允许的空 `source_updated`，无法按来源时间比较 | 回查来源；只提示该记录，不使下游 unknown |
 | `partial_source` | 记录存在声明过的读取缺口 | 续读或明确保留缺口，不把保存时间当作覆盖完成 |
 | `incomplete_metadata_or_scan` / unknown | 对象、输入元数据或扫描有阻断问题 | 先查 issues；空的来源列表不能用于断言已完成 |
@@ -64,6 +64,7 @@ Skysight 直接写日总结，不生成记录。status 不检查活动块、末�
 ## 结构问题
 
 - `broken_link`：库内 Markdown 目标不存在；核对移动、命名或删除原因后修正。
+- `unchecked_link`：相对链接越出记忆根或经过符号链接，目标未检查；从当前文件重算库内来源路径，不把它当作有效引用。
 - `missing_field` / `invalid_field`：必需字段缺失或类型、身份、日期结构无法解释。`source_location` 始终必填。
 - `invalid_time` / `future_time`：非空时间格式错误、无时区、缺少必需时间或晚于当前时间；继续影响下游判断。接受 `YYYY-MM-DDTHH:MM[:SS[.小数]]` 加 `Z`、`±HH:MM`、`±HHMM` 或 `±HH`，日期与时间之间也可用空格。仅 `source_updated: ""` 作为未知来源时间处理。
 - `identity_review`：会话身份需核实；会话记录文件名末 8 位须对应至少一个已知原生 ID，其他记录目录不检查文件名。旧引用精确匹配，不自动迁移。

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "plugins/xmemory/skills/xmemory/scripts"
@@ -490,6 +491,56 @@ class StatusTests(unittest.TestCase):
         broken = [x for x in self.result()["issues"] if x["code"] == "broken_link"]
         self.assertEqual(len(broken), 2)
         self.assertTrue(all(x["path"] == "USER.md" and "line" in x for x in broken))
+        self.assertEqual([x for x in self.result()["issues"] if x["code"] == "unchecked_link"],
+                         [{"code": "unchecked_link", "path": "USER.md", "line": 10}])
+
+    def test_escaping_relative_links_warn_without_accessing_targets(self):
+        awareness = "projects/demo/AWARENESS.md"
+        outside = self.base / "records/private.md"
+        outside.parent.mkdir()
+        outside.write_text("outside content must not be read", encoding="utf-8")
+        targets = ["../../../records/private.md", "../../../records/missing.md",
+                   "%2e%2e/%2e%2e/%2e%2e/records/private.md?view=1#detail"]
+        body = "\n".join("[source](" + target + ")" for target in targets)
+        body += "\n[source][ref]\n[ref]: ../../../records/private.md\n"
+        body += "```md\n[example](../../../records/private.md)\n```\n"
+        self.write(awareness, "awareness", body=body)
+        before = snapshot(self.base)
+        real_stat = Path.stat
+        protected = {outside.resolve(), (outside.parent / "missing.md").resolve()}
+
+        def guarded_stat(path, *args, **kwargs):
+            if path in protected:
+                self.fail("status accessed an external link target")
+            return real_stat(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", guarded_stat):
+            result = self.result()
+        issues = [x for x in result["issues"] if x["code"] == "unchecked_link"]
+        self.assertEqual([x["line"] for x in issues], [6, 7, 8, 10])
+        self.assertTrue(all(x["path"] == awareness for x in issues))
+        self.assertNotIn("private.md", json.dumps(issues))
+        self.assertEqual(self.objects(result)[awareness]["assessment"], "review")
+        self.assertIn(awareness, self.objects(summarize(result)))
+        self.assertEqual(snapshot(self.base), before)
+        self.record("records/imported/claude/source.md")
+        self.write(awareness, "awareness", body="[source](../../records/imported/claude/source.md)")
+        self.assertNotIn("unchecked_link", self.codes())
+
+    def test_relative_symlink_links_warn_but_explicit_external_links_are_skipped(self):
+        outside = self.base / "outside.md"
+        outside.write_text("outside content", encoding="utf-8")
+        (self.root / ".outside.md").symlink_to(outside)
+        (self.root / ".linked").symlink_to(self.base, target_is_directory=True)
+        self.write("USER.md", "user", body="[file](.outside.md)\n[dir](.linked/outside.md)\n"
+                   "[web](https://example.invalid/)\n[absolute](/unread-external-source)\n"
+                   "[home](~/unread-external-source)\n[anchor](#heading)\n")
+        result = self.result()
+        self.assertEqual([x for x in result["issues"] if x["code"] == "unchecked_link"],
+                         [{"code": "unchecked_link", "path": "USER.md", "line": 6},
+                          {"code": "unchecked_link", "path": "USER.md", "line": 7}])
+        self.assertNotIn("broken_link", {x["code"] for x in result["issues"]})
+        self.assertEqual(self.objects(result)["USER.md"]["assessment"], "review")
 
     def test_secrets_are_located_without_echoing_values(self):
         secret = "fixture-secret-value-12345"

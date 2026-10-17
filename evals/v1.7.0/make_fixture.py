@@ -216,7 +216,10 @@ def make_fixture(root, repo, day='2026-10-15'):
             if case == 'e1_cold':
                 # 工作目录是待测源码副本，记忆库在默认位置；评测判据、验证记录与私有材料不进副本。
                 shutil.copytree(repo, job / 'repo', ignore=shutil.ignore_patterns(
-                    '.git', 'local', 'evals', 'dist', 'validation.md', '__pycache__', '*.pyc', '.DS_Store'))
+                    '.git', 'local', 'evals', 'dist', 'validation.md', 'test_eval_fixture.py',
+                    '__pycache__', '*.pyc', '.DS_Store'))
+                for relative in ('docs/validation.md', 'plugins/client-readers/docs/validation.md'):
+                    write(job / 'repo' / relative, '# 验证记录\n\n本实验副本不包含历史验证记录。\n')
                 (job / 'home/.agents').mkdir()
                 (job / 'memory').rename(job / 'home/.agents/memory')
                 manifest['cases'][case].update(workdir='repo', memory_root='home/.agents/memory')
