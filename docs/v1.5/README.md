@@ -8,8 +8,8 @@
 
 技能稿已移入正式插件，不在此处维护重复副本：
 
-- [技能入口](../../plugins/xmemory/skills/xmemory/SKILL.md)
-- [对象工序](../../plugins/xmemory/skills/xmemory/references/objects.md)
+- [技能入口](https://github.com/BlueSkyXN/XMemory/blob/72d54df52aab171ef894ba318e9beee52b568f73/plugins/xmemory/skills/xmemory/SKILL.md)
+- [对象工序](https://github.com/BlueSkyXN/XMemory/blob/72d54df52aab171ef894ba318e9beee52b568f73/plugins/xmemory/skills/xmemory/references/objects.md)
 - [目录与格式](../../plugins/xmemory/skills/xmemory/references/format.md)
 - [来源参考](../../plugins/xmemory/skills/xmemory/references/sources.md)
 - [status](../../plugins/xmemory/skills/xmemory/references/status.md)

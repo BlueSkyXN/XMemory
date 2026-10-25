@@ -427,5 +427,5 @@ class RuntimeTests(unittest.TestCase):
                 self.assertIn(expected, getattr(result, channel).decode('utf-8'))
                 self.assertNotIn(b'UnicodeEncodeError', result.stderr)
                 if args[0] == 'status':
-                    self.assertFalse(json.loads(result.stdout.decode('utf-8'))['ok'])
+                    self.assertIn('记忆根不存在', result.stdout.decode('utf-8'))
         self.assertFalse(missing.exists())

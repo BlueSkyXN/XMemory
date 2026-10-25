@@ -1,13 +1,13 @@
 # 开发与验证指南
 
-本指南面向修改 XMemory 与 Client Readers 的维护者。安装后的运行时支持 Python 3.9+；仓库检查和构建工具需要 Python 3.11+。下面命令均从仓库根运行。
+本指南面向修改 XMemory 与 Client Readers 的维护者。安装后的运行时支持 Python 3.9+；仓库检查和构建工具需要 Python 3.11+。下面命令均从仓库根运行。基本技能读写不依赖 Python；三个 Skill 与 xmemory/ 共享资源目录整体分发。
 
 ## 源码与分发目录
 
 | 位置 | 维护内容 |
 |---|---|
-| `plugins/xmemory/skills/` | 八个正式技能、模板、参考与只读 status |
-| `plugins/xmemory/skills/xmemory/scripts/` | `xmemory.py` 入口、`status.py` 与配置解析器 |
+| `plugins/xmemory/skills/` | 三个正式技能、模板、参考与只读 status |
+| `plugins/xmemory/skills/xmemory/scripts/` | `xmemory.py` 入口与 `status.py` 只读盘点 |
 | `tools/client_readers/` | 五端读取器公共维护源及两份输出契约 |
 | `plugins/client-readers/skills/read-*/scripts/` | 同步生成的包装脚本与运行时副本 |
 | `plugins/client-readers/skills/read-*/references/` | 每端布局说明，以及同步生成的公共输出契约 |
@@ -23,7 +23,7 @@
 flowchart TD
     R["tools/client_readers 维护源与契约"] --> S["sync_client_readers.py"]
     S --> C["五个自包含读取技能"]
-    X["XMemory 八个技能与 status"] --> V["包检查、测试与链接检查"]
+    X["XMemory 三个技能与可选 status"] --> V["包检查、测试与链接检查"]
     C --> V
     D["用户文档与三端清单"] --> V
     V --> B["build_release.py"]
@@ -63,7 +63,7 @@ python3 -B -m unittest discover -s tests -v
 
 | 改动 | 测试模块 |
 |---|---|
-| status、库内字段与链接判断 | `tests.test_xmemory_status` |
+| status、Markdown 盘点与库内链接判断 | `tests.test_xmemory_status` |
 | 会话读取与引用 | `tests.test_client_readers` |
 | 原生记忆与项目候选 | `tests.test_client_memory` |
 | 解释器、zstd、自检和入口兼容 | `tests.test_client_runtime` |
@@ -81,8 +81,8 @@ python3 -B tools/build_release.py --output dist/release-check
 
 | 当前产物 | 内容与文档位置 |
 |---|---|
-| `XMemory-1.7.0.zip` | 三端市场与两个插件；`INSTALL.md`，以及各插件 README、docs、技能参考 |
-| `XMemory-1.7.0-skills.zip` | XMemory `skills/`、`INSTALL.md`、许可证 |
+| `XMemory-1.8.0.zip` | 三端市场与两个插件；`INSTALL.md`，以及各插件 README、docs、技能参考 |
+| `XMemory-1.8.0-skills.zip` | XMemory `skills/`、`INSTALL.md`、许可证 |
 | `ClientReaders-0.2.1-skills.zip` | 读取器 `skills/`、README、`docs/validation.md`、许可证 |
 
 构建还生成各包外部 `.zip.sha256` 与内部 `SHA256SUMS`。归档文件名来自插件清单版本；写入 ZIP 使用固定时间与权限，便于比较相同载荷的构建结果。构建拒绝覆盖已有归档。
@@ -116,7 +116,7 @@ python3 -B tools/build_client_readers.py --output dist/readers-check
 
 `tests.ci_zstandard_backend` 不由常规 `discover` 收集，需要有该后端的环境单独运行。工作流定义只说明检查内容，具体提交的完成结果查 [Actions](https://github.com/BlueSkyXN/XMemory/actions)及[验证记录](validation.md)。
 
-行为评测进一步检查模型是否按来源提炼、识别更正、保留未定归属并正确计证。场景导航见[评测目录索引](README.md#开发版本与证据)。例如，生成 1.7.0 的虚构输入，包括冷启动与规模变体：
+行为评测进一步检查模型是否按来源提炼、识别更正、保留未定归属并正确计证。场景导航见[评测目录索引](README.md)。例如，生成 1.7.0 的虚构输入，包括冷启动与规模变体：
 
 ```bash
 python3 -B evals/v1.7.0/make_fixture.py /absolute/path/to/new-evaluation --repo /absolute/path/to/source

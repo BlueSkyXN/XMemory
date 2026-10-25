@@ -52,7 +52,7 @@ jobs:
         run: python -B -m unittest tests.test_xmemory_status tests.test_client_readers tests.test_client_memory tests.test_client_runtime -v
 
   runtime-windows:
-    name: Client readers on Windows
+    name: Memory checks and readers on Windows
     runs-on: windows-latest
     timeout-minutes: 10
     env:
@@ -65,7 +65,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Run reader and memory tests
-        run: python -B -m unittest tests.test_client_readers tests.test_client_memory tests.test_client_runtime -v
+        run: python -B -m unittest tests.test_xmemory_status tests.test_client_readers tests.test_client_memory tests.test_client_runtime -v
 
   runtime-zstandard:
     name: Optional zstandard backend

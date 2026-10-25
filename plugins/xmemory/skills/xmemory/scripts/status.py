@@ -1,506 +1,227 @@
-"""从记忆文件计算检查报告。无写入、客户端适配器或运行状态。"""
+"""只读盘点 Markdown 记忆；不读取原生客户端或维护处理状态。"""
 from __future__ import annotations
 
 import argparse
-from collections import Counter
-from datetime import date, datetime, timezone
-import json
 import os
 from pathlib import Path
 import re
+import string
 from urllib.parse import unquote
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from toml_subset import TomlSubset
-
-FORMAT = "xmemory/v1.5"
-SCHEMA = "xmemory/status-v1.5"
-KINDS = {"record", "daily", "project-index", "topic", "awareness", "user", "summary"}
-RECORD_FIELDS = {"source", "client", "source_ref", "source_location", "source_updated", "evidence",
-                 "projects", "day", "day_basis", "session_refs", "coverage"}
-LINK = re.compile(r'\[[^\]\n]*\]\((<[^>\n]+>|[^\s)]+)(?:\s+"[^"\n]*")?\)')
-REFERENCE = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*(<[^>\n]+>|\S+)')
-SECRET = re.compile(r'(?i)(?:\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|authorization)'
-                    r'\b["\x27]?\s*[:=]\s*["\x27]?[^\s"\x27{},]{8,}|'
-                    r'\bBearer\s+[A-Za-z0-9._~+/-]{12,}|\bsk-[A-Za-z0-9_-]{16,})')
-TIME = re.compile(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2})(?::(\d{2})(?:[.,](\d+))?)?([Zz]|[+-]\d{2}(?::?\d{2})?)")
+LABEL = re.compile(r'(?<!\\)\[((?:\\.|[^\]\\\n])*)\]')
+REFERENCE = re.compile(r'^ {0,3}\[((?:\\.|[^\]\\\n])+)\]:[ \t]*(.*)$', re.M)
+CODE_SPAN = re.compile(r'(?<![\\`])(`+)(?!`)(.*?)(?<!`)\1(?!`)', re.S)
+ESCAPE = re.compile(r'\\([' + re.escape(string.punctuation) + r'])')
+TITLE = r'''(?:"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|\((?:\\.|[^)\\\n])*\))'''
+INLINE_END = re.compile(r'\s*(?:' + TITLE + r'\s*)?\)')
 
 
-def timestamp(value):
-    """带时区的 ISO 时间。按读取器的写法规整后再解析，Python 3.9 与新版本结果一致。"""
-    match = TIME.fullmatch(value) if isinstance(value, str) else None
-    if not match:
-        return None
-    base, seconds, fraction, zone = match.groups()
-    zone = "+00:00" if zone in {"Z", "z"} else zone[:3] + ":" + (zone[3:].lstrip(":") or "00")
-    text = base + (":" + seconds if seconds else "") + ("." + (fraction + "00000")[:6] if fraction else "") + zone
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None
-
-
-def valid_day(value):
-    try:
-        return isinstance(value, str) and date.fromisoformat(value).isoformat() == value
-    except ValueError:
-        return False
-
-
-def record_days(metadata):
-    """兼容 1.5.0 单日记录；新字段只列材料实际支持的日期，不展开猜测的范围。"""
-    if "event_days" in metadata:
-        values = metadata["event_days"]
-        if not isinstance(values, list) or not values or not all(valid_day(x) for x in values):
-            return []
-        return sorted(set(values))
-    return [metadata["day"]] if valid_day(metadata.get("day")) else []
-
-
-def canonical_identity(value):
-    if not isinstance(value, str) or re.search(r"\s", value):
-        return False
-    client, sep, native = value.partition(":")
-    return bool(sep and re.fullmatch(r"[a-z][a-z0-9_-]*", client) and native
-                and not re.match(r"(?:jsonl|sqlite|desktop|subagent):", native))
-
-
-def frontmatter(text):
-    lines = text.splitlines()
-    if not lines or lines[0] != "---":
-        raise ValueError("missing frontmatter")
-    data = {}
-    for line in lines[1:]:
-        if line == "---":
-            return data
-        if not line.strip() or line.lstrip().startswith("#"):
+def markdown_body(text):
+    """检查导航时跳过围栏代码及成对反引号包围的行内代码。"""
+    lines = []
+    fence = None
+    for line in text.splitlines():
+        match = re.match(r'^\s{0,3}(`{3,}|~{3,})', line)
+        if match:
+            token = match[1]
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence):
+                fence = None
             continue
-        key, sep, value = line.partition(":")
-        if not sep or not re.fullmatch(r"[a-z_]+", key) or key in data:
-            raise ValueError("invalid field")
-        parsed = json.loads(value.strip())
-        if not isinstance(parsed, (str, list)) or isinstance(parsed, list) and not all(
-                isinstance(x, str) for x in parsed):
-            raise ValueError("unsupported field value")
-        data[key] = parsed
-    raise ValueError("unclosed frontmatter")
+        if fence is None:
+            lines.append(line)
+    return CODE_SPAN.sub(lambda match: re.sub(r'[^\n]', ' ', match[0]), '\n'.join(lines))
 
 
-def path_kind(relative):
-    parts = Path(relative).parts
-    if relative == "USER.md":
-        return "user"
-    if relative == "memory_summary.md":
-        return "summary"
-    if parts[0] == "records":
-        return "record"
-    if parts[0] == "daily":
-        return "daily"
-    scope = (parts[0] == "projects" and len(parts) >= 3) or parts[0] == "personal"
-    if scope:
-        if parts[-1] == "AWARENESS.md":
-            return "awareness"
-        if parts[-1] == "MEMORY.md":
-            return "project-index"
-        if "topics" in parts:
-            return "topic"
-    return None
+def link_destination(text, start):
+    """读取目标部分，保留转义并配对路径中的括号。"""
+    index = start
+    angled = text[index:index + 1] == '<'
+    if angled:
+        index += 1
+        start = index
+    depth = 0
+    while index < len(text):
+        char = text[index]
+        if char == '\\' and index + 1 < len(text):
+            index += 2
+            continue
+        if angled:
+            if char == '>':
+                return text[start:index], index + 1
+            if char in '<\n\r':
+                return None, index
+        elif char.isspace() or char == ')' and depth == 0:
+            break
+        elif char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+        index += 1
+    if angled or depth:
+        return None, index
+    return text[start:index], index
 
 
-def safe_target(root, source, target):
-    """仅检查根内链接，拒绝通过任何 symlink 访问外部目标。"""
-    raw = target.strip("<>")
-    if raw.startswith("#") or re.match(r"[a-z][a-z0-9+.-]*:", raw, re.I) or raw.startswith(("/", "~")):
+def reference_key(label):
+    return ' '.join(ESCAPE.sub(r'\1', label).split()).casefold()
+
+
+def markdown_links(text):
+    """提取行内链接和已定义的完整、折叠、简写引用式链接。"""
+    definitions = {}
+
+    def definition(match):
+        raw, end = link_destination(match[2], 0)
+        if raw is None or not re.fullmatch(r'[ \t]*(?:' + TITLE + r'[ \t]*)?', match[2][end:]):
+            return match[0]
+        definitions.setdefault(reference_key(match[1]), raw)
+        return ' ' * len(match[0])
+
+    body = REFERENCE.sub(definition, markdown_body(text))
+    position = 0
+    while True:
+        label = LABEL.search(body, position)
+        if label is None:
+            return
+        position = label.end()
+        if body[position:position + 1] == '(':
+            start = position + 1
+            while start < len(body) and body[start].isspace():
+                start += 1
+            raw, end = link_destination(body, start)
+            closing = INLINE_END.match(body, end) if raw is not None else None
+            if closing:
+                yield ESCAPE.sub(r'\1', raw)
+                position = closing.end()
+                continue
+        reference = LABEL.match(body, position)
+        key = (reference[1] or label[1]) if reference else label[1]
+        if reference:
+            position = reference.end()
+        raw = definitions.get(reference_key(key))
+        if raw is not None:
+            yield ESCAPE.sub(r'\1', raw)
+
+
+def is_inside(path, root):
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def local_target(root, source, raw):
+    """External provenance links are not probed, including escaped relative paths."""
+    raw = raw.strip('<>')
+    if re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', raw):
         return None
-    decoded = unquote(raw.split("#", 1)[0].split("?", 1)[0])
-    if not decoded:
+    decoded = unquote(re.split(r'[?#]', raw, maxsplit=1)[0])
+    if not decoded or decoded.startswith(('/', '~', '\\')) or re.match(r'^[A-Za-z]:', decoded):
         return None
-    candidate = Path(os.path.abspath(str((root / source).parent / decoded)))
-    relative = candidate.relative_to(root)
+    target = Path(os.path.abspath(str(source.parent / decoded)))
+    return target if is_inside(target, root) else None
+
+
+def has_symlink(root, path):
     current = root
-    for part in relative.parts:
-        current /= part
+    for part in path.relative_to(root).parts:
+        current = current / part
         if current.is_symlink():
-            raise ValueError("relative link crosses a symlink")
-    return candidate
+            return True
+    return False
 
 
-def check_config(cfg):
-    if cfg.get("format") != FORMAT or not isinstance(cfg.get("timezone"), str):
-        raise ValueError("format/timezone")
-    excluded = cfg.get("exclude_sessions", [])
-    if not isinstance(excluded, list) or not all(isinstance(x, str) for x in excluded):
-        raise ValueError("exclude_sessions")
-    for section in ("sources", "projects", "limits"):
-        if not isinstance(cfg.get(section, {}), dict):
-            raise ValueError("section")
-    for source in cfg.get("sources", {}).values():
-        if not isinstance(source, dict) or type(source.get("enabled")) is not bool:
-            raise ValueError("source")
-        if source.get("kind") not in {"sessions", "memory", "files"} or not isinstance(source.get("client"), str):
-            raise ValueError("source")
-        if not isinstance(source.get("paths"), list) or not all(isinstance(p, str) for p in source["paths"]):
-            raise ValueError("paths")
-    for name, project in cfg.get("projects", {}).items():
-        if not name or name in {".", ".."} or "/" in name or "\\" in name:
-            raise ValueError("project name")
-        if not isinstance(project, dict) or not isinstance(project.get("roots"), list) or not all(
-                isinstance(p, str) for p in project["roots"]):
-            raise ValueError("project")
-    limit = cfg.get("limits", {}).get("awareness_max_bytes")
-    if limit is not None and (type(limit) is not int or limit <= 0):
-        raise ValueError("limit")
+def inspect(root):
+    root = Path(os.path.abspath(str(Path(root).expanduser())))
+    report = {'root': str(root), 'ok': True, 'files': [], 'issues': [], 'entry': False, 'memory': False}
+    if root.is_symlink() or not root.is_dir():
+        report['ok'] = False
+        report['issues'].append('记忆根不存在、不可读或是符号链接；请检查指定目录。')
+        return report
 
+    def unreadable(error):
+        report['ok'] = False
+        report['issues'].append('目录无法读取：' + str(error.filename))
 
-def report(root, now=None):
-    root = Path(root).expanduser().resolve()
-    now = now or datetime.now(timezone.utc)
-    issues, docs, targets = [], {}, {}
-    output = {"schema": SCHEMA, "ok": True, "root": str(root), "timezone": None,
-              "now": now.isoformat(), "inventory": None, "counts": {}, "issues": issues,
-              "source_hints": [], "objects": []}
-
-    def issue(code, path, line=None, field=None):
-        entry = {"code": code, "path": path}
-        if line is not None:
-            entry["line"] = line
-        if field is not None:
-            entry["field"] = field
-        issues.append(entry)
-
-    config = root / "config.toml"
-    try:
-        if not root.is_dir() or config.is_symlink():
-            raise ValueError("root/config")
-        config_text = config.read_text(encoding="utf-8")
-        cfg = TomlSubset(config_text).parse()
-        check_config(cfg)
-        zone = ZoneInfo(cfg["timezone"])
-    except (OSError, UnicodeError, ValueError, ZoneInfoNotFoundError):
-        issue("invalid_config", "config.toml")
-        output["ok"] = False
-        output["counts"] = {"objects": {}, "issues": {"invalid_config": 1}}
-        return output
-    now = now.astimezone(zone)
-    output.update(timezone=cfg["timezone"], now=now.isoformat())
-    excluded = set(cfg.get("exclude_sessions", []))
-    if any(not canonical_identity(ref) for ref in excluded):
-        issue("identity_review", "config.toml", field="exclude_sessions")
-    for number, line in enumerate(config_text.splitlines(), 1):
-        if SECRET.search(line):
-            issue("suspected_secret", "config.toml", line=number)
-
-    def walk_error(error):
-        issue("read_error", ".")
-
-    for folder, dirs, names in os.walk(root, followlinks=False, onerror=walk_error):
-        for name in list(dirs):
-            path = Path(folder) / name
-            if name.startswith(".") or path.is_symlink():
-                dirs.remove(name)
-                if not name.startswith(".") and path.is_symlink():
-                    issue("unsupported_format", path.relative_to(root).as_posix())
-        for name in sorted(names):
-            if not name.endswith(".md") or name.startswith("."):
-                continue
-            path = Path(folder) / name
-            rel = path.relative_to(root).as_posix()
+    for folder, directories, names in os.walk(str(root), followlinks=False, onerror=unreadable):
+        current = Path(folder)
+        for name in list(directories):
+            path = current / name
             if path.is_symlink():
-                issue("unsupported_format", rel)
+                directories.remove(name)
+                report['issues'].append('跳过符号链接：' + path.relative_to(root).as_posix())
+            elif name.startswith('.'):
+                directories.remove(name)
+        for name in sorted(names):
+            path = current / name
+            relative = path.relative_to(root).as_posix()
+            if name.startswith('.'):
+                continue
+            if path.is_symlink():
+                report['issues'].append('跳过符号链接：' + relative)
+                continue
+            if path.suffix.lower() != '.md':
                 continue
             try:
-                text = path.read_text(encoding="utf-8")
+                data = path.read_bytes()
+                text = data.decode('utf-8')
             except (OSError, UnicodeError):
-                issue("read_error", rel)
+                report['ok'] = False
+                report['issues'].append('Markdown 无法读取：' + relative)
                 continue
-            kind = path_kind(rel)
-            if kind is None:
-                issue("unsupported_format", rel)
-                continue
-            start = len(issues)
-            try:
-                fm = frontmatter(text)
-            except (ValueError, TypeError):
-                fm = {}
-                issue("invalid_field", rel, field="frontmatter")
-            for key in sorted({"format", "kind", "updated"} | (RECORD_FIELDS if kind == "record" else set())):
-                if key not in fm:
-                    issue("missing_field", rel, field=key)
-            if fm.get("format") != FORMAT or fm.get("kind") != kind:
-                issue("invalid_field", rel, field="format/kind")
-            updated = timestamp(fm.get("updated"))
-            if updated is None:
-                issue("invalid_time", rel, field="updated")
-            elif updated > now:
-                issue("future_time", rel, field="updated")
-            if kind == "record":
-                for key in RECORD_FIELDS - {"projects", "session_refs"}:
-                    if key in fm and not isinstance(fm[key], str):
-                        issue("invalid_field", rel, field=key)
-                        fm[key] = ""
-                for key in ("projects", "session_refs"):
-                    if not isinstance(fm.get(key), list):
-                        issue("invalid_field", rel, field=key)
-                        fm[key] = []
-                for key in ("client", "source_ref", "source_location"):
-                    if not fm.get(key):
-                        issue("missing_field", rel, field=key)
-                if not valid_day(fm.get("day")):
-                    issue("invalid_field", rel, field="day")
-                if "event_days" in fm and not record_days(fm):
-                    issue("invalid_field", rel, field="event_days")
-                if fm.get("day_basis") == "captured" and "event_days" in fm:
-                    issue("invalid_field", rel, field="event_days/day_basis")
-                if fm.get("coverage") not in {"complete", "partial"}:
-                    issue("invalid_field", rel, field="coverage")
-                if fm.get("evidence") not in {"primary", "primary-summary", "secondary"}:
-                    issue("invalid_field", rel, field="evidence")
-                if fm.get("day_basis") not in {"event", "captured"}:
-                    issue("invalid_field", rel, field="day_basis")
-                if fm.get("source") != "note" and fm.get("source") not in cfg.get("sources", {}):
-                    issue("invalid_field", rel, field="source")
-                for project in fm.get("projects", []):
-                    if project not in cfg.get("projects", {}):
-                        issue("invalid_field", rel, field="projects")
-                if "project_status" in fm and (fm["project_status"] != "unresolved" or fm["projects"]):
-                    issue("invalid_field", rel, field="project_status")
-                source_time = timestamp(fm.get("source_updated"))
-                if fm.get("source_updated") != "" and source_time is None:
-                    issue("invalid_time", rel, field="source_updated")
-                elif source_time and source_time > now:
-                    issue("future_time", rel, field="source_updated")
-            if kind == "daily":
-                if not valid_day(fm.get("day")) or Path(rel).stem != fm.get("day"):
-                    issue("invalid_field", rel, field="day")
-            bad = len(issues) != start
-            # 空值是格式允许的未知来源时间，保留记录级提示，不污染下游元数据。
-            if kind == "record" and fm.get("source_updated") == "":
-                issue("unknown_source_time", rel, field="source_updated")
-            if kind == "record" and any(not canonical_identity(ref) for ref in fm.get("session_refs", [])):
-                issue("identity_review", rel, field="session_refs")
-            if kind == "record" and fm.get("project_status") == "unresolved":
-                issue("unresolved_project", rel)
-            if kind == "record" and Path(rel).parts[:2] == ("records", "sessions") and fm.get("session_refs"):
-                suffix = Path(rel).stem.rsplit("-", 1)[-1]
-                identities = [ref.split(":", 1)[1] for ref in fm["session_refs"] if canonical_identity(ref)]
-                if len(suffix) != 8 or not any(suffix == identity[-8:] for identity in identities):
-                    issue("identity_review", rel, field="filename")
-            if kind == "record" and fm.get("coverage") == "partial":
-                issue("partial_source", rel)
-            if kind == "record" and excluded.intersection(fm.get("session_refs", [])):
-                issue("excluded_record", rel)
-            links = []
-            in_fence = False
-            for number, line in enumerate(text.splitlines(), 1):
-                if SECRET.search(line):
-                    issue("suspected_secret", rel, line=number)
-                if any(identity in line for identity in excluded if identity):
-                    if kind != "record":
-                        issue("excluded_record", rel, line=number)
-                if re.match(r"^\s*(```|~~~)", line):
-                    in_fence = not in_fence
+            report['files'].append({'path': relative, 'bytes': len(data)})
+            if relative == 'memory_summary.md':
+                report['entry'] = True
+                if len(data) >= 10000:
+                    report['issues'].append('入口达到 10,000 字节，建议检查重复内容和导航：' + relative)
+            elif relative == 'MEMORY.md':
+                report['memory'] = True
+            for raw in markdown_links(text):
+                target = local_target(root, path, raw)
+                if target is None:
                     continue
-                if in_fence:
-                    continue
-                matches = LINK.findall(line)
-                definition = REFERENCE.match(line)
-                if definition:
-                    matches.append(definition[1])
-                for raw in matches:
-                    try:
-                        target = safe_target(root, rel, raw)
-                    except ValueError:
-                        issue("unchecked_link", rel, line=number)
-                        continue
-                    if target is not None:
-                        links.append(target.relative_to(root).as_posix())
-                        if not target.exists():
-                            issue("broken_link", rel, line=number)
-            size = len(text.encode("utf-8"))
-            limit = 10000 if kind == "summary" else cfg.get("limits", {}).get("awareness_max_bytes")
-            if kind in {"summary", "awareness"}:
-                if limit is None:
-                    issue("limit_unset", rel)
-                elif size > limit:
-                    issue("oversize", rel)
-            docs[rel] = {"path": rel, "kind": kind, "fm": fm, "time": updated, "bad": bad,
-                         "links": links, "size_bytes": size}
-
-    records = [x for x in docs.values() if x["kind"] == "record"]
-    for doc in docs.values():
-        targets[doc["path"]] = doc["kind"]
-    scopes = {"projects/" + name for name in cfg.get("projects", {})}
-    for record in records:
-        projects = record["fm"].get("projects", [])
-        if not projects and record["fm"].get("project_status") != "unresolved":
-            scopes.add("personal")
-        for day in record_days(record["fm"]):
-            targets[f"daily/{day[:4]}/{day}.md"] = "daily"
-    for scope in scopes:
-        targets.setdefault(scope + "/MEMORY.md", "project-index")
-        targets.setdefault(scope + "/AWARENESS.md", "awareness")
-    if records or docs:
-        targets.setdefault("USER.md", "user")
-        targets.setdefault("memory_summary.md", "summary")
-    incomplete_scan = any(x["code"] in {"read_error", "unsupported_format"} for x in issues)
-    scope_links = {scope: {link for path, doc in docs.items() if path.startswith(scope + "/")
-                           for link in doc["links"]} for scope in scopes}
-    for rel, kind in sorted(targets.items()):
-        doc = docs.get(rel)
-        inputs = []
-        unlinked = []
-        if kind in {"daily", "user"}:
-            inputs = list(records) if kind == "user" else [
-                r for r in records if Path(rel).stem in record_days(r["fm"]) or not record_days(r["fm"])
-                or (r["fm"].get("day_basis") == "captured" and "event_days" in r["fm"])]
-            if kind == "daily" and doc:
-                unlinked = [r["path"] for r in inputs if Path(rel).stem in record_days(r["fm"])
-                            and r["path"] not in doc["links"]]
-        elif kind in {"project-index", "awareness"}:
-            scope = rel.rsplit("/", 1)[0]
-            project = scope.split("/", 1)[1] if scope.startswith("projects/") else None
-            inputs = [r for r in records if (project in r["fm"].get("projects", []) if project else
-                                              not r["fm"].get("projects", []) and
-                                              r["fm"].get("project_status") != "unresolved")]
-            # 范围提示只挂在已有索引上；意识与缺失对象不重复列出，缺失对象的输入见 newer_sources。
-            if kind == "project-index" and doc:
-                unlinked = [r["path"] for r in inputs if r["path"] not in scope_links.get(scope, set())]
-            if kind == "project-index":
-                inputs += [d for p, d in docs.items() if p.startswith(scope + "/topics/")]
-        elif kind == "summary":
-            inputs = [d for d in docs.values() if d["kind"] in {"awareness", "project-index", "user"}]
-        elif kind == "topic" and doc:
-            inputs = [docs[p] for p in doc["links"] if p in docs]
-        if doc and kind != "record":
-            # 已有引用也参与复查，避免日期或项目更正后旧对象失去变化信号。
-            inputs += [docs[p] for p in doc["links"] if p in docs and p != rel]
-            inputs = list({d["path"]: d for d in inputs}.values())
-        # 已有文件始终检查；缺失对象只有存在直接输入时才作为候选。
-        if doc is None and not inputs:
-            continue
-        newer = [d["path"] for d in inputs if d["time"] and (not doc or not doc["time"] or d["time"] > doc["time"])]
-        reasons = []
-        state = "current"
-        if doc is None:
-            state = "missing"
-            reasons.append("candidate_target")
-        elif doc["bad"] or incomplete_scan or any(d["bad"] for d in inputs):
-            state = "unknown"
-            reasons.append("incomplete_metadata_or_scan")
-        elif kind == "record":
-            state = "review"
-            reasons.append("external_source_not_checked")
-        elif newer:
-            state = "review" if kind in {"user", "awareness"} else "stale"
-            reasons.append("newer_sources")
-        if unlinked and kind == "daily":
-            if state == "current":
-                state = "stale"
-            reasons.append("unlinked_sources")
-        if any(d["fm"].get("coverage") == "partial" for d in inputs + ([doc] if doc else [])):
-            if state == "current":
-                state = "review"
-            reasons.append("partial_source")
-        own_issues = [x["code"] for x in issues if x["path"] == rel and x["code"] != "limit_unset"]
-        if own_issues:
-            if state == "current":
-                state = "review"
-            reasons.extend(sorted(set(own_issues)))
-        output["objects"].append({"path": rel, "kind": kind, "updated": doc["time"].isoformat() if doc and doc["time"] else None,
-                                  "assessment": state, "reasons": reasons, "newer_sources": sorted(set(newer)),
-                                  "unlinked_sources": sorted(set(unlinked)),
-                                  "size_bytes": doc["size_bytes"] if doc else None})
-    summary = next((item for item in output["objects"] if item["kind"] == "summary"), None)
-    if summary is not None:
-        # 摘要可能晚于新记录，但它所依赖的画像/项目入口尚未处理该记录。
-        # 只传播明确的库内更新；不传播记录固定的 external_source_not_checked。
-        summary["upstream_updates"] = [
-            {"path": item["path"], "newer_sources": item["newer_sources"]}
-            for item in output["objects"]
-            if item["path"] in docs and item["kind"] in {"awareness", "project-index", "user"}
-            and item["assessment"] in {"stale", "review"} and item["newer_sources"]
-        ]
-        if summary["upstream_updates"]:
-            if summary["assessment"] == "current":
-                summary["assessment"] = "review"
-            summary["reasons"].append("upstream_newer_sources")
-    for source, settings in sorted(cfg.get("sources", {}).items()):
-        selected = [d for d in records if d["fm"].get("source") == source]
-        def latest(key):
-            values = [timestamp(d["fm"].get(key)) for d in selected]
-            values = [x for x in values if x and x <= now]
-            return max(values).isoformat() if values else None
-        output["source_hints"].append({"source": source, "enabled": settings["enabled"], "records": len(selected),
-                                       "latest_source_updated": latest("source_updated"),
-                                       "latest_record_updated": latest("updated"),
-                                       "partial_records": sum(d["fm"].get("coverage") == "partial" for d in selected),
-                                       "external_checked": False})
-    output["counts"] = {"objects": dict(Counter(d["assessment"] for d in output["objects"])),
-                        "issues": dict(Counter(d["code"] for d in issues))}
-    derived = [d for d in docs.values() if d["kind"] != "record"]
-    candidates = [d for d in output["objects"] if d["assessment"] == "missing"]
-    record_projects = {project for r in records for project in r["fm"].get("projects", [])}
-    directories = ("sessions", "imported", "files", "notes")
-    by_directory = Counter(Path(r["path"]).parts[1] if Path(r["path"]).parts[1] in directories
-                           else "other" for r in records)
-    by_source = Counter({name: 0 for name in cfg.get("sources", {})})
-    known_sources = set(by_source) | {"note"}
-    by_source.update(r["fm"]["source"] for r in records if r["fm"].get("source") in known_sources)
-    # 需要处理的已有内容也放进清点，汇报时与配置和文件数量一起读到。
-    assessed = {item["path"]: item["assessment"] for item in output["objects"]}
-    unlinked_by_kind = {kind: {p for item in output["objects"] if item["kind"] == kind for p in item["unlinked_sources"]}
-                        for kind in ("daily", "project-index")}
-    output["inventory"] = {
-        "scan_complete": not incomplete_scan,
-        "configuration": {"sources": len(cfg.get("sources", {})),
-                          "enabled_sources": sum(s["enabled"] for s in cfg.get("sources", {}).values()),
-                          "projects": len(cfg.get("projects", {})),
-                          "projects_with_records": len(record_projects.intersection(cfg.get("projects", {})))},
-        "existing_objects": len(docs),
-        "records": {"total": len(records),
-                    "by_directory": {name: by_directory[name] for name in (*directories, "other")},
-                    "by_source": dict(sorted(by_source.items())),
-                    "unconfigured_source": sum(r["fm"].get("source") not in known_sources for r in records),
-                    "partial": sum(r["fm"].get("coverage") == "partial" for r in records),
-                    "unresolved_project": sum(r["fm"].get("project_status") == "unresolved" for r in records),
-                    "unknown_source_time": sum(r["fm"].get("source_updated") == "" for r in records),
-                    "unknown": sum(assessed.get(r["path"]) == "unknown" for r in records),
-                    "unlinked": {"daily": len(unlinked_by_kind["daily"]),
-                                 "projects": len(unlinked_by_kind["project-index"])}},
-        "derived": {"total": len(derived),
-                    "by_kind": {kind: sum(d["kind"] == kind for d in derived) for kind in sorted(KINDS - {"record"})},
-                    "by_assessment": {state: sum(assessed.get(d["path"]) == state for d in derived)
-                                      for state in ("current", "stale", "review", "unknown")}},
-        "candidates": {"total": len(candidates),
-                       "by_kind": {kind: sum(d["kind"] == kind for d in candidates) for kind in sorted(KINDS - {"record"})}},
-    }
-    return output
+                if has_symlink(root, target):
+                    report['issues'].append('链接经过符号链接，未读取：' + relative)
+                elif not target.is_file():
+                    report['issues'].append('内部链接目标缺失：' + relative + ' → ' + target.relative_to(root).as_posix())
+    report['files'].sort(key=lambda item: item['path'])
+    return report
 
 
-def summarize(result):
-    """保留全库计数与问题，省略正常对象及记录固定的外部复查提示。"""
-    return {**result, "objects": [item for item in result["objects"]
-                                 if item["unlinked_sources"] or
-                                 (item["kind"] != "record" and item["assessment"] != "current") or
-                                 (item["kind"] == "record" and
-                                  set(item["reasons"]) - {"external_source_not_checked"})]}
+def escaped(value):
+    return str(value).replace('\n', ' ').replace('\r', ' ').replace('|', '\\|')
 
 
-def format_summary(result):
-    """精简报告的文本形式：报告头保持缩进，对象每条一行，按行读取也能看全清点。"""
-    head = json.dumps({k: v for k, v in result.items() if k != "objects"}, ensure_ascii=False, indent=2)
-    items = ",\n".join("    " + json.dumps(item, ensure_ascii=False) for item in result["objects"])
-    return head[:-2] + ',\n  "objects": [' + ("\n" + items + "\n  " if items else "") + "]\n}"
+def render(report, summary=False):
+    lines = ['# XMemory 只读检查', '', '- 目录：' + escaped(report['root']),
+             '- 入口：' + ('存在' if report['entry'] else '未创建'),
+             '- 主记忆：' + ('存在' if report['memory'] else '未创建'),
+             '- Markdown：{} 个，共 {} 字节'.format(len(report['files']), sum(item['bytes'] for item in report['files']))]
+    if not summary and report['files']:
+        lines += ['', '| 文件 | 字节 |', '|---|---:|']
+        lines += ['| {} | {} |'.format(escaped(item['path']), item['bytes']) for item in report['files']]
+    lines += ['', '## 检查结果', '']
+    lines += ['- ' + escaped(issue) for issue in report['issues']] or ['未发现内部文件结构问题。']
+    lines += ['', '本报告仅盘点文件和内部链接的文件目标，不校验标题锚点，不判断记忆正确性、来源覆盖或整理完成情况。']
+    return '\n'.join(lines) + '\n'
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="XMemory 只读检查；不读客户端，不写任何文件。")
-    parser.add_argument("--root", default=os.environ.get("XMEMORY_ROOT", "~/.agents/memory"))
-    sub = parser.add_subparsers(dest="command", required=True)
-    status = sub.add_parser("status", help="报告库内更新线索与结构问题")
-    status.add_argument("--root", default=argparse.SUPPRESS)
-    status.add_argument("--summary", action="store_true", help="精简对象列表，保留全库清点与问题")
+    parser = argparse.ArgumentParser(description='XMemory Markdown 记忆的可选只读检查')
+    parser.add_argument('--root', type=Path, help='仅用于明确的测试或诊断根')
+    sub = parser.add_subparsers(dest='command', required=True)
+    status = sub.add_parser('status', help='只读盘点，不创建任何文件')
+    status.add_argument('--root', type=Path, default=argparse.SUPPRESS, help='仅用于明确的测试或诊断根')
+    status.add_argument('--summary', action='store_true', help='省略逐文件清单')
     args = parser.parse_args(argv)
-    result = report(args.root)
-    print(format_summary(summarize(result)) if args.summary else json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["ok"] else 2
+    root = args.root if args.root is not None else Path.home() / '.agents' / 'memory'
+    report = inspect(root)
+    print(render(report, args.summary), end='')
+    return 0 if report['ok'] else 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

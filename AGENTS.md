@@ -4,14 +4,14 @@
 
 ## 目录与改动
 
-- `plugins/xmemory/`：八个技能、参考、模板；运行代码只在 `skills/xmemory/scripts/`。
+- `plugins/xmemory/`：三个技能入口及共享参考、模板；运行代码只在 `skills/xmemory/scripts/`。
 - `tools/client_readers/`：独立读取器源码；`plugins/client-readers/` 的脚本由工具生成，修改读取器时通过既有同步流程更新。
 - `tests/`：程序、包与只读性检查；`evals/`：合成行为夹具和预先确定的判据。
 - `local/`：私有计划、模型运行记录和证据，保持 Git 忽略；正式记忆与客户端配置不放入仓库。
 
 客户端市场可能直接使用本仓库目录。开发前检查 worktree，行为改动在隔离工作区完成；正式库补全、客户端换装和发布按各自明确范围执行。
 
-保持 Markdown 格式 `xmemory/v1.5`、八个技能入口和 `status` 的只读性。字段或行为变化同步参考说明及相应测试。单元测试覆盖机械结果，技能改动另用隔离合成库验证自然请求、实际写入、来源与范围；保留失败轮。
+使用纯 Markdown 三层内容，保持 xmemory-update、xmemory-recall、xmemory-note 三个入口及可选 status 的只读性。正式根固定为用户 home 下的 `.agents/memory/`，开发评测使用明确隔离根；旧试验库不自动迁移。字段或行为变化同步参考说明及相应测试。单元测试覆盖机械结果，技能改动另用隔离合成库验证自然请求、实际写入、来源与范围；保留失败轮。
 
 ## 开发检查
 
