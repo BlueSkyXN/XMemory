@@ -2,6 +2,8 @@
 
 本文按版本保留程序检查、模型评测与发布证据。每节中的测试数、未完成项和发布状态对应其日期与提交；当前用法见[文档导航](README.md)。
 
+当前版本为 XMemory 1.8.0 / Client Readers 0.2.1。发行附件与对应提交见 [1.8.0 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.0)，提交检查见 [PR #23](https://github.com/BlueSkyXN/XMemory/pull/23) 和 [GitHub Actions](https://github.com/BlueSkyXN/XMemory/actions)。下方按实验日期保留过程记录和仍待验收的范围。
+
 ## 1.8.0 链接检查与提示移除条件（2026-10-24，未发布）
 
 修复可选 status 的两类缺陷：异常外部地址直接跳过，避免 URL 解析异常中断报告；内部链接识别括号与转义目标、单行定义的引用式链接，并跳过围栏及行内代码。继续使用 Python 3.9+ 标准库，保持检查只读。新增五项回归；修改前复现三项失败和一项异常，修复后完整 unittest 182 项、Python 3.9 运行时与读取器 166 项通过。原四个缺陷样例在两套 Python 下均重新验证通过。
