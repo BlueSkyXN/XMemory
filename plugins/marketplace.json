@@ -4,14 +4,14 @@
     {
       "name": "xmemory",
       "source": "./xmemory",
-      "version": "1.7.0",
-      "description": "XMemory：以技能维护跨客户端 Markdown 记忆。六类对象分别更新，程序仅提供只读 status；Client Readers 另装可选，定时由客户端负责。不依赖 git，不保存运行状态。",
+      "version": "1.8.0",
+      "description": "通过三个技能采集、整理与查阅跨客户端 Markdown 记忆；固定用户目录，轻量维护。",
       "displayName": "XMemory",
       "displayName_i18n": {
         "zh-CN": "XMemory"
       },
       "description_i18n": {
-        "zh-CN": "跨客户端 Markdown 记忆库：八个技能分别维护记录、日总结、项目总结、意识、画像与入口；程序仅提供只读 status，定时由客户端负责。"
+        "zh-CN": "通过三个技能采集、整理与查阅跨客户端 Markdown 记忆；固定用户目录，轻量维护。"
       }
     },
     {

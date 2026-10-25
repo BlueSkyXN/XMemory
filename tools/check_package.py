@@ -8,28 +8,26 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import tomllib
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = "xmemory"
-SKILLS = {TOOL, "xmemory-recall", "xmemory-note", "xmemory-run", "xmemory-extract", "xmemory-consolidate",
-          "xmemory-setup", "xmemory-maintain"}
+SKILLS = {"xmemory-update", "xmemory-recall", "xmemory-note"}
+SKILL_DIRS = SKILLS | {TOOL}  # xmemory contains shared resources, not an entrypoint.
 # 市场中的插件及其显示名；client-readers 自身的载荷检查在 build_client_readers.check。
 PLUGINS = {"xmemory": "XMemory", "client-readers": "Client Readers"}
-ALLOWED = {".md", ".toml", ".json"}
-SCRIPTS = {"xmemory.py", "status.py", "toml_subset.py"}
-# 每个技能必须链接的本地资源；任务技能还必须链接工具技能。
+ALLOWED = {".md", ".json"}
+SCRIPTS = {"xmemory.py", "status.py"}
+# 三个入口按需共享内容约定，资源目录本身不是第四个技能。
 REQUIRED_LINKS = {
-    TOOL: ("./references/format.md", "./references/status.md"),
-    "xmemory-extract": ("../xmemory/references/sources.md",),
-    "xmemory-consolidate": ("../xmemory/references/objects.md",),
-    "xmemory-run": ("../xmemory-extract/SKILL.md",),
-    "xmemory-setup": ("../xmemory/templates/automation-prompt.md", "../xmemory/templates/organization-prompt.md"),
+    "xmemory-update": ("../xmemory/references/format.md", "../xmemory/references/maintenance.md"),
+    "xmemory-note": ("../xmemory/references/format.md", "../xmemory/references/maintenance.md"),
+    "xmemory-recall": ("../xmemory/references/format.md",),
 }
 # 运行时直接引用的兄弟技能文件。
-RUNTIME_ASSETS = ("xmemory/references/objects.md", "xmemory/references/sources.md",
-                  "xmemory/templates/config.toml", "xmemory/templates/agents-notice.md")
+RUNTIME_ASSETS = ("xmemory/references/format.md", "xmemory/references/maintenance.md",
+                  "xmemory/references/sources.md", "xmemory/references/status.md",
+                  "xmemory/templates/note.md", "xmemory/templates/agents-notice.md")
 LINK = re.compile(r"\[[^\]]*\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)")
 PRIVATE = re.compile(r"/(?:Users|Volumes|home)/|(?i:[A-Z]:[\\/]+Users[\\/])")
 
@@ -46,8 +44,10 @@ def check(root: Path = ROOT) -> list[str]:
     if manifest.get("skills") != "./skills":
         errors.append("Skills directory is not ./skills")
     skills = plugin / "skills"
-    if {p.name for p in skills.iterdir() if p.name != ".DS_Store"} != SKILLS:
-        errors.append(f"Expected exactly the skills {sorted(SKILLS)}")
+    if {p.name for p in skills.iterdir() if p.name != ".DS_Store"} != SKILL_DIRS:
+        errors.append(f"Expected the skill/resource directories {sorted(SKILL_DIRS)}")
+    if {p.parent.name for p in skills.glob('*/SKILL.md')} != SKILLS:
+        errors.append(f"Expected exactly three skill entrypoints: {sorted(SKILLS)}")
     descriptions = []
     for asset in RUNTIME_ASSETS:
         if not (skills / asset).is_file():
@@ -71,7 +71,7 @@ def check(root: Path = ROOT) -> list[str]:
                 errors.append(f"Description quoting: {skill}")
         if len(text.splitlines()) > 150:
             errors.append(f"Skill is too long: {skill}")
-        for ref in REQUIRED_LINKS.get(skill, ()) + (() if skill == TOOL else ("../xmemory/SKILL.md",)):
+        for ref in REQUIRED_LINKS.get(skill, ()):
             if f"]({ref})" not in text:
                 errors.append(f"Skill does not link {ref}: {skill}")
         if "../../" in text:
@@ -107,8 +107,6 @@ def check(root: Path = ROOT) -> list[str]:
             continue
         if path.suffix == ".json":
             json.loads(text)
-        if path.suffix == ".toml":
-            tomllib.loads(text)
         if path.suffix != ".md":
             continue
         if sum(line.startswith("```") for line in text.splitlines()) % 2:

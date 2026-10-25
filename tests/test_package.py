@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from check_package import SKILLS, check  # noqa: E402
+from check_package import SKILLS, SKILL_DIRS, check  # noqa: E402
 from build_release import build  # noqa: E402
 
 PLUGIN = ROOT / "plugins" / "xmemory"
@@ -31,17 +31,17 @@ class PackageTests(unittest.TestCase):
 
     def test_runtime_code_only_in_skill_scripts(self):
         code = {p.relative_to(PLUGIN).as_posix() for p in PLUGIN.rglob("*") if p.suffix in {".py", ".js", ".sh"}}
-        self.assertEqual(code, {"skills/xmemory/scripts/xmemory.py", "skills/xmemory/scripts/status.py",
-                                "skills/xmemory/scripts/toml_subset.py"})
+        self.assertEqual(code, {"skills/xmemory/scripts/xmemory.py", "skills/xmemory/scripts/status.py"})
         for name in ("hooks", "commands", "node_modules"):
             self.assertFalse((PLUGIN / name).exists())
 
-    def test_one_tool_many_skills(self):
-        self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir() if p.name != ".DS_Store"}, SKILLS)
-        self.assertEqual(len(SKILLS), 8)
-        for skill in SKILLS - {"xmemory"}:
+    def test_three_skills_and_shared_resources(self):
+        self.assertEqual({p.name for p in (PLUGIN / "skills").iterdir() if p.name != ".DS_Store"}, SKILL_DIRS)
+        self.assertEqual(len(SKILLS), 3)
+        self.assertFalse((SKILL / 'SKILL.md').exists())
+        for skill in SKILLS:
             text = (PLUGIN / "skills" / skill / "SKILL.md").read_text(encoding='utf-8')
-            self.assertIn("](../xmemory/SKILL.md)", text, skill)
+            self.assertIn("](../xmemory/references/format.md)", text, skill)
 
     def test_unexpected_script_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -71,7 +71,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             copy_repo(root)
-            with (root / "plugins/xmemory/skills/xmemory/SKILL.md").open("a", encoding='utf-8') as stream:
+            with (root / "plugins/xmemory/skills/xmemory-update/SKILL.md").open("a", encoding='utf-8') as stream:
                 stream.write("\n[missing](missing.md)\n")
             self.assertTrue(any("Broken or escaping link" in error for error in check(root)))
 
@@ -128,8 +128,8 @@ class PackageTests(unittest.TestCase):
                 self.assertIsNone(archive.testzip())
                 archive.extractall(base / "extracted")
             skills = base / "extracted" / archive_path.stem / "skills"
-            self.assertEqual({p.name for p in skills.iterdir()}, SKILLS)
-            for name in ("xmemory.py", "status.py", "toml_subset.py"):
+            self.assertEqual({p.name for p in skills.iterdir()}, SKILL_DIRS)
+            for name in ("xmemory.py", "status.py"):
                 self.assertTrue((skills / "xmemory" / "scripts" / name).is_file(), name)
             self.assertEqual({p.relative_to(skills).parts[0] for p in skills.rglob("*.py")}, {"xmemory"})
             skill = skills
