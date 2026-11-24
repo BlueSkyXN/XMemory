@@ -1,6 +1,6 @@
 {
   "name": "xmemory",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "通过三个技能采集、整理与查阅跨客户端 Markdown 记忆；固定用户目录，轻量维护。",
   "author": {
     "name": "BlueSkyXN"

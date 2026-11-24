@@ -8,7 +8,7 @@ import re
 import string
 from urllib.parse import unquote
 
-LABEL = re.compile(r'(?<!\\)\[((?:\\.|[^\]\\\n])*)\]')
+OPEN_BRACKET = re.compile(r'(?<!\\)\[')
 REFERENCE = re.compile(r'^ {0,3}\[((?:\\.|[^\]\\\n])+)\]:[ \t]*(.*)$', re.M)
 CODE_SPAN = re.compile(r'(?<![\\`])(`+)(?!`)(.*?)(?<!`)\1(?!`)', re.S)
 ESCAPE = re.compile(r'\\([' + re.escape(string.punctuation) + r'])')
@@ -68,6 +68,25 @@ def reference_key(label):
     return ' '.join(ESCAPE.sub(r'\1', label).split()).casefold()
 
 
+def bracketed_label(text, start):
+    """读取从 start 开始的平衡方括号文本，不跨行，未闭合返回 (None, start + 1)。"""
+    depth = 0
+    index = start
+    while index < len(text) and text[index] not in '\r\n':
+        char = text[index]
+        if char == '\\' and index + 1 < len(text):
+            index += 2
+            continue
+        if char == '[':
+            depth += 1
+        elif char == ']':
+            depth -= 1
+            if depth == 0:
+                return text[start + 1:index], index + 1
+        index += 1
+    return None, start + 1
+
+
 def markdown_links(text):
     """提取行内链接和已定义的完整、折叠、简写引用式链接。"""
     definitions = {}
@@ -82,27 +101,39 @@ def markdown_links(text):
     body = REFERENCE.sub(definition, markdown_body(text))
     position = 0
     while True:
-        label = LABEL.search(body, position)
-        if label is None:
+        found = OPEN_BRACKET.search(body, position)
+        if found is None:
             return
-        position = label.end()
-        if body[position:position + 1] == '(':
-            start = position + 1
-            while start < len(body) and body[start].isspace():
-                start += 1
-            raw, end = link_destination(body, start)
-            closing = INLINE_END.match(body, end) if raw is not None else None
+        start = found.start()
+        label_text, end = bracketed_label(body, start)
+        if label_text is None:
+            position = start + 1
+            continue
+        if body[end:end + 1] == '(':
+            dest_start = end + 1
+            while dest_start < len(body) and body[dest_start].isspace():
+                dest_start += 1
+            raw, dest_end = link_destination(body, dest_start)
+            closing = INLINE_END.match(body, dest_end) if raw is not None else None
             if closing:
                 yield ESCAPE.sub(r'\1', raw)
                 position = closing.end()
                 continue
-        reference = LABEL.match(body, position)
-        key = (reference[1] or label[1]) if reference else label[1]
-        if reference:
-            position = reference.end()
-        raw = definitions.get(reference_key(key))
-        if raw is not None:
-            yield ESCAPE.sub(r'\1', raw)
+        ref_text, ref_end = bracketed_label(body, end) if body[end:end + 1] == '[' else (None, end)
+        if body[end:end + 1] == '[' and ref_text is not None:
+            key = ref_text or label_text
+            raw = definitions.get(reference_key(key))
+            if raw is not None:
+                yield ESCAPE.sub(r'\1', raw)
+                position = ref_end
+                continue
+        else:
+            raw = definitions.get(reference_key(label_text))
+            if raw is not None:
+                yield ESCAPE.sub(r'\1', raw)
+                position = end
+                continue
+        position = start + 1
 
 
 def is_inside(path, root):

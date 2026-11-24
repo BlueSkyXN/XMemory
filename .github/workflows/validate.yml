@@ -35,9 +35,9 @@ jobs:
         run: python -B tools/build_client_readers.py --output "$RUNNER_TEMP/client-readers-release"
 
   runtime-python39:
-    # 技能运行时要能在 macOS 自带的 python3（3.9）上跑；开发工具仍用 3.11。
+    # 技能运行时要能在 macOS 自带的 python3（3.9）上跑；Ubuntu 26.04 无预编译 3.9，固定 24.04。
     name: Skill runtimes on Python 3.9
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       PYTHONDONTWRITEBYTECODE: "1"

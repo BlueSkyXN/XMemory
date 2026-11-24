@@ -2,7 +2,24 @@
 
 本文按版本保留程序检查、模型评测与发布证据。每节中的测试数、未完成项和发布状态对应其日期与提交；当前用法见[文档导航](README.md)。
 
-当前版本为 XMemory 1.8.0 / Client Readers 0.2.1。发行附件与对应提交见 [1.8.0 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.0)，提交检查见 [PR #23](https://github.com/BlueSkyXN/XMemory/pull/23) 和 [GitHub Actions](https://github.com/BlueSkyXN/XMemory/actions)。下方按实验日期保留过程记录和仍待验收的范围。
+当前版本为 XMemory 1.8.1 / Client Readers 0.2.1。发行附件与对应提交见 [1.8.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.1)，提交检查见 [PR #24](https://github.com/BlueSkyXN/XMemory/pull/24) 和 [GitHub Actions](https://github.com/BlueSkyXN/XMemory/actions)。下方按实验日期保留过程记录和仍待验收的范围。
+
+## 1.8.1 当轮更正快路径、主题导航与链接标签修复（2026-11-24）
+
+保持三技能、固定用户根与纯 Markdown 三层结构，针对日常读写摩擦做四处窄修订：
+
+- `xmemory-note` 单条当轮直接整合时保存笔记、按范围同步相关主记忆与必要入口并回读，省去预写再当轮删除 `## 待处理`；只采集、只记录暂不整合、分批更新或事项待核查继续在入口保留 `## 待处理`，同步并回读确认后移除。
+- `xmemory-recall` 与共享约定明确主记忆拆出主题 Markdown 后由入口维护导航，查阅第 3 步按导航直接展开 `MEMORY.md` 相关章节或对应主题文件，够用即停。
+- `xmemory-recall` 发现 `config.toml`、`records/` 或入口指向旧对象目录时说明旧式库尚未处置，不把旧摘要直接用作当前有效记忆。
+- 可选 `status` 用标准库平衡括号扫描提取链接标签，支持行内与引用式链接中的嵌套方括号文本，以及未闭合外层方括号内的真实链接检查；保持 Python 3.9+ 标准库和只读盘点。
+
+| 检查 | 结果 |
+|---|---|
+| 程序与兼容测试 | Python 3.11 全套 **183/183** 通过（新增嵌套与未闭合方括号回归）；Python 3.9.6 运行时四组 **167/167** 通过 |
+| 包装与文本扫描 | `check_package.py`、`build_client_readers.py --check`、`git diff --check`、七份技能与参考引用及否定对照扫描通过；三个分发包构建与内外 SHA256 校验通过 |
+| 隔离合成验证（Gemini 4 Carbon / high，4 个独立上下文） | 当轮更正快路径 **1/1**（单轮并行写新笔记、旧笔记补链、同步主记忆与入口并回读，无冗余待处理往返，无关待查项保留）；只记更正暂不整合 **1/1**（`MEMORY.md` 字节不变，入口 `## 待处理` 记录范围与链接）；主题文件直读短路 **1/1**（仅读入口与目标主题文件即停止，库字节不变）；旧库冲突识别 **1/1**（识别 `config.toml` 与 `records/`，拒绝采用旧试验摘要，库字节不变） |
+
+四组合成验证禁用 Python、`status` 和专用读取器，判据不注入执行上下文，无重试或人工修补产物。Client Readers 保持 0.2.1，载荷不变。真实客户端换装、双端自然触发、原生记忆共存、长会话和实际进程中断恢复仍待分别验收。
 
 ## 1.8.0 链接检查与提示移除条件（2026-10-24，未发布）
 
