@@ -2,7 +2,7 @@
 
 本文按版本保留程序检查、模型评测与发布证据。每节中的测试数、未完成项和发布状态对应其日期与提交；当前用法见[文档导航](README.md)。
 
-当前版本为 XMemory 1.8.1 / Client Readers 0.2.1。发行附件与对应提交见 [1.8.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.1)，提交检查见 [GitHub Actions](https://github.com/BlueSkyXN/XMemory/actions)。下方按实验日期保留过程记录和仍待验收的范围。
+当前版本为 XMemory 1.8.1 / Client Readers 0.2.1。发行附件与对应提交见 [1.8.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.1)，提交检查见 [PR #24](https://github.com/BlueSkyXN/XMemory/pull/24) 和 [GitHub Actions](https://github.com/BlueSkyXN/XMemory/actions)。下方按实验日期保留过程记录和仍待验收的范围。
 
 ## 1.8.1 当轮更正快路径、主题导航与链接标签修复（2026-11-24）
 
