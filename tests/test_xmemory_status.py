@@ -115,6 +115,26 @@ class StatusTests(unittest.TestCase):
         self.assertIn('notes/missing.md', report['issues'][0])
         self.assertEqual(snapshot(self.root), before)
 
+    def test_nested_brackets_in_link_labels_and_unclosed_outer_brackets(self):
+        self.write('notes/existing.md', '# 已有\n')
+        self.write('memory_summary.md', '''# 入口
+[交接记录 [已有]](notes/existing.md)
+[交接记录 [草案]](notes/handoff.md)
+[多层 [v1 [草案]]](notes/deep.md)
+[引用 [草案]][draft]
+说明 [未闭合外层 [内层缺失](notes/inner.md) 尾注]
+
+[draft]: notes/draft-missing.md
+''')
+        before = snapshot(self.root)
+        report = status.inspect(self.root)
+        self.assertTrue(report['ok'])
+        self.assertEqual(len(report['issues']), 4)
+        joined = '\n'.join(report['issues'])
+        for expected in ('notes/handoff.md', 'notes/deep.md', 'notes/draft-missing.md', 'notes/inner.md'):
+            self.assertIn(expected, joined)
+        self.assertEqual(snapshot(self.root), before)
+
     def test_inline_code_links_and_definitions_are_ignored(self):
         self.write('memory_summary.md', '''# 入口
 示例：`[标题](notes/example.md)`。

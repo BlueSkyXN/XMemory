@@ -1,11 +1,11 @@
-# XMemory 1.8.0 安装说明
+# XMemory 1.8.1 安装说明
 
-XMemory 1.8.0 包含三个 Skill，Client Readers 保持 0.2.1。分发包从 [GitHub Releases](https://github.com/BlueSkyXN/XMemory/releases) 下载。
+XMemory 1.8.1 包含三个 Skill，Client Readers 保持 0.2.1。分发包从 [GitHub Releases](https://github.com/BlueSkyXN/XMemory/releases) 下载。
 
 | 包 | 内容 |
 |---|---|
-| XMemory-1.8.0.zip | 三端市场、XMemory 与 Client Readers 插件及说明 |
-| XMemory-1.8.0-skills.zip | 三个技能入口、共享资源目录、可选只读脚本与许可证 |
+| XMemory-1.8.1.zip | 三端市场、XMemory 与 Client Readers 插件及说明 |
+| XMemory-1.8.1-skills.zip | 三个技能入口、共享资源目录、可选只读脚本与许可证 |
 | ClientReaders-0.2.1-skills.zip | 可按客户端选择的五个读取技能 |
 
 按同名 `.zip.sha256` 核对归档；包内的 SHA256SUMS 用于核对文件。

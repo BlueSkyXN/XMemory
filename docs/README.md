@@ -1,6 +1,6 @@
 # 文档导航
 
-当前版本为 XMemory 1.8.0，Client Readers 0.2.1。
+当前版本为 XMemory 1.8.1，Client Readers 0.2.1。
 
 - [安装与首次使用](../plugins/xmemory/docs/install.md)
 - [使用指南](../plugins/xmemory/docs/usage.md)

@@ -1,6 +1,6 @@
 # XMemory
 
-XMemory 是由 Agent 执行的跨客户端长期记忆扩展层。把选定会话、原生记忆、项目文件和明确反馈整理为有用知识，在后续任务中按需使用。当前版本为 **1.8.0**；下载见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，验证范围见 [验证记录](docs/validation.md)。
+XMemory 是由 Agent 执行的跨客户端长期记忆扩展层。把选定会话、原生记忆、项目文件和明确反馈整理为有用知识，在后续任务中按需使用。当前版本为 **1.8.1**；下载见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，验证范围见 [验证记录](docs/validation.md)。
 
 正式记忆固定在用户 home 下的 `~/.agents/memory/`。内容全部是 Markdown，基本使用不要求 Python、数据库或后台服务。
 
