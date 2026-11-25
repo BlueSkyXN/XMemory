@@ -10,6 +10,7 @@ SKILLS = {
     "zcode": "read-zcode",
     "qodercn": "read-qodercn",
     "workbuddy": "read-workbuddy",
+    "antigravity": "read-antigravity",
 }
 
 

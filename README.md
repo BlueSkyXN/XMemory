@@ -32,7 +32,7 @@ XMemory 是由 Agent 执行的跨客户端长期记忆扩展层。把选定会�
 - “继续这个项目，先查过去的约定与未完成事项。”
 - “记住：这个要求只适用于当前项目。”
 
-[Client Readers 0.2.1](plugins/client-readers/README.md) 是独立可选插件，用于读取已适配的客户端私有存储。普通文件、Markdown 和当前上下文可由宿主直接处理。外部定时、后台和异步发起由客户端负责。
+[Client Readers 0.3.0](plugins/client-readers/README.md) 是独立可选插件，用于读取已适配的客户端私有存储。普通文件、Markdown 和当前上下文可由宿主直接处理。外部定时、后台和异步发起由客户端负责。
 
 可选机械检查需要 Python 3.9+ 标准库，输出只读 Markdown 报告：
 

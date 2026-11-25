@@ -1,17 +1,26 @@
 # Client Readers 验证记录
 
-当前版本 **0.2.1**，随 [XMemory v1.6.1](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1) 分发。以下程序与本机数据检查发生于 2026-10-16；Release 和原修复提交的 CI 于 2026-10-17 只读核对。操作方式见[读取器指南](../README.md)。
+当前版本 **0.3.0**，新增 Antigravity CLI 读取技能，尚未发布；已发布的 0.2.1 随 [XMemory v1.6.1](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.6.1) 分发。0.3.0 的检查发生于 2026-11-25，0.2.1 的程序与本机数据检查发生于 2026-10-16。操作方式见[读取器指南](../README.md)。
 
 ## 验证范围速查
 
 | 层次 | 已有结果 | 仍需分别验证 |
 |---|---|---|
-| 程序与分发 | 0.2.1 本地回归、五份副本、包检查和四项 CI 通过，详见下节 | 后续提交按其自身检查结果判断 |
-| 原生数据读取 | 五端 locate 只读样本、分页与归属回归 | 其他客户端版本、未适配布局及完整历史覆盖 |
+| 程序与分发 | 0.3.0 本地回归、六份副本与包检查通过；0.2.1 另有四项 CI 结果，详见下节 | 0.3.0 的 CI 以对应 PR 为准；后续提交按其自身检查结果判断 |
+| 原生数据读取 | 五端 locate 只读样本、分页与归属回归；Antigravity CLI 1.5.16 会话的本机只读核对 | 其他客户端版本、未适配布局及完整历史覆盖 |
 | 模型整理 | 1.6.0 合成场景有对应行为记录；1.6.1 补充场景完成预检 | 1.6.1 补充场景模型执行、转换迁移的语义关联 |
 | 实际宿主使用 | 可安装包已发布 | 客户端升级、新会话自然触发和定时调度 |
 
 历史章节保留当时的插件名、测试数和安装状态；源码仓库的完整证据见[验证报告](https://github.com/BlueSkyXN/XMemory/blob/main/docs/validation.md)。
+
+## 0.3.0 验证记录
+
+- 新增 read-antigravity：会话元数据取自 Antigravity CLI 的 `conversation_summaries.db`，正文取自 `brain/<ID>/.system_generated/logs/transcript_full.jsonl`，只有截断版时降级并报告。用户、助手、工具调用、工具结果、压缩摘要与系统注入消息分别映射；隐藏推理和 API 重试通知不输出，未知步骤报告 `unsupported_body`。
+- 子会话默认不列出，`--include-subagents` 纳入；`conversation://<ID>` 链接可直接定位；工作区 `file://` URI 用标准库解码。客户端运行中只读打开索引库可能短暂失败，读取器有限重试后仍失败时报告 `index_unavailable`。没有原生记忆存储，`memory locate` 返回空列表与 `known_non_memory`。其他五端的输出不变，系统注入消息为新增的工具层 kind。
+- 基线 `86e264f`。Python 3.11.9 全套 **190/190**，Python 3.9.6 运行时四组 **174/174**，均无跳过，相对 1.8.1 记录各新增 7 项合成回归；`check_package.py`、`build_client_readers.py --check`、`git diff --check` 通过。三个分发包与读取器包构建通过，解压后的读取器技能包 SHA256SUMS 核对通过，并能在 Python 3.9 下以 `-I -B` 运行。
+- 本机 Antigravity CLI 1.5.16 数据只读核对：顶层会话 26 个，含子会话 106 个；逐个 `sessions read --include-tools` 均退出 0、没有告警，列表的全量扫描没有未识别步骤。`projects`、`memory locate`、`doctor` 均退出 0。运行中的客户端曾使一次索引打开失败，加入重试后连续 30 次读取未再出现。
+
+Antigravity 2.0 桌面端、IDE 与其他 CLI 版本未验证；实际客户端安装、自然触发与 XMemory 采集行为尚未验收。
 
 ## 0.2.1 验证记录
 

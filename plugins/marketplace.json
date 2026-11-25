@@ -17,14 +17,14 @@
     {
       "name": "client-readers",
       "source": "./client-readers",
-      "version": "0.2.1",
-      "description": "只读地读取各 AI 客户端留在本机的会话与原生记忆，五个客户端各一个技能。",
+      "version": "0.3.0",
+      "description": "只读地读取各 AI 客户端留在本机的会话与原生记忆，六个客户端各一个技能。",
       "displayName": "Client Readers",
       "displayName_i18n": {
         "zh-CN": "客户端读取器"
       },
       "description_i18n": {
-        "zh-CN": "只读地读取各 AI 客户端留在本机的会话与原生记忆，五个客户端各一个技能。"
+        "zh-CN": "只读地读取各 AI 客户端留在本机的会话与原生记忆，六个客户端各一个技能。"
       }
     }
   ]

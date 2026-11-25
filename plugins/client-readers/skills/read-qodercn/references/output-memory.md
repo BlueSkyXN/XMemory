@@ -34,6 +34,7 @@ read.py doctor [--candidates]
 | WorkBuddy | 全部会话 cwd，用于发现工作区 | 全局 |
 | Codex | 只有 locate 扫描近期主会话头部 | 归属与 recent_injection 扫描中的告警挂到正规 codex-v1/codex-v2 store |
 | ZCode | 沿用 SQLite 元数据读取 | 原有数据库读取告警保持全局 |
+| Antigravity CLI | 没有原生记忆 store，locate 不读会话；projects 读索引库与正文首行 | 索引库告警为全局，正文与工作区路径告警挂到对应项目行 |
 
 Claude 的记忆命令按编码目录在当前调用内复用扫描结果，不访问全量会话缓存。指定单文件或 store 时，其他 store 仍枚举文件并计算 SHA256，以保留 `duplicate_of`，但不计算其项目归属、不进入输出。`projects` 仍扫描全部会话；来源告警挂到该文件涉及 cwd 的项目行，没有产出任何 cwd 的来源告警保留为全局缺口。
 
@@ -44,6 +45,8 @@ Claude 的记忆命令按编码目录在当前调用内复用扫描结果，不�
 `coverage.total_items` 是筛选后的总项数；`scan_complete` 仅在本页无缺口告警、全局无缺口且无下一页时为 true。`compressed_twin:` 为提示类前缀，不参与缺口判定；范围外局部告警也不降低本页覆盖率。`has_more`、`next_offset` 描述项目或文件分页，长正文继续使用 `next_text_offset`。
 
 `memory locate` 另含 `summary={layout: {status: count}}`，按分页前全部选中的 store 汇总。Qoder CN 旧版每个分类仍独立列为 store。
+
+ZCode 与 Antigravity CLI 的输出另含 `known_non_memory`，列出本机存在、但不属于原生记忆的数据路径。Antigravity CLI 没有原生记忆 store，locate 结果为空列表。
 
 `runtime` 给出当前 `python`、`executable` 和选用的 zstd 后端。会话仍保留历史 `schema` 值与引用格式；新字段不改变原引用。
 

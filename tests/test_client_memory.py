@@ -1004,3 +1004,40 @@ class MemorySecondFixTests(MemoryFixture):
         rows = {r['path']: r for r in self.project_output('claude')['items']}
         self.assertEqual(rows[str(child)]['parent'], str(main))
         self.assertEqual(rows[str(main)]['children'], 1)
+
+
+class AntigravityMemoryTests(MemoryFixture):
+    TOP = '00000000-0000-4000-8000-000000000001'
+    CHILD = '00000000-0000-4000-8000-000000000002'
+
+    def setUp(self):
+        super().setUp()
+        self.workspace = self.home / 'workspace/项目'
+        self.workspace.mkdir(parents=True)
+        root = self.home / '.gemini/antigravity-cli'
+        root.mkdir(parents=True)
+        with closing(sqlite3.connect(root / 'conversation_summaries.db')) as con, con:
+            con.execute('CREATE TABLE conversation_summaries(conversation_id TEXT, title TEXT, workspace_uris TEXT, '
+                        'last_modified_time DATETIME, parent_conversation_id TEXT, step_count INTEGER)')
+            uri = json.dumps([self.workspace.as_uri()])
+            con.executemany('INSERT INTO conversation_summaries VALUES(?,?,?,?,?,1)', [
+                (self.TOP, 'synthetic', uri, '2026-11-02 00:00:00+00:00', ''),
+                (self.CHILD, 'synthetic child', uri, '2026-11-03 00:00:00+00:00', self.TOP)])
+        for sid in (self.TOP, self.CHILD):
+            self.jsonl(f'.gemini/antigravity-cli/brain/{sid}/.system_generated/logs/transcript_full.jsonl',
+                       [{'step_index': 0, 'source': 'USER_EXPLICIT', 'type': 'USER_INPUT', 'status': 'DONE',
+                         'created_at': '2026-11-01T00:00:00Z', 'content': 'synthetic'}])
+
+    def test_projects_count_top_level_sessions_and_memory_is_empty(self):
+        before = self.snapshot()
+        out = projects.run(self.ctx('antigravity'), argparse.Namespace(since=None, offset=0, limit=200))
+        rows = {r['path']: r for r in out['items']}
+        self.assertEqual(list(rows), [str(self.workspace)])
+        sessions = rows[str(self.workspace)]['sessions']
+        self.assertEqual((sessions['count'], sessions['first'], sessions['last']),
+                         (1, '2026-11-01T00:00:00Z', '2026-11-02 00:00:00+00:00'))
+        located = self.run_memory('antigravity', 'locate')
+        self.assertEqual(located['items'], [])
+        self.assertTrue(located['coverage']['scan_complete'])
+        self.assertEqual(located['known_non_memory'], [str(self.home / '.gemini/antigravity-cli/brain')])
+        self.assertEqual(self.snapshot(), before)
