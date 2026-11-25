@@ -8,7 +8,7 @@
 |---|---|
 | `plugins/xmemory/skills/` | 三个正式技能、模板、参考与只读 status |
 | `plugins/xmemory/skills/xmemory/scripts/` | `xmemory.py` 入口与 `status.py` 只读盘点 |
-| `tools/client_readers/` | 五端读取器公共维护源及两份输出契约 |
+| `tools/client_readers/` | 六端读取器公共维护源及两份输出契约 |
 | `plugins/client-readers/skills/read-*/scripts/` | 同步生成的包装脚本与运行时副本 |
 | `plugins/client-readers/skills/read-*/references/` | 每端布局说明，以及同步生成的公共输出契约 |
 | `plugins/*/docs/` 与插件 README | 随完整插件分发的用户文档 |
@@ -17,12 +17,12 @@
 | `evals/` | 虚构材料、行为评测输入与判据 |
 | `local/`、`dist/` | 被忽略的本机材料与构建输出 |
 
-读取器公共逻辑只在 `tools/client_readers/` 修改。五份 Skill 中的 `references/sessions.md`、`references/memory.md` 是各端独有文档；`output-sessions.md`、`output-memory.md` 由公共契约生成。
+读取器公共逻辑只在 `tools/client_readers/` 修改。六份 Skill 中的 `references/sessions.md`、`references/memory.md` 是各端独有文档；`output-sessions.md`、`output-memory.md` 由公共契约生成。
 
 ```mermaid
 flowchart TD
     R["tools/client_readers 维护源与契约"] --> S["sync_client_readers.py"]
-    S --> C["五个自包含读取技能"]
+    S --> C["六个自包含读取技能"]
     X["XMemory 三个技能与可选 status"] --> V["包检查、测试与链接检查"]
     C --> V
     D["用户文档与三端清单"] --> V
@@ -57,7 +57,7 @@ python3 -B tools/build_client_readers.py --check
 python3 -B -m unittest discover -s tests -v
 ```
 
-前两项检查清单、版本、允许载荷、相对链接与自包含边界；读取器检查还核对五份副本。`sync` 默认只检查，发现差异退出非零；`--apply` 写入预期副本后再次核对。
+前两项检查清单、版本、允许载荷、相对链接与自包含边界；读取器检查还核对六份副本。`sync` 默认只检查，发现差异退出非零；`--apply` 写入预期副本后再次核对。
 
 需要缩小回归范围时使用对应测试模块：
 
@@ -81,9 +81,9 @@ python3 -B tools/build_release.py --output dist/release-check
 
 | 当前产物 | 内容与文档位置 |
 |---|---|
-| `XMemory-1.8.1.zip` | 三端市场与两个插件；`INSTALL.md`，以及各插件 README、docs、技能参考 |
-| `XMemory-1.8.1-skills.zip` | XMemory `skills/`、`INSTALL.md`、许可证 |
-| `ClientReaders-0.2.1-skills.zip` | 读取器 `skills/`、README、`docs/validation.md`、许可证 |
+| `XMemory-1.8.2.zip` | 三端市场与两个插件；`INSTALL.md`，以及各插件 README、docs、技能参考 |
+| `XMemory-1.8.2-skills.zip` | XMemory `skills/`、`INSTALL.md`、许可证 |
+| `ClientReaders-0.3.0-skills.zip` | 读取器 `skills/`、README、`docs/validation.md`、许可证 |
 
 构建还生成各包外部 `.zip.sha256` 与内部 `SHA256SUMS`。归档文件名来自插件清单版本；写入 ZIP 使用固定时间与权限，便于比较相同载荷的构建结果。构建拒绝覆盖已有归档。
 

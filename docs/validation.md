@@ -2,7 +2,19 @@
 
 本文按版本保留程序检查、模型评测与发布证据。每节中的测试数、未完成项和发布状态对应其日期与提交；当前用法见[文档导航](README.md)。
 
-当前版本为 XMemory 1.8.1 / Client Readers 0.2.1。发行附件与对应提交见 [1.8.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.1)，提交检查见 [PR #24](https://github.com/BlueSkyXN/XMemory/pull/24) 和 [GitHub Actions](https://github.com/BlueSkyXN/XMemory/actions)。下方按实验日期保留过程记录和仍待验收的范围。
+当前版本为 XMemory 1.8.2 / Client Readers 0.3.0。发行附件与对应提交见 [1.8.2 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.2)，提交检查见 [PR #25](https://github.com/BlueSkyXN/XMemory/pull/25) 和 [GitHub Actions](https://github.com/BlueSkyXN/XMemory/actions)。下方按实验日期保留过程记录和仍待验收的范围。
+
+## 1.8.2 / Client Readers 0.3.0 Antigravity CLI 读取（2026-11-25）
+
+基线 `86e264f`，新增 read-antigravity，读取 Antigravity CLI 1.5.16 的会话索引库与 `brain/<ID>/` 正文 JSONL；该客户端没有原生记忆存储。XMemory 升至 1.8.2，三个技能只在来源说明中加入 read-antigravity。
+
+| 检查 | 结果 |
+|---|---|
+| 程序与兼容测试 | Python 3.11.9 全套 **190/190**；Python 3.9.6 运行时四组 **174/174**；相对 1.8.1 各新增 7 项合成回归，无跳过 |
+| 包装 | `check_package.py`、`build_client_readers.py --check`、`git diff --check` 通过；三个分发包与读取器包构建通过，解压后的读取器技能包 SHA256SUMS 核对通过 |
+| 本机只读核对 | 26 个顶层会话、106 个含子会话逐个读取均退出 0 且无告警；`projects`、`memory locate`、`doctor` 退出 0 |
+
+映射、范围与未验证项见 [Client Readers 验证记录](../plugins/client-readers/docs/validation.md)。CI 见 [PR #25](https://github.com/BlueSkyXN/XMemory/pull/25)；本轮未安装到客户端，也未写正式记忆库。
 
 ## 1.8.1 当轮更正快路径、主题导航与链接标签修复（2026-11-24）
 

@@ -1,4 +1,4 @@
-# XMemory 1.8.1
+# XMemory 1.8.2
 
 由 Agent 维护跨客户端长期记忆，正式内容全部为 Markdown，固定保存在用户 home 下的 `.agents/memory/`。模型和文件工具由宿主提供，Python 只是可选检查工具。
 

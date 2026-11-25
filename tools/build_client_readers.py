@@ -27,7 +27,7 @@ def check(plugin=PLUGIN):
         if any(data.get(k) != manifest.get(k) for k in ["name", "version", "description"]) or data.get("skills") != "./skills":
             errors.append(f"Manifest mismatch: {rel}")
     if {p.name for p in (plugin / "skills").iterdir() if p.name != ".DS_Store"} != set(SKILLS.values()):
-        errors.append("Expected five client reader skills")
+        errors.append("Expected client reader skills: " + ", ".join(sorted(SKILLS.values())))
     for client, name in SKILLS.items():
         folder = plugin / "skills" / name
         text = (folder / "SKILL.md").read_text(encoding="utf-8")

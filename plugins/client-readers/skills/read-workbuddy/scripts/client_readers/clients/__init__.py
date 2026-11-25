@@ -13,7 +13,8 @@ class Context:
         self.client = client
         self.home = Path.home() if home is None else Path(home)
         folder = {'codex': '.codex', 'claude': '.claude', 'zcode': '.zcode/cli',
-                  'workbuddy': '.workbuddy', 'qodercn': '.qoder-cn'}[client]
+                  'workbuddy': '.workbuddy', 'qodercn': '.qoder-cn',
+                  'antigravity': '.gemini/antigravity-cli'}[client]
         self.root = self.home / folder
         self.projects = list(dict.fromkeys(os.path.abspath(os.path.expanduser(p)) for p in projects))
         self.warnings = []

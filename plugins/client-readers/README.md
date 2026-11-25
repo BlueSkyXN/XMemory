@@ -1,6 +1,6 @@
-# Client Readers 0.2.1
+# Client Readers 0.3.0
 
-只读地读取 Codex、Claude Code、ZCode、Qoder CN 和 WorkBuddy 留在本机的会话与原生记忆。每个客户端有一个技能及自包含 `scripts/read.py`，可独立用于历史查阅、工作接续或为 XMemory 提供来源。
+只读地读取 Codex、Claude Code、ZCode、Qoder CN、WorkBuddy 和 Antigravity CLI 留在本机的会话与原生记忆。每个客户端有一个技能及自包含 `scripts/read.py`，可独立用于历史查阅、工作接续或为 XMemory 提供来源。
 
 ## 命令与来源
 
@@ -18,8 +18,9 @@
 | ZCode | [read-zcode](skills/read-zcode/SKILL.md) | SQLite session / message / part | `~/.zcode/cli/memories/projects/<slug>-<hash16>/memory/` |
 | Qoder CN | [read-qodercn](skills/read-qodercn/SKILL.md) | 项目 JSONL、桌面 main.sqlite | `~/.qoder-cn/projects/<编码>/memory/`、`memory/`、`memories/<用户ID>/projects/<编码>/<分类>/` 及旧 global 分类 |
 | WorkBuddy | [read-workbuddy](skills/read-workbuddy/SKILL.md) | 项目 JSONL 的 message 与工具事件 | `<cwd>/.workbuddy/memory/`、`~/.workbuddy/MEMORY.md`、`memory/`、`user-*/` |
+| Antigravity CLI | [read-antigravity](skills/read-antigravity/SKILL.md) | `~/.gemini/antigravity-cli/` 的会话索引库与 `brain/<ID>/` 正文 JSONL | 无原生记忆存储 |
 
-路径简写相对同一行的客户端根。各 Skill 内的 `references/sessions.md` 与 `references/memory.md` 列出实际布局和归属规则。Qoder CN 旧 IDE 专有数据库未适配。
+路径简写相对同一行的客户端根。各 Skill 内的 `references/sessions.md` 与 `references/memory.md` 列出实际布局和归属规则。Qoder CN 旧 IDE 专有数据库、Antigravity 2.0 桌面端与 IDE 的数据未适配。
 
 `memory`、`projects`、`doctor` 使用当前用户主目录下的默认客户端数据根，没有 `--root`，也不读取 `CODEX_HOME` 或 `CLAUDE_CONFIG_DIR`。异地会话原件用 `sessions --root PATH` 选择；WorkBuddy 工作区记忆可按会话 cwd 或 `--project` 发现。
 
@@ -27,7 +28,7 @@
 
 需要用户自己的 Python 3.9+，普通读取使用标准库。插件与 XMemory 一起列在 `xmemory-marketplace`，可以单独安装 `client-readers@xmemory-marketplace`。完整市场包及迁移步骤见[安装说明](https://github.com/BlueSkyXN/XMemory/blob/main/docs/release-install.md)。
 
-独立技能包为 `ClientReaders-0.2.1-skills.zip`。按需复制完整的 `read-<client>/` 目录，保留脚本与参考文件；无需统一 CLI、PATH 配置、MCP 或后台服务。
+独立技能包为 `ClientReaders-0.3.0-skills.zip`。按需复制完整的 `read-<client>/` 目录，保留脚本与参考文件；无需统一 CLI、PATH 配置、MCP 或后台服务。
 
 从 Conversation Readers 升级时，通过宿主移除旧 `conversation-readers` 插件并保留需要的数据，再安装本插件。独立技能安装需处理旧的五个 `read-*-conversations` 目录。同一客户端避免同时启用插件和同名独立技能。
 
@@ -133,7 +134,7 @@ python3 -B "$reader_script" memory search --store "/absolute/path/to/store" --qu
 | 项目总览 | `client-readers/projects-v1` |
 | 运行自检 | `client-readers/doctor-v1` |
 
-默认输出 JSON，读取类命令可加 `--format markdown`；两种形式都遵守分页与截断。关键词搜索为不区分大小写的字面匹配。完整定义见[会话输出契约](skills/read-codex/references/output-sessions.md)与[原生记忆输出契约](skills/read-codex/references/output-memory.md)，五个技能随包携带同一份公共契约。
+默认输出 JSON，读取类命令可加 `--format markdown`；两种形式都遵守分页与截断。关键词搜索为不区分大小写的字面匹配。完整定义见[会话输出契约](skills/read-codex/references/output-sessions.md)与[原生记忆输出契约](skills/read-codex/references/output-memory.md)，六个技能随包携带同一份公共契约。
 
 ## 运行环境与自检
 
@@ -174,7 +175,7 @@ flowchart TD
 
 ## 维护与验证
 
-仓库的 `tools/client_readers/` 是公共实现及契约维护源，`tools/sync_client_readers.py --apply` 同步五份自包含脚本和两份输出契约。修改维护源后再同步；每个 Skill 独立运行，无运行期跨目录依赖。
+仓库的 `tools/client_readers/` 是公共实现及契约维护源，`tools/sync_client_readers.py --apply` 同步六份自包含脚本和两份输出契约。修改维护源后再同步；每个 Skill 独立运行，无运行期跨目录依赖。
 
 在源码仓库根执行检查与构建，输出目录选择尚无同名归档的位置：
 

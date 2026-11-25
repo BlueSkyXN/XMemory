@@ -10,14 +10,16 @@
 
 Codex `response_item/agent_message` 以 `kind: agent_message`、`role: assistant` 输出，保留 `author`、`recipient`、`message_id`、`record_id` 与文本；属于工具层，只在 `--include-tools` 时显示、检索或精确展开，不当作用户原话；只取可见文本，忽略同信封中的 `encrypted_content` 及隐藏推理块，无可见文本时不生成空代理消息。`web_search_call` 输出 `kind: tool_call`、`tool_name: web_search`、原生消息 ID 和 `status`，文本取 `action.query`；原件未保存 action/query 时文本为空，不补造搜索词或 call_id。二者均检查结构并沿用脱敏、分页及来源定位，未知形状仍报告缺口；默认可见正文不变。
 
+0.3.0 为加法更新：新增 Antigravity CLI（`client: antigravity`）。会话元数据来自其索引库，列表条目另有 `agent_name` 与 `transcript`（`full` 或 `truncated`）；工具结果另有原生 `status`，含媒体时有 `attachments` 数量；系统注入消息以 `kind: system_message`、`role: context` 输出，与工具记录一样只在 `--include-tools` 时显示和检索。其他客户端的输出不变，来源细节见该技能的 `references/sessions.md`。
+
 - JSONL 会话的 `projects` 列出原件中实际出现的全部 `cwd`，`project` 保留最后一个已知目录。`--project` 按任一目录的路径边界选择会话，read/search 仍返回所选会话中符合其他条件的内容，不自动丢掉其他项目片段。SQLite 来源仍按原生会话目录匹配。
 - 事件的 `project` 是该条 JSONL 记录的 `cwd`；Codex 使用之前最近的 `session_meta` / `turn_context` 项目上下文。未知时为 null，不用会话最后的目录补造；SQLite 事件没有逐条目录时也为 null。项目归属还须结合正文核实，尤其是跨项目会话和压缩摘要。
 - `session_id` 表示文件或数据库会话条目的身份；JSONL 元数据缺失时，列表中的 `id_origin: filename` 表示只能从文件名定位，不能声称已验证原生身份。逐条记录的原生身份另由 `native_session_id` 保留，原记录没有该字段时为 null，不用文件身份补造。
 - 本版 JSONL 支持一个文件对应一个原生会话身份；发现多个原生 ID 时，以 `mixed_session_ids` 明确拒绝该文件，不把全部正文归给第一个或最后一个 ID。已支持的子代理文件仍保留 `parent_session_id`、完整 `session_ref`、原生消息和父消息 ID；未适配的混合继承／恢复组合不静默合并。
 - `session_ref` 带客户端及来源类型；同一个 ID 的桌面库、JSONL、子代理或迁移副本不会自动合并。出现歧义时用列表给出的完整引用和 `--root` 选择原件。
-- `--session` 接受三种输入：原生 ID、`session_ref`，以及客户端界面复制的虚拟引用 `<工作区>/<ID>.<客户端>-session`（显示层路径，磁盘上无此文件）。虚拟引用按文件名确定性剥壳且客户端必须匹配，跨客户端引用不做转换；ZCode 裸 UUID 确定性补全 `sess_` 前缀。不做模糊匹配。
+- `--session` 接受三种输入：原生 ID、`session_ref`，以及客户端界面复制的虚拟引用 `<工作区>/<ID>.<客户端>-session`（显示层路径，磁盘上无此文件）；Antigravity 另接受 `conversation://<ID>` 链接。虚拟引用按文件名确定性剥壳且客户端必须匹配，跨客户端引用不做转换；ZCode 裸 UUID 确定性补全 `sess_` 前缀。不做模糊匹配。
 - `message_id`、`record_id`、`parent_id`、`turn_id`、`call_id` 保留可获取的原生标识，缺失为 null，不捏造关联。`record_ref` 是本工具定位符，不冒充原生消息 ID。
-- `kind` 区分正文、工具调用、工具结果、压缩摘要和附件占位。默认只返回可见正文及摘要标识；`--include-tools` 才展开工具记录。隐藏推理、内部权限／环境事件不进入结果。
+- `kind` 区分正文、工具调用、工具结果、压缩摘要、系统注入消息和附件占位。默认只返回可见正文及摘要标识；`--include-tools` 才展开工具记录与系统注入消息。隐藏推理、内部权限／环境事件不进入结果。
 - 相同原生记录的完全相同块去重；不同消息即使文字相同也保留。客户端保存的更新或分支不会被当成同一条最终结论强行合并；这不是 UI 的逐像素或逐字节复刻。
 - `source_ref` 指回原始文件和字节位置或 SQLite 消息／内容块 ID。判断“完成”需要查看相应工具结果，助手自述仍只是报告。
 

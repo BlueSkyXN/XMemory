@@ -45,7 +45,7 @@ class ReaderTests(unittest.TestCase):
             c.execute("INSERT INTO chat_sessions VALUES(?,?,?,?,?,NULL)", (sid, "测试对话", "/work/demo", "2026-10-01", "2026-10-02"))
         return p
 
-    def test_five_scripts_run_independently(self):
+    def test_reader_scripts_run_independently(self):
         self.assertEqual(sync(), [])
         for client, skill in SKILLS.items():
             script = ROOT / "plugins/client-readers/skills" / skill / "scripts/read.py"
@@ -1150,6 +1150,179 @@ class ReaderTests(unittest.TestCase):
                     item = self.read("codex", path, "read", "--session", "cold-long")["items"][0]
                     self.assertEqual(item["text"], "tail message")
                     self.assertIn(f"@byte:{expected}/", item["record_ref"])
+
+
+
+class AntigravityReaderTests(unittest.TestCase):
+    """合成的 Antigravity CLI 数据根：索引库 + brain/<ID> 正文；不使用个人材料。"""
+    TOP = "00000000-0000-4000-8000-000000000001"
+    CHILD = "00000000-0000-4000-8000-000000000002"
+    EMPTY = "00000000-0000-4000-8000-000000000003"
+    ATTACHMENT = "[附件：本读取器未展开二进制内容]"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.data = Path(self.temp.name).resolve() / "antigravity-cli"
+        workspace = json.dumps(["file:///work/%E9%A1%B9%E7%9B%AE"])
+        self.index((self.TOP, "部署检查", 9, "2026-11-01 08:10:00+00:00", workspace, "", ""),
+                   (self.CHILD, "子任务", 2, "2026-11-01 08:05:00+00:00", workspace, self.TOP, "verifier"),
+                   (self.EMPTY, "", 0, "2026-11-01 07:00:00+00:00", workspace, "", ""))
+        (self.data / "brain" / self.EMPTY / "scratch").mkdir(parents=True)
+        self.top = self.transcript(self.TOP, [
+            self.step(0, "USER_EXPLICIT", "USER_INPUT", content="检查部署状态",
+                      media=[{"mime_type": "image/png", "uri": "file:///fixture/shot.png"}]),
+            self.step(1, "MODEL", "PLANNER_RESPONSE", thinking="HIDDEN_THOUGHT", tool_calls=[
+                {"name": "run_command", "args": {"CommandLine": "deploy --check", "api_key": "SYNTHETIC_SECRET"}},
+                {"name": "read_file", "args": {"Path": "/work/项目/notes.md"}}]),
+            self.step(2, "MODEL", "GENERIC", content="Created At: 2026-11-01\n未部署"),
+            self.step(3, "MODEL", "GENERIC", status="ERROR", content="Encountered error in step execution",
+                      error="file does not exist"),
+            self.step(4, "SYSTEM", "ERROR_MESSAGE", error="API error (attempt 1): HIDDEN_RETRY"),
+            self.step(5, "SYSTEM", "SYSTEM_MESSAGE", content="<SYSTEM_MESSAGE> [board] 看板更新 </SYSTEM_MESSAGE>"),
+            self.step(6, "SYSTEM", "CHECKPOINT", content="# Resuming from a compaction\n前情摘要"),
+            self.step(7, "MODEL", "PLANNER_RESPONSE", content="尚未部署", thinking="HIDDEN_THOUGHT"),
+            self.step(8, "MODEL", "PLANNER_RESPONSE", status="ERROR", error="HIDDEN_RETRY"),
+        ])
+        self.transcript(self.CHILD, [self.step(0, "USER_EXPLICIT", "USER_INPUT", content="子任务说明"),
+                                     self.step(1, "MODEL", "PLANNER_RESPONSE", content="子任务完成")])
+
+    def index(self, *rows):
+        path = self.data / "conversation_summaries.db"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(path)) as c, c:
+            c.execute("CREATE TABLE IF NOT EXISTS conversation_summaries(conversation_id TEXT, title TEXT, "
+                      "step_count INTEGER, last_modified_time DATETIME, workspace_uris TEXT, "
+                      "parent_conversation_id TEXT, agent_name TEXT)")
+            c.executemany("INSERT INTO conversation_summaries VALUES(?,?,?,?,?,?,?)", rows)
+
+    def transcript(self, sid, rows, name="transcript_full.jsonl"):
+        path = self.data / "brain" / sid / ".system_generated/logs" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows).encode("utf-8"))
+        return path
+
+    @staticmethod
+    def step(index, source, typ, status="DONE", **extra):
+        return dict(step_index=index, source=source, type=typ, status=status,
+                    created_at=f"2026-11-01T08:00:{index:02d}Z", **extra)
+
+    def read(self, *args, root=None):
+        parsed = reader.parser("antigravity").parse_args([*args, "--root", str(root or self.data)])
+        return reader.run("antigravity", parsed)
+
+    def test_lists_top_level_by_default_and_subagents_on_request(self):
+        out = self.read("list")
+        self.assertEqual([s["session_id"] for s in out["items"]], [self.TOP])
+        item = out["items"][0]
+        self.assertEqual((item["variant"], item["session_ref"], item["title"], item["title_origin"]),
+                         ("jsonl", f"antigravity:jsonl:{self.TOP}", "部署检查", "native_index"))
+        self.assertEqual(item["project"], str(Path("/work/项目")))
+        self.assertEqual((item["transcript"], item["id_origin"], item["created_at"]),
+                         ("full", "brain_directory", "2026-11-01T08:00:00Z"))
+        self.assertEqual(out["warnings"], [])
+        self.assertTrue(out["coverage"]["scan_complete"])
+        out = self.read("list", "--include-subagents")
+        child = {s["session_id"]: s for s in out["items"]}[self.CHILD]
+        self.assertEqual((child["variant"], child["session_ref"], child["parent_session_id"], child["agent_name"]),
+                         ("subagent", f"antigravity:subagent:{self.CHILD}", self.TOP, "verifier"))
+        self.assertEqual(len(self.read("list", "--project", "/work/项目")["items"]), 1)
+        self.assertEqual(self.read("list", "--project", "/work/项")["items"], [])
+
+    def test_read_maps_steps_and_keeps_tool_layer_optional(self):
+        out = self.read("read", "--session", self.TOP)
+        self.assertEqual([(e["role"], e["kind"], e["text"]) for e in out["items"]], [
+            ("user", "message", "检查部署状态"), ("user", "attachment", self.ATTACHMENT),
+            ("context", "summary", "# Resuming from a compaction\n前情摘要"), ("assistant", "message", "尚未部署")])
+        self.assertTrue(out["coverage"]["scan_complete"])
+        self.assertEqual(out["coverage"]["content_status"], "matches")
+        items = self.read("read", "--session", self.TOP, "--include-tools")["items"]
+        self.assertEqual([e["kind"] for e in items], ["message", "attachment", "tool_call", "tool_call", "tool_result",
+                                                      "tool_result", "system_message", "summary", "message"])
+        calls = [e for e in items if e["kind"] == "tool_call"]
+        self.assertEqual([(e["tool_name"], e["call_id"], e["record_id"]) for e in calls],
+                         [("run_command", None, "1"), ("read_file", None, "1")])
+        self.assertEqual(json.loads(calls[0]["text"])["api_key"], "[REDACTED]")
+        self.assertEqual([e["status"] for e in items if e["kind"] == "tool_result"], ["DONE", "ERROR"])
+        self.assertTrue(calls[1]["record_ref"].endswith("/block:1"))
+        self.assertEqual({e["native_session_id"] for e in items}, {None})
+        text = json.dumps(items, ensure_ascii=False)
+        for hidden in ("HIDDEN_THOUGHT", "HIDDEN_RETRY", "SYNTHETIC_SECRET"):
+            self.assertNotIn(hidden, text)
+        found = self.read("search", "--session", self.TOP, "--query", "看板")
+        self.assertEqual(found["items"], [])
+        self.assertEqual(len(self.read("search", "--session", self.TOP, "--query", "看板", "--include-tools")["items"]), 1)
+
+    def test_session_reference_forms_and_subagent_scope(self):
+        for value in (self.TOP, f"antigravity:jsonl:{self.TOP}", f"conversation://{self.TOP}"):
+            with self.subTest(value=value):
+                self.assertEqual(len(self.read("read", "--session", value)["items"]), 4)
+        self.assertEqual(len(self.read("read", "--session", self.CHILD)["items"]), 2)
+        self.assertEqual(self.read("list", "--query", self.CHILD)["items"], [])
+        directory = self.data / "brain" / self.CHILD
+        items = self.read("read", "--session", self.CHILD, root=directory)["items"]
+        self.assertEqual([e["session_ref"] for e in items], [f"antigravity:subagent:{self.CHILD}"] * 2)
+
+    def test_unknown_steps_truncated_transcripts_and_foreign_sources_are_gaps(self):
+        with self.top.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(self.step(9, "USER_IMPLICIT", "USER_INPUT", content="未知")) + "\n")
+        out = self.read("read", "--session", self.TOP)
+        self.assertIn("unsupported_body:", " ".join(out["warnings"]))
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertEqual(out["coverage"]["content_status"], "partial")
+        self.assertEqual(self.read("list")["items"][0]["body_format"], "partial")
+        short = "00000000-0000-4000-8000-000000000005"
+        self.index((short, "截断", 1, "2026-11-01 09:00:00+00:00", "[]", "", ""))
+        self.transcript(short, [self.step(0, "USER_EXPLICIT", "USER_INPUT", content="前半段",
+                                          truncated_fields=["content"])], name="transcript.jsonl")
+        listed = self.read("list", "--session", short)
+        self.assertEqual(listed["items"][0]["transcript"], "truncated")
+        self.assertIn("truncated_transcript:", " ".join(listed["warnings"]))
+        self.assertIn("truncated_record:", " ".join(self.read("read", "--session", short)["warnings"]))
+        foreign = self.data.parent / "claude.jsonl"
+        foreign.write_text(json.dumps({"type": "user", "sessionId": "c", "message": {"content": "x"}}) + "\n",
+                           encoding="utf-8")
+        out = self.read("list", root=foreign)
+        self.assertEqual(out["items"], [])
+        self.assertIn("unsupported_source:", " ".join(out["warnings"]))
+        self.assertFalse(out["coverage"]["scan_complete"])
+
+    def test_index_open_is_retried_while_client_rewrites_wal(self):
+        from unittest import mock
+        from client_readers.clients import antigravity
+        real, calls = antigravity.database, []
+
+        def flaky(path):
+            calls.append(path)
+            if len(calls) == 1:
+                raise sqlite3.OperationalError("unable to open database file")
+            return real(path)
+
+        def broken(path):
+            raise sqlite3.OperationalError("unable to open database file")
+
+        with mock.patch.object(antigravity.time, "sleep"):
+            with mock.patch.object(antigravity, "database", flaky):
+                out = self.read("list")
+            self.assertEqual((len(calls), out["warnings"]), (2, []))
+            with mock.patch.object(antigravity, "database", broken):
+                out = self.read("list")
+        self.assertIn("index_unavailable:", " ".join(out["warnings"]))
+        self.assertFalse(out["coverage"]["scan_complete"])
+
+    def test_missing_transcript_and_index_are_reported(self):
+        lost = "00000000-0000-4000-8000-000000000004"
+        self.index((lost, "缺正文", 3, "2026-11-01 09:00:00+00:00", "[]", "", ""))
+        (self.data / "brain" / lost / "scratch").mkdir(parents=True)
+        warnings = self.read("list")["warnings"]
+        self.assertEqual([w.split(":")[0] for w in warnings], ["transcript_missing"])
+        self.assertIn(lost, warnings[0])
+        (self.data / "conversation_summaries.db").unlink()
+        out = self.read("list")
+        self.assertIn("index_unavailable:", " ".join(out["warnings"]))
+        self.assertFalse(out["coverage"]["scan_complete"])
+        self.assertEqual({s["title"] for s in out["items"]}, {None})
+        self.assertFalse(any(s["metadata_complete"] for s in out["items"]))
 
 
 if __name__ == "__main__":

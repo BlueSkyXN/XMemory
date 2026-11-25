@@ -28,6 +28,7 @@ def defaults(client):
         "zcode": [home / ".zcode/cli/db/db.sqlite"],
         "qodercn": [home / ".qoder-cn/projects",
                      home / "Library/Application Support/com.qodercn.app.stable/main.sqlite"],
+        "antigravity": [home / ".gemini/antigravity-cli"],
     }[client]
 
 
@@ -265,6 +266,10 @@ def match_start(text, folded_query):
 
 
 def catalogue(client, args, warnings, source_warnings=None, compressed_twins=None):
+    if client == "antigravity":
+        # 索引库与 brain 目录分开保存元数据和正文，由适配器组合后走同一筛选。
+        from .clients import antigravity
+        return select(antigravity.catalogue(args, warnings, source_warnings), args)
     roots = [Path(p).expanduser().resolve() for p in args.root] if args.root else defaults(client)
     files, dbs, compressed = set(), set(), set()
     for root in roots:
@@ -350,6 +355,10 @@ def catalogue(client, args, warnings, source_warnings=None, compressed_twins=Non
                             s.update(title=row[0], title_origin="native_index")
             except (sqlite3.Error, ReaderError):
                 warnings.append("title_index_unavailable")
+    return select(result, args)
+
+
+def select(result, args):
     result = [s for s in result if any(project_matches(project, args.project)
                                      for project in (s.get("projects") or [s.get("project")]))
               and (args.action != "list" or not s.get("metadata_complete", True) or (
@@ -673,6 +682,9 @@ def sqlite_events(s, warnings, include_tools):
 def read_events(s, warnings, include_tools):
     seen = set()
     events = sqlite_events if s["variant"] in {"sqlite", "desktop"} else json_events
+    if s["client"] == "antigravity":
+        from .clients import antigravity
+        events = antigravity.events
     for e in events(s, warnings, include_tools):
         # 只去掉相同原生记录的完全相同重复块，不把同文不同消息合并。
         block = e["record_ref"].rsplit("/block:", 1)[-1] if "/block:" in e["record_ref"] else None
@@ -691,6 +703,9 @@ def normalize_session(client, value):
     """客户端界面复制的会话引用是 <工作区>/<ID>.<客户端>-session 虚拟路径，磁盘上不存在；
     按文件名确定性剥壳（客户端必须匹配），不做模糊匹配。ZCode 原生 ID 带 sess_ 前缀，
     裸 UUID 同样确定性补全。"""
+    if client == "antigravity" and value and value.startswith("conversation://"):
+        # Antigravity 界面与回答中的会话链接为 conversation://<ID>。
+        value = value[len("conversation://"):].rstrip("/")
     if not value or (":" in value and not re.match(r"^[A-Za-z]:[\\/]", value)):
         return value
     name = str(value).replace("\\", "/").rsplit("/", 1)[-1]
@@ -749,7 +764,7 @@ def run(client, args):
             # 先解析形状，再按工具、角色、时间、查询条件筛选，不能隐藏解析缺口。
             for e in read_events(s, warnings, True):
                 examined += 1
-                if not args.include_tools and e["kind"] in {"tool_call", "tool_result", "agent_message"}:
+                if not args.include_tools and e["kind"] in {"tool_call", "tool_result", "agent_message", "system_message"}:
                     continue
                 if args.role and e["role"] != args.role:
                     continue

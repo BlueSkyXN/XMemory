@@ -3,7 +3,7 @@
 按用户指定的来源端、项目或主题与时间窗口选材。执行端可以与来源端不同，维护对话不自动加入本批来源。
 
 - 当前上下文、普通文件、已导出会话和 Markdown：用宿主文件工具直接读。
-- 客户端私有存储：已安装对应 Client Readers 时，读取实际的 read-codex、read-claude、read-zcode、read-qodercn 或 read-workbuddy Skill，按其真实命令定位会话、记忆与项目。它们独立可选，不猜安装位置或参数。
+- 客户端私有存储：已安装对应 Client Readers 时，读取实际的 read-codex、read-claude、read-zcode、read-qodercn、read-workbuddy 或 read-antigravity Skill，按其真实命令定位会话、记忆与项目。它们独立可选，不猜安装位置或参数。
 - 无读取器时：只读已知且能理解的文件，或使用宿主现有连接器。无法读取的专有格式说明缺口，不要求为了普通 Markdown 任务安装 Python。
 
 原生摘要可以作为输入，保留适用条件；与原始会话同源时合并使用，不为每个载体再写一份摘要。摘要不足以支持关键结论时才补读原件。

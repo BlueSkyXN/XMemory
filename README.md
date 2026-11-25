@@ -1,6 +1,6 @@
 # XMemory
 
-XMemory 是由 Agent 执行的跨客户端长期记忆扩展层。把选定会话、原生记忆、项目文件和明确反馈整理为有用知识，在后续任务中按需使用。当前版本为 **1.8.1**；下载见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，验证范围见 [验证记录](docs/validation.md)。
+XMemory 是由 Agent 执行的跨客户端长期记忆扩展层。把选定会话、原生记忆、项目文件和明确反馈整理为有用知识，在后续任务中按需使用。当前版本为 **1.8.2**；下载见 [Releases](https://github.com/BlueSkyXN/XMemory/releases)，验证范围见 [验证记录](docs/validation.md)。
 
 正式记忆固定在用户 home 下的 `~/.agents/memory/`。内容全部是 Markdown，基本使用不要求 Python、数据库或后台服务。
 
@@ -32,7 +32,7 @@ XMemory 是由 Agent 执行的跨客户端长期记忆扩展层。把选定会�
 - “继续这个项目，先查过去的约定与未完成事项。”
 - “记住：这个要求只适用于当前项目。”
 
-[Client Readers 0.2.1](plugins/client-readers/README.md) 是独立可选插件，用于读取已适配的客户端私有存储。普通文件、Markdown 和当前上下文可由宿主直接处理。外部定时、后台和异步发起由客户端负责。
+[Client Readers 0.3.0](plugins/client-readers/README.md) 是独立可选插件，用于读取已适配的客户端私有存储。普通文件、Markdown 和当前上下文可由宿主直接处理。外部定时、后台和异步发起由客户端负责。
 
 可选机械检查需要 Python 3.9+ 标准库，输出只读 Markdown 报告：
 

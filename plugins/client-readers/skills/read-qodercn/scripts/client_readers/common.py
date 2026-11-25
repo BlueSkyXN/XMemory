@@ -16,7 +16,7 @@ import sys
 
 MAX_LINE = 8 * 1024 * 1024
 TEXT_TYPES = {"text", "input_text", "output_text"}
-CLIENTS = {"codex", "claude", "zcode", "qodercn", "workbuddy"}
+CLIENTS = {"codex", "claude", "zcode", "qodercn", "workbuddy", "antigravity"}
 SENSITIVE_KEYS = {"apikey", "accesstoken", "refreshtoken", "password", "authorization"}
 SENSITIVE_FIELD = re.compile(
     r'''(?i)(?<![\w-])["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|authorization)["']?[ \t]*[:=][ \t]*''')
