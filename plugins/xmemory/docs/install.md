@@ -1,6 +1,6 @@
 # 安装与首次使用
 
-XMemory 1.8.1 提供三个 Skill；Client Readers 0.3.0 独立可选。基本使用需要宿主能够发现技能、读取和编辑文本文件，并定位当前用户 home。普通 Markdown 任务不需要 Python。
+XMemory 1.8.2 提供三个 Skill；Client Readers 0.3.0 独立可选。基本使用需要宿主能够发现技能、读取和编辑文本文件，并定位当前用户 home。普通 Markdown 任务不需要 Python。
 
 ## 安装方式
 

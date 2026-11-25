@@ -12,6 +12,6 @@
 2. 通过宿主更新插件，或整体替换独立技能包的三个入口和共享资源目录。在新对话确认只启用 xmemory-update、xmemory-recall、xmemory-note。
 3. 如有脚本消费 status 输出，将旧 JSON 解析改为使用本版 Markdown 盘点报告。status 只检查本库文件及链接目标，不提供旧版来源处理状态。
 
-本版包含异常外链、括号路径、引用式链接、行内代码及嵌套方括号链接文本的检查修复；`xmemory-note` 单条当轮更正直接同步笔记与相关主记忆并回读，只采集、只记录、分批或待核查通过入口短提示衔接，主记忆与入口同步并回读确认后移除；`xmemory-recall` 支持按入口导航展开拆分出的主题主记忆文件，并在发现旧式 `config.toml`、`records/` 时提示冲突。发布附件及对应 CI 见 [1.8.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.1)。真实双端自然触发、原生记忆共存和实际中断恢复仍待验收，详细范围见验证记录。
+本版包含异常外链、括号路径、引用式链接、行内代码及嵌套方括号链接文本的检查修复；`xmemory-note` 单条当轮更正直接同步笔记与相关主记忆并回读，只采集、只记录、分批或待核查通过入口短提示衔接，主记忆与入口同步并回读确认后移除；`xmemory-recall` 支持按入口导航展开拆分出的主题主记忆文件，并在发现旧式 `config.toml`、`records/` 时提示冲突。发布附件及对应 CI 见 [1.8.1 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.1)。1.8.2 在来源说明中加入 read-antigravity，随附新增 Antigravity CLI 读取技能的 Client Readers 0.3.0，见 [1.8.2 Release](https://github.com/BlueSkyXN/XMemory/releases/tag/v1.8.2)。真实双端自然触发、原生记忆共存和实际中断恢复仍待验收，详细范围见验证记录。
 
 [安装](../release-install.md) · [开发](../development.md) · [验证记录](../validation.md)
